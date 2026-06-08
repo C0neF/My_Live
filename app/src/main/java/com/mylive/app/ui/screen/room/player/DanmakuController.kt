@@ -16,6 +16,7 @@ import coil.request.ImageRequest
 import com.mylive.app.core.model.LiveMessage
 import com.mylive.app.core.model.LiveMessageSpan
 import com.mylive.app.core.model.LiveMessageType
+import com.mylive.app.ui.emoji.EmojiAtlasRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -166,6 +167,12 @@ class DanmakuController(private val context: Context) {
             if (cached != null) {
                 part.bitmap = cached
             } else {
+                val atlasBitmap = EmojiAtlasRepository.getBitmap(context, part.url)
+                if (atlasBitmap != null) {
+                    bitmapCache.put(part.url, atlasBitmap)
+                    part.bitmap = atlasBitmap
+                    continue
+                }
                 scope.launch {
                     val bitmap = loadBitmap(part.url)
                     if (bitmap != null) {

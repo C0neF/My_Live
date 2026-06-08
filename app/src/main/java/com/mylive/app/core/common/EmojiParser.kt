@@ -166,8 +166,8 @@ object EmojiParser {
                 if (match.range.first > lastIndex) {
                     spans.add(LiveMessageSpan.Text(text.substring(lastIndex, match.range.first)))
                 }
-                val assetPath = "file:///android_asset/douyin_emoji/$fileName"
-                spans.add(LiveMessageSpan.Image(assetPath))
+                val emojiId = fileName.substringBeforeLast('.')
+                spans.add(LiveMessageSpan.Image(EmojiAtlasRef.douyin(emojiId).toUrl()))
                 lastIndex = match.range.last + 1
             }
         }

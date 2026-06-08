@@ -218,6 +218,9 @@ class HttpClient @Inject constructor(
                     )
                 }
                 val body = response.body?.string() ?: "{}"
+                if (body.isBlank()) {
+                    throw CoreError("接口返回为空，请稍后再试")
+                }
                 try {
                     org.json.JSONTokener(body).nextValue()
                 } catch (e: org.json.JSONException) {

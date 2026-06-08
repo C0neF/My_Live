@@ -52,6 +52,7 @@ import com.mylive.app.core.model.LiveMessage
 import com.mylive.app.core.model.LiveMessageType
 import com.mylive.app.core.model.LiveMessageSpan
 import com.mylive.app.core.model.LivePlayQuality
+import com.mylive.app.ui.emoji.EmojiImage
 import com.mylive.app.ui.screen.room.player.PlayerController
 import com.mylive.app.ui.screen.room.player.PlayerView
 import com.mylive.app.ui.screen.room.player.DanmakuController
@@ -1312,8 +1313,8 @@ private fun ChatMessageItem(
                                             placeholderVerticalAlign = PlaceholderVerticalAlign.Center
                                         )
                                     ) {
-                                        AsyncImage(
-                                            model = span.imageUrl,
+                                        EmojiImage(
+                                            url = span.imageUrl,
                                             contentDescription = null,
                                             modifier = Modifier.fillMaxSize()
                                         )
@@ -1333,8 +1334,8 @@ private fun ChatMessageItem(
                                     placeholderVerticalAlign = PlaceholderVerticalAlign.Center
                                 )
                             ) {
-                                AsyncImage(
-                                    model = url,
+                                EmojiImage(
+                                    url = url,
                                     contentDescription = null,
                                     modifier = Modifier.fillMaxSize()
                                 )

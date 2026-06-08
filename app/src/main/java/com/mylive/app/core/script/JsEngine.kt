@@ -114,14 +114,9 @@ class JsEngine @Inject constructor(
         val global = ctx.globalObject
         val function = global.getJSFunction(functionName)
             ?: throw IllegalStateException("JS function '$functionName' was not found")
-        return try {
-            val result = function.call(*args)
-            result?.toString()
-                ?: throw IllegalStateException("JS function '$functionName' returned null")
-        } finally {
-            function.release()
-            global.release()
-        }
+        val result = function.call(*args)
+        return result?.toString()
+            ?: throw IllegalStateException("JS function '$functionName' returned null")
     }
 
     /**

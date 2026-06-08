@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!--
+        Live playback CDNs (Huya/Douyu FLV, Douyin pull URLs, etc.) hand back dynamic
+        http:// hosts that cannot be enumerated, so cleartext stays permitted by default
+        for playback. We do NOT, however, want session cookies / signing tokens to ever
+        travel (or be downgraded to) plain HTTP, so the credential-bearing API and auth
+        hosts below are pinned to HTTPS-only. None of these are playback CDN hosts, so
+        this does not affect stream playback.
+    -->
+    <base-config cleartextTrafficPermitted="true" />
+
+    <!-- API / auth endpoints that carry login cookies or signing tokens: HTTPS only. -->
+    <domain-config cleartextTrafficPermitted="false">
+        <!-- Bilibili -->
+        <domain includeSubdomains="false">api.bilibili.com</domain>
+        <domain includeSubdomains="false">api.live.bilibili.com</domain>
+        <domain includeSubdomains="false">live.bilibili.com</domain>
+        <domain includeSubdomains="false">passport.bilibili.com</domain>
+        <!-- Douyin -->
+        <domain includeSubdomains="false">www.douyin.com</domain>
+        <domain includeSubdomains="false">live.douyin.com</domain>
+        <domain includeSubdomains="false">webcast.amemv.com</domain>
+        <!-- Douyu -->
+        <domain includeSubdomains="false">www.douyu.com</domain>
+        <domain includeSubdomains="false">m.douyu.com</domain>
+        <!-- Huya TARS (HuyaSite uses https://wup.huya.com) -->
+        <domain includeSubdomains="false">wup.huya.com</domain>
+    </domain-config>
+</network-security-config>

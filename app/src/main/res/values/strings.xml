@@ -1,0 +1,435 @@
+<resources>
+    <string name="app_name">My_Live</string>
+
+    <!-- Bottom navigation -->
+    <string name="nav_home">首页</string>
+    <string name="nav_follow">关注</string>
+    <string name="nav_category">分类</string>
+    <string name="nav_mine">我的</string>
+
+    <!-- Home / Search / Follow / Category / Mine / History -->
+    <string name="search_title">搜索</string>
+    <string name="search_hint">搜索直播间或主播</string>
+    <string name="search_type_room">直播间</string>
+    <string name="search_type_anchor">主播</string>
+    <string name="search_no_results">无搜索结果</string>
+    <string name="home_no_recommendations">暂无推荐</string>
+    <string name="load_failed">加载失败</string>
+    <string name="follow_empty">暂无关注</string>
+    <string name="follow_group_live">直播中</string>
+    <string name="follow_group_unknown">未知</string>
+    <string name="follow_group_offline">未开播</string>
+    <string name="status_live">直播中</string>
+    <string name="status_offline">未开播</string>
+    <string name="category_no_categories">暂无分类</string>
+    <string name="category_no_rooms">暂无房间</string>
+    <string name="history_title">历史记录</string>
+    <string name="history_empty">暂无观看记录</string>
+    <string name="history_platform_label">平台: %1$s</string>
+    <string name="mine_history">历史记录</string>
+    <string name="mine_account">账号管理</string>
+    <string name="mine_sync">数据同步</string>
+    <string name="mine_settings">设置</string>
+    <string name="mine_about">关于</string>
+    <string name="mine_version">My Live v%1$s</string>
+
+    <!-- Settings -->
+    <string name="settings_title">设置</string>
+    <string name="settings_danmu">弹幕设置</string>
+    <string name="settings_danmu_subtitle">弹幕显示、屏蔽与样式</string>
+    <string name="settings_play">播放设置</string>
+    <string name="settings_play_subtitle">画质、比例与解码方式</string>
+    <string name="settings_appearance">外观设置</string>
+    <string name="settings_appearance_subtitle">主题模式与颜色</string>
+    <string name="settings_follow">关注设置</string>
+    <string name="settings_follow_subtitle">自动刷新与更新策略</string>
+    <string name="settings_indexed">主页设置</string>
+    <string name="settings_indexed_subtitle">Tab排序与平台排序</string>
+    <string name="settings_playback_page">播放页设置</string>
+    <string name="settings_playback_page_subtitle">快捷面板与直播间自定义</string>
+    <string name="settings_auto_exit">自动退出</string>
+    <string name="settings_auto_exit_subtitle">定时退出与房间内退出</string>
+    <string name="settings_other">其他设置</string>
+    <string name="settings_other_subtitle">调试、日志与聊天样式</string>
+
+    <!-- Live Room -->
+    <string name="room_chat_hint">发个弹幕~</string>
+    <string name="room_chat_send">发送</string>
+    <string name="room_quality_sheet_title">选择画质</string>
+    <string name="room_quality_label">画质</string>
+    <string name="room_follow">关注</string>
+    <string name="room_following">已关注</string>
+    <string name="room_online_count">%1$d 人观看</string>
+
+    <!-- Account -->
+    <string name="account_title">账号管理</string>
+    <string name="account_bilibili">哔哩哔哩</string>
+    <string name="account_douyin">抖音</string>
+    <string name="account_clear_bilibili_cookie">清除B站Cookie</string>
+    <string name="account_clear_douyin_cookie">清除抖音 Cookie</string>
+    <string name="account_paste_bilibili_cookie">手动粘贴 Cookie</string>
+    <string name="account_paste_douyin_cookie">粘贴抖音 Cookie</string>
+    <string name="account_bilibili_cookie_input_title">输入 B站Cookie</string>
+    <string name="account_douyin_cookie_input_title">输入 抖音 Cookie</string>
+    <string name="account_cookie_placeholder">粘贴 Cookie 到此处</string>
+    <string name="account_status_logged_in">已登录</string>
+    <string name="account_status_logged_out">未登录</string>
+    <string name="action_confirm">确定</string>
+    <string name="action_cancel">取消</string>
+
+    <!-- Danmu Settings -->
+    <string name="danmu_enable_subtitle">开启后在直播画面中显示弹幕</string>
+    <string name="danmu_render_emoji_title">渲染表情</string>
+    <string name="danmu_render_emoji_subtitle">在弹幕中渲染平台表情图片</string>
+    <string name="danmu_hide_scroll_title">屏蔽滚动弹幕</string>
+    <string name="danmu_hide_bottom_title">屏蔽底部弹幕</string>
+    <string name="danmu_hide_top_title">屏蔽顶部弹幕</string>
+    <string name="danmu_size_title">弹幕字号</string>
+    <string name="danmu_speed_title">弹幕速度</string>
+    <string name="danmu_speed_fastest">最快</string>
+    <string name="danmu_speed_faster">较快</string>
+    <string name="danmu_speed_normal">正常</string>
+    <string name="danmu_speed_slower">较慢</string>
+    <string name="danmu_speed_slowest">最慢</string>
+    <string name="danmu_area_title">弹幕区域</string>
+    <string name="danmu_area_quarter">1/4屏</string>
+    <string name="danmu_area_third">1/3屏</string>
+    <string name="danmu_area_half">1/2屏</string>
+    <string name="danmu_area_two_thirds">2/3屏</string>
+    <string name="danmu_area_full">全屏</string>
+    <string name="danmu_font_weight_title">弹幕字重</string>
+    <string name="danmu_font_weight_thin">细体</string>
+    <string name="danmu_font_weight_normal">常规</string>
+    <string name="danmu_font_weight_medium">中粗</string>
+    <string name="danmu_font_weight_bold">粗体</string>
+    <string name="danmu_stroke_title">弹幕描边</string>
+    <string name="danmu_stroke_none">无描边</string>
+    <string name="danmu_stroke_thin">细描边</string>
+    <string name="danmu_stroke_medium">中描边</string>
+    <string name="danmu_stroke_thick">粗描边</string>
+
+    <!-- Play Settings -->
+    <string name="play_quality_title">画质选择</string>
+    <string name="play_quality_subtitle">选择默认播放画质</string>
+    <string name="play_quality_auto">自动</string>
+    <string name="play_quality_bluray">蓝光</string>
+    <string name="play_quality_ultra">超清</string>
+    <string name="play_quality_hd">高清</string>
+    <string name="play_quality_sd">标清</string>
+    <string name="play_quality_ld">流畅</string>
+    <string name="play_scale_title">画面比例</string>
+    <string name="play_scale_subtitle">调整视频画面显示比例</string>
+    <string name="play_scale_fill">填充</string>
+    <string name="play_scale_crop">裁剪</string>
+    <string name="play_scale_4_3">4:3</string>
+    <string name="play_scale_16_9">16:9</string>
+    <string name="play_hw_decode_title">硬件解码</string>
+    <string name="play_compat_title">兼容模式</string>
+    <string name="play_auto_pause_title">自动暂停</string>
+    <string name="play_auto_pause_subtitle">切换到后台时自动暂停播放</string>
+    <string name="play_bg_title">后台播放</string>
+    <string name="play_bg_subtitle">切换到后台时继续播放音频</string>
+    <string name="play_force_https_title">强制HTTPS</string>
+    <string name="value_enabled">开启</string>
+    <string name="value_disabled">关闭</string>
+
+    <!-- Appearance Settings -->
+    <string name="theme_mode_title">主题模式</string>
+    <string name="theme_mode_subtitle">切换亮色、暗色或跟随系统</string>
+    <string name="theme_mode_system">跟随系统</string>
+    <string name="theme_mode_light">亮色模式</string>
+    <string name="theme_mode_dark">暗色模式</string>
+    <string name="theme_color_title">自选主题强调色</string>
+    <string name="theme_color_selected">已选择</string>
+
+    <!-- Auto Exit -->
+    <string name="auto_exit_room_title">房间内自动退出</string>
+    <string name="auto_exit_room_never">不退出</string>
+    <string name="auto_exit_room_5m">5分钟</string>
+    <string name="auto_exit_room_10m">10分钟</string>
+    <string name="auto_exit_room_15m">15分钟</string>
+    <string name="auto_exit_room_30m">30分钟</string>
+    <string name="auto_exit_room_1h">1小时</string>
+
+    <!-- Other Settings -->
+    <string name="debug_mode_title">调试模式</string>
+    <string name="debug_mode_subtitle">开启后显示调试信息</string>
+    <string name="log_enable_subtitle">记录运行日志用于排查问题</string>
+    <string name="contribution_rank_subtitle">直播间贡献榜显示设置</string>
+    <string name="value_show">显示</string>
+    <string name="value_hide">隐藏</string>
+    <string name="value_newest">最新在上</string>
+    <string name="value_oldest">最早在上</string>
+    <string name="chat_text_size_title">聊天字号</string>
+    <string name="chat_text_size_subtitle">聊天消息文字大小</string>
+    <string name="chat_bubble_title">聊天气泡样式</string>
+    <string name="chat_bubble_subtitle">聊天消息气泡显示方式</string>
+    <string name="value_bubble">气泡</string>
+    <string name="value_simple">简洁</string>
+
+    <!-- Sync Hub -->
+    <string name="sync_title">数据同步</string>
+    <string name="sync_local_title">局域网同步</string>
+    <string name="sync_local_subtitle">通过局域网发现和同步设备</string>
+    <string name="sync_remote_title">远程同步房间</string>
+    <string name="sync_remote_subtitle">通过WebSocket远程同步</string>
+    <string name="sync_create_room_title">创建房间</string>
+    <string name="sync_create_room_subtitle">其他设备可以通过房间号/二维码加入</string>
+    <string name="sync_join_room_title">加入房间</string>
+    <string name="sync_join_room_subtitle">加入其他设备创建的同步房间</string>
+    <string name="sync_scan_action">扫一扫</string>
+
+    <string name="sync_webdav_subtitle">通过 WebDAV 服务器备份和恢复数据</string>
+    <string name="sync_profile_title">配置导入导出</string>
+    <string name="sync_profile_subtitle">将配置导出为文件或从文件导入</string>
+    <string name="webdav_title">WebDAV 同步</string>
+    <string name="webdav_server_url">服务器地址</string>
+    <string name="webdav_server_url_hint">https://dav.example.com/dav/</string>
+    <string name="webdav_username">用户名</string>
+    <string name="webdav_password">密码</string>
+    <string name="webdav_show">显示</string>
+    <string name="webdav_hide">隐藏</string>
+    <string name="webdav_save">保存配置</string>
+    <string name="webdav_last_backup">上次备份: %1$s</string>
+    <string name="webdav_last_recover">上次恢复: %1$s</string>
+    <string name="webdav_backup">备份到 WebDAV</string>
+    <string name="webdav_restore">从 WebDAV 恢复</string>
+    <string name="webdav_saved">WebDAV 配置已保存</string>
+    <string name="webdav_backup_ok">WebDAV 备份成功</string>
+    <string name="webdav_backup_failed">WebDAV 备份失败: %1$s</string>
+    <string name="webdav_restore_ok">WebDAV 恢复成功</string>
+    <string name="webdav_restore_failed">WebDAV 恢复失败: %1$s</string>
+    <string name="webdav_config_required">请先填写 WebDAV 服务器地址</string>
+    <string name="profile_title">配置导入导出</string>
+    <string name="profile_export">导出配置</string>
+    <string name="profile_import">导入配置</string>
+    <string name="profile_export_ok">导出成功</string>
+    <string name="profile_export_failed">导出失败: %1$s</string>
+    <string name="profile_import_ok">导入成功</string>
+    <string name="profile_import_failed">导入失败: %1$s</string>
+    <string name="profile_intro">可以将应用配置导出为 JSON 文件，或从文件导入配置。</string>
+    <string name="profile_warning">注意：账号 Cookie、WebDAV 密码等敏感数据不会被导出。</string>
+    <string name="profile_invalid_json">无效的配置文件</string>
+
+    <!-- Content descriptions (accessibility) -->
+    <string name="cd_back">返回</string>
+    <string name="cd_search">搜索</string>
+    <string name="cd_send">发送</string>
+    <string name="cd_delete">删除</string>
+
+    <!-- Account screen extras -->
+    <string name="account_status_label">登录状态</string>
+    <string name="account_logout">退出登录</string>
+    <string name="account_webview_login">WebView 登录</string>
+    <string name="account_webview_login_subtitle">通过内置浏览器登录B站</string>
+    <string name="account_cookie_login">Cookie 登录</string>
+    <string name="account_cookie_login_bilibili_subtitle">手动粘贴 Cookie</string>
+    <string name="account_cookie_login_douyin_subtitle">粘贴抖音 Cookie</string>
+    <string name="account_bilibili_section">B站 (哔哩哔哩)</string>
+    <string name="account_douyin_section">抖音</string>
+    <string name="account_cookie_label">Cookie</string>
+    <string name="account_bilibili_cookie_saved">B站 Cookie 已保存</string>
+    <string name="account_douyin_cookie_saved">抖音 Cookie 已保存</string>
+    <string name="account_bilibili_logged_out">B站 已退出登录</string>
+    <string name="account_douyin_logged_out">抖音 已退出登录</string>
+
+    <!-- Danmu option label arrays (displayed in SettingsMenu.value) -->
+    <string-array name="danmu_font_size_options">
+        <item>0.8x</item>
+        <item>0.9x</item>
+        <item>1.0x</item>
+        <item>1.1x</item>
+        <item>1.2x</item>
+        <item>1.3x</item>
+        <item>1.5x</item>
+    </string-array>
+    <string name="danmu_font_size_default">1.0x</string>
+    <string-array name="danmu_speed_options">
+        <item>慢</item>
+        <item>较慢</item>
+        <item>正常</item>
+        <item>较快</item>
+        <item>快</item>
+    </string-array>
+    <string name="danmu_speed_default">正常</string>
+    <string-array name="danmu_area_options">
+        <item>1/4屏</item>
+        <item>1/3屏</item>
+        <item>1/2屏</item>
+        <item>2/3屏</item>
+        <item>全屏</item>
+    </string-array>
+    <string name="danmu_area_default">1/2屏</string>
+    <string-array name="danmu_opacity_options">
+        <item>20%</item>
+        <item>40%</item>
+        <item>60%</item>
+        <item>80%</item>
+        <item>100%</item>
+    </string-array>
+    <string name="danmu_opacity_default">100%</string>
+    <string-array name="danmu_font_weight_options">
+        <item>细体</item>
+        <item>常规</item>
+        <item>中粗</item>
+        <item>粗体</item>
+    </string-array>
+    <string name="danmu_font_weight_default">常规</string>
+    <string-array name="danmu_stroke_options">
+        <item>无描边</item>
+        <item>细描边</item>
+        <item>中描边</item>
+        <item>粗描边</item>
+    </string-array>
+    <string name="danmu_stroke_default">中描边</string>
+    <string name="danmu_opacity_title">弹幕透明度</string>
+    <string name="danmu_switch_title">弹幕开关</string>
+
+    <!-- Play settings option arrays -->
+    <string-array name="play_quality_options">
+        <item>自动</item>
+        <item>蓝光</item>
+        <item>超清</item>
+        <item>高清</item>
+        <item>标清</item>
+        <item>流畅</item>
+    </string-array>
+    <string name="play_quality_default">自动</string>
+    <string-array name="play_scale_options">
+        <item>默认</item>
+        <item>填充</item>
+        <item>裁剪</item>
+        <item>4:3</item>
+        <item>16:9</item>
+    </string-array>
+    <string name="play_scale_default">默认</string>
+    <string-array name="play_hw_decode_options">
+        <item>开启</item>
+        <item>关闭</item>
+    </string-array>
+    <string name="play_hw_decode_subtitle">使用GPU加速解码视频</string>
+    <string name="play_compat_subtitle">遇到播放异常时可尝试开启</string>
+    <string name="play_force_https_subtitle">仅使用HTTPS协议加载直播流</string>
+
+    <!-- Appearance settings -->
+    <string-array name="theme_mode_options">
+        <item>跟随系统</item>
+        <item>亮色模式</item>
+        <item>暗色模式</item>
+    </string-array>
+    <string name="theme_mode_default">跟随系统</string>
+    <string name="dynamic_color_title">动态颜色</string>
+    <string name="dynamic_color_subtitle">使用Material You取色（Android 12+）</string>
+    <string name="theme_color_picker_title">主题色</string>
+    <string name="theme_color_picker_subtitle">自选主题强调色</string>
+
+    <!-- Auto exit settings -->
+    <string name="auto_exit_switch_title">自动退出开关</string>
+    <string name="auto_exit_switch_subtitle">到达设定时间后自动退出应用</string>
+    <string name="auto_exit_duration_title">退出时间</string>
+    <string name="auto_exit_duration_subtitle">应用运行多长时间后自动退出</string>
+    <string-array name="auto_exit_duration_options">
+        <item>15分钟</item>
+        <item>30分钟</item>
+        <item>45分钟</item>
+        <item>1小时</item>
+        <item>1.5小时</item>
+        <item>2小时</item>
+        <item>3小时</item>
+    </string-array>
+    <string name="auto_exit_duration_default">30分钟</string>
+    <string name="auto_exit_room_duration_title">房间内退出时间</string>
+    <string name="auto_exit_room_duration_subtitle">在直播间内停留多长时间后自动退出</string>
+    <string name="auto_exit_room_duration_default">不退出</string>
+    <string-array name="auto_exit_room_duration_options">
+        <item>不退出</item>
+        <item>5分钟</item>
+        <item>10分钟</item>
+        <item>15分钟</item>
+        <item>30分钟</item>
+        <item>1小时</item>
+    </string-array>
+
+    <!-- Other settings -->
+    <string name="log_enable_title">日志开关</string>
+    <string name="contribution_rank_title">贡献榜</string>
+    <string name="superchat_sort_title">SuperChat排序</string>
+    <string name="superchat_sort_subtitle">SuperChat消息排列顺序</string>
+    <string name="superchat_sort_newest">最新在前</string>
+    <string name="superchat_sort_oldest">最早在前</string>
+    <string-array name="chat_text_size_options">
+        <item>12sp</item>
+        <item>14sp</item>
+        <item>16sp</item>
+        <item>18sp</item>
+        <item>20sp</item>
+        <item>22sp</item>
+    </string-array>
+    <string name="chat_text_size_default">14sp</string>
+    <string name="chat_bubble_value_bubble">气泡</string>
+    <string name="chat_bubble_value_simple">简洁</string>
+
+    <!-- Parse Screen -->
+    <string name="parse_title">链接解析</string>
+    <string name="parse_jump_title">直播间跳转</string>
+    <string name="parse_jump_hint">输入或粘贴哔哩哔哩直播/虎牙直播/斗鱼直播/抖音直播的链接</string>
+    <string name="parse_jump_btn">链接跳转</string>
+    <string name="parse_url_title">获取直链</string>
+    <string name="parse_url_btn">获取直链</string>
+    <string name="parse_help_title">解析说明</string>
+    <string name="parse_help_text">支持以下类型的链接解析：
+
+哔哩哔哩：
+https://live.bilibili.com/xxxxx
+https://b23.tv/xxxxx
+
+虎牙直播：
+https://www.huya.com/xxxxx
+
+斗鱼直播：
+https://www.douyu.com/xxxxx
+https://www.douyu.com/topic/xxx?rid=xxx
+
+抖音直播：
+https://v.douyin.com/xxxxx
+https://live.douyin.com/xxxxx
+https://webcast.amemv.com/webcast/reflow/xxxxx</string>
+    <string name="parse_select_quality">选择清晰度</string>
+    <string name="parse_select_line">选择线路</string>
+    <string name="parse_copied">已复制直链到剪贴板</string>
+
+    <string name="settings_debug_log">调试日志</string>
+    <string name="settings_debug_log_subtitle">查看应用运行日志</string>
+
+    <!-- User Remarks -->
+    <string name="remark_title">用户备注</string>
+    <string name="remark_add">添加备注</string>
+    <string name="remark_edit">编辑备注</string>
+    <string name="remark_hint">输入备注内容</string>
+    <string name="remark_block_user">屏蔽该用户</string>
+    <string name="remark_copy_username">复制用户名</string>
+    <string name="remark_copy_message">复制弹幕内容</string>
+
+    <!-- Shield Settings Screen -->
+    <string name="shield_title">弹幕屏蔽设置</string>
+    <string name="shield_tab_keyword">关键词</string>
+    <string name="shield_tab_user">屏蔽用户</string>
+    <string name="shield_tab_preset">屏蔽预设</string>
+    <string name="shield_keyword_hint">输入弹幕过滤关键词</string>
+    <string name="shield_user_hint">输入要屏蔽的用户名</string>
+    <string name="shield_add">添加</string>
+    <string name="shield_clear">清空</string>
+    <string name="shield_clear_all">清空全部</string>
+    <string name="shield_clear_group">清空分组</string>
+    <string name="shield_preset_save">保存当前屏蔽为预设</string>
+    <string name="shield_preset_name_hint">输入预设名称</string>
+    <string name="shield_preset_apply">启用</string>
+    <string name="shield_preset_delete">删除</string>
+    <string name="shield_preset_import">导入预设</string>
+    <string name="shield_preset_export">导出预设</string>
+    <string name="shield_preset_copied">已复制预设 JSON 到剪贴板</string>
+    <string name="shield_preset_import_success">预设导入成功，已更新当前配置</string>
+    <string name="shield_preset_import_failed">导入失败，请检查 JSON 内容</string>
+    <string name="shield_preset_import_title">从剪贴板导入预设</string>
+    <string name="shield_preset_import_hint">请在此处粘贴导出的预设 JSON</string>
+</resources>

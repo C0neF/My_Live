@@ -1,0 +1,30 @@
+*.iml
+.DS_Store
+
+# Gradle / Android build output
+.gradle/
+.kotlin/
+/build/
+**/build/
+/captures/
+.externalNativeBuild/
+.cxx/
+
+# Local SDK / machine-specific config
+/local.properties
+local.properties
+
+# IDE local state
+/.idea/
+
+# Local agent / Codex workspace state
+/.agent/
+/.android-codex/
+/tmp/
+/docs/superpowers/
+
+# Node / Cloudflare local runtime state
+**/node_modules/
+**/.wrangler/
+**/*.log
+*.tsbuildinfo

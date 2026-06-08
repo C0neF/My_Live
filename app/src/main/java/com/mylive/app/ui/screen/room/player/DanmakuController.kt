@@ -13,6 +13,7 @@ import android.graphics.drawable.BitmapDrawable
 import android.util.LruCache
 import coil.Coil
 import coil.request.ImageRequest
+import com.mylive.app.core.common.buildPlayerDanmakuDisplaySpans
 import com.mylive.app.core.model.LiveMessage
 import com.mylive.app.core.model.LiveMessageSpan
 import com.mylive.app.core.model.LiveMessageType
@@ -140,21 +141,12 @@ class DanmakuController(private val context: Context) {
     private fun buildParts(msg: LiveMessage): List<DanmakuPart> {
         val parts = ArrayList<DanmakuPart>()
         val defaultColor = Color.rgb(msg.color.r, msg.color.g, msg.color.b)
-        val spans = msg.spans
-        if (!spans.isNullOrEmpty()) {
-            for (span in spans) {
-                when (span) {
-                    is LiveMessageSpan.Text -> parts.add(DanmakuPart.Text(span.text, defaultColor))
-                    is LiveMessageSpan.Image -> if (danmuRenderEmoji) {
-                        parts.add(DanmakuPart.Image(span.imageUrl))
-                    }
+        for (span in buildPlayerDanmakuDisplaySpans(msg, danmuRenderEmoji)) {
+            when (span) {
+                is LiveMessageSpan.Text -> parts.add(DanmakuPart.Text(span.text, defaultColor))
+                is LiveMessageSpan.Image -> {
+                    parts.add(DanmakuPart.Image(span.imageUrl))
                 }
-            }
-        } else {
-            val prefix = if (msg.userName.isEmpty()) "" else "${msg.userName}: "
-            parts.add(DanmakuPart.Text("$prefix${msg.message}", defaultColor))
-            if (danmuRenderEmoji) {
-                msg.imageUrls?.forEach { url -> parts.add(DanmakuPart.Image(url)) }
             }
         }
         return parts

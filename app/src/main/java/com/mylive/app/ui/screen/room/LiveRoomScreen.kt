@@ -2,6 +2,9 @@ package com.mylive.app.ui.screen.room
 
 import android.app.Activity
 import android.content.pm.ActivityInfo
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -48,6 +51,8 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import coil.compose.AsyncImage
 import com.mylive.app.R
+import com.mylive.app.core.common.buildLiveMessageDisplaySpans
+import com.mylive.app.core.common.normalizeLiveMessageDisplaySpans
 import com.mylive.app.core.model.LiveMessage
 import com.mylive.app.core.model.LiveMessageType
 import com.mylive.app.core.model.LiveMessageSpan
@@ -1175,6 +1180,8 @@ private fun QualityBottomSheet(
 
 // ── Chat Panel ──────────────────────────────────────────────────
 
+private const val ChatPanelMaxMessages = 200
+
 @Composable
 fun ChatPanel(
     messages: List<DisplayLiveMessage>,
@@ -1185,45 +1192,141 @@ fun ChatPanel(
     chatBubbleStyle: Boolean = false
 ) {
     val listState = rememberLazyListState()
-
-    // Whether the list is currently scrolled (about) to the bottom. Used to decide whether
-    // to auto-follow new messages so a user who scrolled up to read history isn't yanked back.
-    val isAtBottom by remember {
+    var previousLastMessageId by remember { mutableStateOf<Long?>(null) }
+    var autoScrollDisabled by remember { mutableStateOf(false) }
+    var showLatestButton by remember { mutableStateOf(false) }
+    var userTouchingChat by remember { mutableStateOf(false) }
+    var displayMessages by remember { mutableStateOf<List<DisplayLiveMessage>>(emptyList()) }
+    val coroutineScope = rememberCoroutineScope()
+    val isAtBottomNow by remember {
         derivedStateOf {
             val info = listState.layoutInfo
-            val last = info.visibleItemsInfo.lastOrNull()
-            last == null || last.index >= info.totalItemsCount - 2
+            val lastVisible = info.visibleItemsInfo.lastOrNull()
+            lastVisible == null || lastVisible.index >= info.totalItemsCount - 2
         }
     }
+    val firstVisibleItemIndex = listState.firstVisibleItemIndex
+    val firstVisibleItemScrollOffset = listState.firstVisibleItemScrollOffset
 
     // Key on the last message (not messages.size): once the ring buffer saturates at its cap,
     // size stays constant and a size-keyed effect would stop firing, freezing auto-scroll in
-    // busy rooms. Use instant scrollToItem (not animate) to avoid competing animations/jank.
-    LaunchedEffect(messages.lastOrNull()?.id, isAtBottom) {
-        if (messages.isNotEmpty() && isAtBottom) {
-            listState.scrollToItem(messages.size - 1)
+    // busy rooms. Auto-follow is controlled by user scroll state, matching dart_simple_live:
+    // once the user scrolls away, new messages show the latest button instead of pulling back.
+    LaunchedEffect(messages.lastOrNull()?.id, messages.size, autoScrollDisabled) {
+        val nextDisplayMessages = mergeChatDisplayMessages(
+            currentDisplay = displayMessages,
+            sourceMessages = messages,
+            autoScrollDisabled = autoScrollDisabled,
+            maxEnabledMessages = ChatPanelMaxMessages,
+            keyOf = { it.id }
+        )
+        displayMessages = nextDisplayMessages
+
+        if (nextDisplayMessages.isEmpty()) {
+            previousLastMessageId = null
+            autoScrollDisabled = false
+            showLatestButton = false
+            return@LaunchedEffect
+        }
+
+        val currentLastMessageId = messages.lastOrNull()?.id
+        if (shouldAutoScrollChat(
+                autoScrollDisabled = autoScrollDisabled,
+                hasMessages = nextDisplayMessages.isNotEmpty()
+            )
+        ) {
+            showLatestButton = false
+            withFrameNanos { }
+            listState.scrollToItem(nextDisplayMessages.lastIndex)
+        } else if (shouldShowLatestChatButton(
+                previousLastMessageId = previousLastMessageId,
+                currentLastMessageId = currentLastMessageId,
+                autoScrollDisabled = autoScrollDisabled
+            )
+        ) {
+            showLatestButton = true
+        }
+        previousLastMessageId = currentLastMessageId
+    }
+
+    LaunchedEffect(
+        isAtBottomNow,
+        userTouchingChat,
+        firstVisibleItemIndex,
+        firstVisibleItemScrollOffset
+    ) {
+        autoScrollDisabled = reduceChatAutoScrollDisabled(
+            currentDisabled = autoScrollDisabled,
+            isNearBottom = isAtBottomNow,
+            userScrolledAwayFromBottom = userTouchingChat && !isAtBottomNow
+        )
+        if (!autoScrollDisabled) {
+            showLatestButton = false
         }
     }
 
-    LazyColumn(
-        state = listState,
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp),
-        contentPadding = PaddingValues(vertical = 4.dp),
-        verticalArrangement = Arrangement.spacedBy(chatTextGap.dp)
-    ) {
-        items(
-            items = messages,
-            key = { it.id },
-            contentType = { it.message.type }
-        ) { item ->
-            ChatMessageItem(
-                message = item.message,
-                hostName = hostName,
-                chatTextSize = chatTextSize,
-                chatBubbleStyle = chatBubbleStyle
-            )
+    Box(modifier = modifier.fillMaxWidth()) {
+        LazyColumn(
+            state = listState,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 12.dp)
+                .pointerInput(Unit) {
+                    awaitEachGesture {
+                        awaitFirstDown(requireUnconsumed = false)
+                        userTouchingChat = true
+                        do {
+                            val event = awaitPointerEvent()
+                        } while (event.changes.any { it.pressed })
+                        userTouchingChat = false
+                    }
+                },
+            contentPadding = PaddingValues(vertical = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(chatTextGap.dp)
+        ) {
+            items(
+                items = displayMessages,
+                key = { it.id },
+                contentType = { it.message.type }
+            ) { item ->
+                ChatMessageItem(
+                    message = item.message,
+                    hostName = hostName,
+                    chatTextSize = chatTextSize,
+                    chatBubbleStyle = chatBubbleStyle
+                )
+            }
+        }
+
+        AnimatedVisibility(
+            visible = showLatestButton,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = 12.dp, bottom = 12.dp)
+        ) {
+            SmallFloatingActionButton(
+                onClick = {
+                    coroutineScope.launch {
+                        val latestMessages = messages.takeLast(ChatPanelMaxMessages)
+                        autoScrollDisabled = false
+                        displayMessages = latestMessages
+                        showLatestButton = false
+                        previousLastMessageId = messages.lastOrNull()?.id
+                        if (latestMessages.isNotEmpty()) {
+                            withFrameNanos { }
+                            listState.scrollToItem(latestMessages.lastIndex)
+                        }
+                    }
+                },
+                shape = CircleShape
+            ) {
+                Icon(
+                    imageVector = Icons.Default.KeyboardArrowDown,
+                    contentDescription = "滚动到最新弹幕"
+                )
+            }
         }
     }
 }
@@ -1238,23 +1341,29 @@ private fun ChatMessageItem(
     when (message.type) {
         LiveMessageType.CHAT -> {
             val isSystem = message.userName == "LiveSysMessage"
-            val userColor = remember(message.color) {
+            val liveMessageColor = remember(message.color) {
                 val r = (message.color.r / 255f).coerceIn(0f, 1f)
                 val g = (message.color.g / 255f).coerceIn(0f, 1f)
                 val b = (message.color.b / 255f).coerceIn(0f, 1f)
                 Color(r, g, b)
             }
-            val finalColor = remember(userColor) {
-                if (userColor == Color.Black || userColor == Color.White) {
-                    Color.Unspecified
-                } else {
-                    userColor
-                }
+            val colorPolicy = remember(message.color) {
+                resolveChatMessageColorPolicy(message.color)
+            }
+            val userNameColor = if (colorPolicy.applyMessageColorToUserName) {
+                liveMessageColor
+            } else {
+                Color.Unspecified
+            }
+            val messageTextColor = if (colorPolicy.applyMessageColorToText) {
+                liveMessageColor
+            } else {
+                Color.Unspecified
             }
 
             val isHost = message.userName.isNotEmpty() && message.userName == hostName
 
-            val (annotatedString, inlineContent) = remember(message, isHost, finalColor, isSystem) {
+            val (annotatedString, inlineContent) = remember(message, isHost, userNameColor, messageTextColor, isSystem) {
                 if (isSystem) {
                     AnnotatedString(message.message) to emptyMap<String, InlineTextContent>()
                 } else {
@@ -1289,19 +1398,26 @@ private fun ChatMessageItem(
                         }
                     }
 
-                    builder.withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = finalColor)) {
+                    builder.withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = userNameColor)) {
                         append(message.userName)
                     }
                     builder.withStyle(SpanStyle(color = Color.Gray)) {
                         append("：")
                     }
 
-                    val spans = message.spans
+                    val spans = normalizeLiveMessageDisplaySpans(
+                        message.spans ?: buildLiveMessageDisplaySpans(
+                            message = message.message,
+                            imageUrls = message.imageUrls
+                        )
+                    )
                     if (!spans.isNullOrEmpty()) {
                         spans.forEachIndexed { index, span ->
                             when (span) {
                                 is LiveMessageSpan.Text -> {
-                                    builder.append(span.text)
+                                    builder.withStyle(SpanStyle(color = messageTextColor)) {
+                                        append(span.text)
+                                    }
                                 }
                                 is LiveMessageSpan.Image -> {
                                     val id = "img_${index}"
@@ -1323,23 +1439,8 @@ private fun ChatMessageItem(
                             }
                         }
                     } else {
-                        builder.append(message.message)
-                        message.imageUrls?.forEachIndexed { index, url ->
-                            val id = "img_${index}"
-                            builder.appendInlineContent(id, "[图片]")
-                            inlineContentMap[id] = InlineTextContent(
-                                Placeholder(
-                                    width = 20.sp,
-                                    height = 20.sp,
-                                    placeholderVerticalAlign = PlaceholderVerticalAlign.Center
-                                )
-                            ) {
-                                EmojiImage(
-                                    url = url,
-                                    contentDescription = null,
-                                    modifier = Modifier.fillMaxSize()
-                                )
-                            }
+                        builder.withStyle(SpanStyle(color = messageTextColor)) {
+                            append(message.message)
                         }
                     }
                     builder.toAnnotatedString() to inlineContentMap

@@ -254,6 +254,8 @@ class LiveRoomViewModel @Inject constructor(
         if (!isActiveRoute(route)) return
         val routeSiteId = route.first
         val routeRoomId = route.second
+        applyAccountCookies()
+        if (!isActiveRoute(route)) return
         _uiState.value = LiveRoomUiState(isLoading = true)
         try {
             // Use siteId to directly locate the target site if available
@@ -352,6 +354,14 @@ class LiveRoomViewModel @Inject constructor(
             )
             playerController?.showError(message)
         }
+    }
+
+    private suspend fun applyAccountCookies() {
+        val bilibiliCookie = accountRepository.bilibiliCookie.first()
+        sites.filterIsInstance<BiliBiliSite>().forEach { it.cookie = bilibiliCookie }
+
+        val douyinCookie = accountRepository.douyinCookie.first()
+        sites.filterIsInstance<DouyinSite>().forEach { it.cookie = douyinCookie }
     }
 
     private suspend fun loadPlayQualities(detail: LiveRoomDetail, route: Pair<String, String>) {

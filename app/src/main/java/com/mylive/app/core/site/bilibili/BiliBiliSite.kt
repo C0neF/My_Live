@@ -41,7 +41,19 @@ class BiliBiliSite @Inject constructor(
     override val name: String = "哔哩哔哩直播"
 
     var cookie: String = ""
+        set(value) {
+            val nextCookie = value.trim()
+            if (field != nextCookie) {
+                buvid3 = ""
+                buvid4 = ""
+                accessId = ""
+                lastDanmakuArgs = null
+            }
+            field = nextCookie
+            userId = parseBilibiliUserIdFromCookie(nextCookie)
+        }
     var userId: Int = 0
+        private set
 
     private var buvid3: String = ""
     private var buvid4: String = ""

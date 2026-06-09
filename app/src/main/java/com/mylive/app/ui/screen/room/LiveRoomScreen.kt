@@ -1647,7 +1647,8 @@ private fun ChatMessageItem(
                     val spans = normalizeLiveMessageDisplaySpans(
                         message.spans ?: buildLiveMessageDisplaySpans(
                             message = message.message,
-                            imageUrls = message.imageUrls
+                            imageUrls = message.imageUrls,
+                            imageMap = message.imageMap
                         )
                     )
                     if (!spans.isNullOrEmpty()) {

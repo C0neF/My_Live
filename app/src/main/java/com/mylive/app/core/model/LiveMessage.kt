@@ -34,6 +34,13 @@ data class LiveMessage(
     val color: LiveMessageColor = LiveMessageColor.WHITE,
     val imageUrls: List<String>? = null,
     val spans: List<LiveMessageSpan>? = null,
+    /**
+     * Map of bracket-emoji text (e.g. "[微笑]") to image URL.
+     * When present, [buildLiveMessageDisplaySpans] uses key-based lookup
+     * instead of positional matching against [imageUrls], eliminating
+     * ordering and count-mismatch issues.
+     */
+    val imageMap: Map<String, String>? = null,
     // For ONLINE type: viewer count. For SUPER_CHAT: LiveSuperChatMessage.
     // Use typed accessors instead of dynamic.
     val onlineCount: Int? = null,

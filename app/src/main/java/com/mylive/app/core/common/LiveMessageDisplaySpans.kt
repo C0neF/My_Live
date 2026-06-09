@@ -9,8 +9,15 @@ private val LeadingBracketEmojiPlaceholderRegex = Regex("""^\s*\[[^\[\]\r\n]{1,3
 
 fun buildLiveMessageDisplaySpans(
     message: String,
-    imageUrls: List<String>?
+    imageUrls: List<String>?,
+    imageMap: Map<String, String>? = null
 ): List<LiveMessageSpan> {
+    // Prefer key-based lookup when an imageMap is available. This avoids
+    // ordering and count-mismatch bugs that arise from positional matching.
+    if (!imageMap.isNullOrEmpty()) {
+        return buildDisplaySpansFromMap(message, imageMap)
+    }
+
     val urls = imageUrls.orEmpty()
         .map { it.trim() }
         .filter { it.isNotEmpty() }
@@ -42,6 +49,46 @@ fun buildLiveMessageDisplaySpans(
     }
     while (imageIndex < urls.size) {
         spans.add(LiveMessageSpan.Image(urls[imageIndex++]))
+    }
+    return spans
+}
+
+/**
+ * Build display spans using a bracket-text → URL map.
+ *
+ * For each bracket placeholder found in the message text, looks up the URL by
+ * the exact bracket key (e.g. "[微笑]"). Placeholders without a map entry are
+ * emitted as plain text so the user still sees the bracket code rather than
+ * silently losing it.
+ */
+private fun buildDisplaySpansFromMap(
+    message: String,
+    imageMap: Map<String, String>
+): List<LiveMessageSpan> {
+    val spans = mutableListOf<LiveMessageSpan>()
+    val matches = BracketEmojiPlaceholderRegex.findAll(message).toList()
+    if (matches.isEmpty()) {
+        if (message.isNotEmpty()) spans.add(LiveMessageSpan.Text(message))
+        // Append any URLs not covered by a bracket pattern
+        return spans
+    }
+
+    var lastIndex = 0
+    for (match in matches) {
+        val bracket = match.value
+        val url = imageMap[bracket]
+        if (url != null) {
+            if (match.range.first > lastIndex) {
+                spans.add(LiveMessageSpan.Text(message.substring(lastIndex, match.range.first)))
+            }
+            spans.add(LiveMessageSpan.Image(url))
+            lastIndex = match.range.last + 1
+        }
+        // If no URL for this bracket, leave it as plain text (advance lastIndex past it)
+    }
+
+    if (lastIndex < message.length) {
+        spans.add(LiveMessageSpan.Text(message.substring(lastIndex)))
     }
     return spans
 }
@@ -106,7 +153,7 @@ internal fun buildPlayerDanmakuDisplaySpans(
     }
 
     return if (renderEmoji) {
-        buildLiveMessageDisplaySpans(message.message, message.imageUrls)
+        buildLiveMessageDisplaySpans(message.message, message.imageUrls, message.imageMap)
     } else if (message.message.isEmpty()) {
         emptyList()
     } else {

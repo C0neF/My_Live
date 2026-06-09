@@ -187,14 +187,15 @@ class BiliBiliDanmaku(private val webSocketUtils: WebSocketUtils) : LiveDanmaku 
                     val info2 = info.optJSONArray(2)
                     if (info2 != null && info2.length() != 0) {
                         val username = info2.opt(1).toString()
-                        val imageUrls = extractImageUrls(info, message)
+                        val imageMap = extractImageMap(info, message)
                         val liveMsg = LiveMessage(
                             type = LiveMessageType.CHAT,
                             userName = username,
                             message = message,
                             color = if (color == 0) LiveMessageColor.WHITE
                             else LiveMessageColor.numberToColor(color),
-                            imageUrls = imageUrls.ifEmpty { null }
+                            imageUrls = imageMap.values.toList().ifEmpty { null },
+                            imageMap = imageMap.ifEmpty { null }
                         )
                         onMessage?.invoke(liveMsg)
                     }
@@ -227,32 +228,36 @@ class BiliBiliDanmaku(private val webSocketUtils: WebSocketUtils) : LiveDanmaku 
     }
 
     /**
-     * Extract image/emoticon URLs from the danmaku info array.
+     * Build a bracket-text → image-URL map from the danmaku info array.
      *
-     * Checks two locations in the info structure:
-     * 1. info[0][13]["url"] - emoticon URL from the danmaku metadata
-     * 2. info[0][15]["extra"] - JSON string containing "emots" map with emoticon URLs
-     *    (only includes emoticons whose key appears in the message text)
+     * Checks two locations:
+     * 1. info[0][15]["extra"] - JSON string with "emots" map. Each key is a bracket
+     *    placeholder (e.g. "[微笑]") and its value contains the CDN URL. This is the
+     *    primary source for inline emoji.
+     * 2. info[0][13]["url"] - single sticker URL. Used as fallback when no emots entry
+     *    covers a bracket pattern in the message.
+     *
+     * Returns a map so the display layer can look up URLs by bracket text instead of
+     * relying on positional matching, which breaks when JSONObject.keys() returns an
+     * arbitrary order or when .distinct() collapses duplicate URLs.
      */
-    private fun extractImageUrls(info: org.json.JSONArray, message: String): List<String> {
-        val urls = mutableListOf<String>()
+    private fun extractImageMap(info: org.json.JSONArray, message: String): Map<String, String> {
+        val map = mutableMapOf<String, String>()
+        var stickerUrl: String? = null
 
-        fun addUrl(url: String?) {
-            val value = url?.trim() ?: return
-            if (value.isEmpty()) return
-            urls.add(value)
-        }
-
+        // Source 1: info[0][13] — single large sticker URL (fallback only)
         try {
             val info0 = info.optJSONArray(0)
             if (info0 != null && info0.length() > 13) {
                 val info0_13 = info0.optJSONObject(13)
                 if (info0_13 != null) {
-                    addUrl(info0_13.optString("url", ""))
+                    val url = info0_13.optString("url", "").trim()
+                    if (url.isNotEmpty()) stickerUrl = url
                 }
             }
         } catch (_: Exception) {}
 
+        // Source 2: info[0][15].extra.emots — inline emoji map (primary source)
         try {
             val info0 = info.optJSONArray(0)
             if (info0 != null && info0.length() > 15) {
@@ -264,12 +269,11 @@ class BiliBiliDanmaku(private val webSocketUtils: WebSocketUtils) : LiveDanmaku 
                         val emots = extraObj.optJSONObject("emots")
                         if (emots != null) {
                             for (key in emots.keys()) {
-                                if (key.isNotEmpty() && !message.contains(key)) {
-                                    continue
-                                }
+                                if (key.isEmpty() || !message.contains(key)) continue
                                 val emot = emots.optJSONObject(key)
-                                if (emot != null) {
-                                    addUrl(emot.optString("url", ""))
+                                val url = emot?.optString("url", "")?.trim() ?: ""
+                                if (url.isNotEmpty()) {
+                                    map[key] = url
                                 }
                             }
                         }
@@ -278,6 +282,18 @@ class BiliBiliDanmaku(private val webSocketUtils: WebSocketUtils) : LiveDanmaku 
             }
         } catch (_: Exception) {}
 
-        return urls.distinct()
+        // Fallback: if a bracket pattern in the message has no emots entry but a
+        // sticker URL exists from info[0][13], assign it to uncovered brackets.
+        if (stickerUrl != null) {
+            val bracketRegex = Regex("\\[[^\\[\\]]{1,32}]")
+            for (match in bracketRegex.findAll(message)) {
+                val bracket = match.value
+                if (!map.containsKey(bracket)) {
+                    map[bracket] = stickerUrl
+                }
+            }
+        }
+
+        return map
     }
 }

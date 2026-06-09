@@ -278,8 +278,9 @@ class DouyinDanmaku(
      *
      * For each TextPiece:
      * - stringValue -> text span
-     * - patternRefValue.defaultPattern -> text span
-     * - imageValue.image -> image span (with fallback to text if no URL)
+     * - imageValue.image -> image span (patternRefValue is the emoji placeholder
+     *   and is intentionally skipped when the image resolves; used as fallback
+     *   text only when image URL extraction fails)
      */
     private fun extractRtfSpans(chatMessage: DouyinProto.ChatMessageData): List<LiveMessageSpan> {
         val spans = mutableListOf<LiveMessageSpan>()
@@ -290,12 +291,9 @@ class DouyinDanmaku(
             if (piece.stringValue.trim().isNotEmpty()) {
                 spans.add(LiveMessageSpan.Text(piece.stringValue))
             }
-            // Pattern reference (e.g. emoji placeholder)
-            val pattern = piece.patternRefValue?.trim()
-            if (!pattern.isNullOrEmpty()) {
-                spans.add(LiveMessageSpan.Text(pattern))
-            }
-            // Image value
+            // Image value — patternRefValue (e.g. "[表情]") is the placeholder
+            // for this image piece. Only emit it as text when no image URL is
+            // available, preventing orphaned "[表情]" next to the rendered emoji.
             val imageData = piece.imageValue
             if (imageData != null) {
                 val imageUrl = extractImageUrl(imageData)
@@ -303,10 +301,22 @@ class DouyinDanmaku(
                     spans.add(LiveMessageSpan.Image(imageUrl))
                     continue
                 }
-                // Fallback to text description
-                val fallback = extractImageFallbackText(imageData)
-                if (fallback != null) {
-                    spans.add(LiveMessageSpan.Text(fallback))
+                // Image URL unavailable — fall back to the bracket placeholder
+                // so the user still sees something meaningful (e.g. "[微笑]").
+                val pattern = piece.patternRefValue?.trim()
+                if (!pattern.isNullOrEmpty()) {
+                    spans.add(LiveMessageSpan.Text(pattern))
+                } else {
+                    val fallback = extractImageFallbackText(imageData)
+                    if (fallback != null) {
+                        spans.add(LiveMessageSpan.Text(fallback))
+                    }
+                }
+            } else {
+                // No image piece — emit patternRefValue as plain text.
+                val pattern = piece.patternRefValue?.trim()
+                if (!pattern.isNullOrEmpty()) {
+                    spans.add(LiveMessageSpan.Text(pattern))
                 }
             }
         }

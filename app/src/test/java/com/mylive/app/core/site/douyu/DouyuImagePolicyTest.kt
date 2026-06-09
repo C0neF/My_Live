@@ -29,7 +29,24 @@ class DouyuImagePolicyTest {
     }
 
     @Test
-    fun roomFaceUrlFallsBackToCoverWhenListResponseHasNoAvatar() {
+    fun roomFaceUrlUsesDouyuListAvatarField() {
+        val item = JSONObject(
+            """
+            {
+              "av": "https://apic.douyucdn.cn/upload/avatar_v3/202606/avatar_middle.jpg",
+              "rs16": "https://rpic.douyucdn.cn/live-cover.jpg"
+            }
+            """.trimIndent()
+        )
+
+        assertEquals(
+            "https://apic.douyucdn.cn/upload/avatar_v3/202606/avatar_middle.jpg",
+            resolveDouyuRoomFaceUrl(item)
+        )
+    }
+
+    @Test
+    fun roomFaceUrlDoesNotFallbackToCoverWhenListResponseHasNoAvatar() {
         val item = JSONObject(
             """
             {
@@ -41,7 +58,7 @@ class DouyuImagePolicyTest {
         )
 
         assertEquals(
-            "https://rpic.douyucdn.cn/live-cover.jpg",
+            "",
             resolveDouyuRoomFaceUrl(item)
         )
     }

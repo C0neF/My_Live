@@ -122,7 +122,7 @@ fun QuickAccessPanel(
     currentRoomId: String,
     currentCategoryId: String?,
     extraTabs: List<QuickAccessExtraTab> = emptyList(),
-    onNavigateToRoom: (siteId: String, roomId: String) -> Unit,
+    onNavigateToRoom: (siteId: String, roomId: String, initialIsFollowing: Boolean?) -> Unit,
     onDismiss: () -> Unit,
     viewModel: QuickAccessViewModel = hiltViewModel()
 ) {
@@ -323,7 +323,7 @@ private fun QuickAccessIslandTab(
 @Composable
 private fun FollowQuickPanel(
     viewModel: QuickAccessViewModel,
-    onNavigateToRoom: (siteId: String, roomId: String) -> Unit
+    onNavigateToRoom: (siteId: String, roomId: String, initialIsFollowing: Boolean?) -> Unit
 ) {
     val follows by viewModel.follows.collectAsStateWithLifecycle()
     var filterIndex by remember { mutableIntStateOf(0) }
@@ -363,7 +363,7 @@ private fun FollowQuickPanel(
                 items(filteredFollows, key = { it.id }) { user ->
                     FollowQuickItem(
                         user = user,
-                        onClick = { onNavigateToRoom(user.siteId, user.roomId) }
+                        onClick = { onNavigateToRoom(user.siteId, user.roomId, true) }
                     )
                     HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
                 }
@@ -426,7 +426,7 @@ private fun FollowQuickItem(user: FollowUserEntity, onClick: () -> Unit) {
 @Composable
 private fun HistoryQuickPanel(
     viewModel: QuickAccessViewModel,
-    onNavigateToRoom: (siteId: String, roomId: String) -> Unit
+    onNavigateToRoom: (siteId: String, roomId: String, initialIsFollowing: Boolean?) -> Unit
 ) {
     val history by viewModel.history.collectAsStateWithLifecycle()
     var deleteConfirmId by remember { mutableStateOf<String?>(null) }
@@ -440,7 +440,7 @@ private fun HistoryQuickPanel(
             items(history, key = { it.id }) { item ->
                 HistoryQuickItem(
                     item = item,
-                    onClick = { onNavigateToRoom(item.siteId, item.roomId) },
+                    onClick = { onNavigateToRoom(item.siteId, item.roomId, null) },
                     onLongClick = { deleteConfirmId = item.id }
                 )
                 HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
@@ -507,7 +507,7 @@ private fun RecommendationQuickPanel(
     currentSiteId: String,
     currentRoomId: String,
     currentCategoryId: String?,
-    onNavigateToRoom: (siteId: String, roomId: String) -> Unit
+    onNavigateToRoom: (siteId: String, roomId: String, initialIsFollowing: Boolean?) -> Unit
 ) {
     val recommendations by viewModel.recommendations.collectAsStateWithLifecycle()
     val loading by viewModel.recLoading.collectAsStateWithLifecycle()
@@ -542,7 +542,7 @@ private fun RecommendationQuickPanel(
                 items(filtered, key = { it.roomId }) { room ->
                     RecommendationQuickItem(
                         room = room,
-                        onClick = { onNavigateToRoom(currentSiteId, room.roomId) }
+                        onClick = { onNavigateToRoom(currentSiteId, room.roomId, null) }
                     )
                     HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
                 }

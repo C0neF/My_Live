@@ -31,6 +31,7 @@ import javax.inject.Provider
 import javax.inject.Singleton
 
 private val DOUYU_AVATAR_KEYS = listOf(
+    "av",
     "avatar",
     "avatar_mid",
     "owner_avatar",
@@ -51,8 +52,7 @@ private val DOUYU_COVER_KEYS = listOf(
 )
 
 internal fun resolveDouyuRoomFaceUrl(item: JSONObject): String {
-    return firstJsonImageUrlByKeys(item, DOUYU_AVATAR_KEYS)
-        ?: resolveDouyuRoomCoverUrl(item)
+    return firstJsonImageUrlByKeys(item, DOUYU_AVATAR_KEYS).orEmpty()
 }
 
 internal fun resolveDouyuRoomCoverUrl(item: JSONObject): String {
@@ -200,7 +200,12 @@ class DouyuSite @Inject constructor(
             )
         }
 
-        val hasMore = page < data.optInt("pgcnt")
+        val pageCount = data.optInt("pgcnt")
+        val hasMore = if (pageCount > 0) {
+            page < pageCount
+        } else {
+            items.isNotEmpty()
+        }
         return LiveCategoryResult(hasMore = hasMore, items = items)
     }
 

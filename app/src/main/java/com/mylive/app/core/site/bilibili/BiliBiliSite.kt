@@ -276,32 +276,36 @@ class BiliBiliSite @Inject constructor(
     }
 
     override suspend fun getRecommendRooms(page: Int): LiveCategoryResult {
-        val baseUrl =
-            "https://api.live.bilibili.com/xlive/web-interface/v1/second/getListByArea"
-        val url = "$baseUrl?platform=web&sort=online&page_size=30&page=$page"
-
-        val queryParams = getWbiSign(url)
-
         val result = httpClient.getJson(
-            baseUrl,
-            queryParameters = queryParams,
+            "https://api.live.bilibili.com/room/v1/Area/getRoomList",
+            queryParameters = mapOf(
+                "platform" to "web",
+                "page" to page.toString(),
+                "page_size" to "30"
+            ),
             header = getHeader()
         ) as JSONObject
 
-        val list = result.getJSONObject("data").getJSONArray("list")
-        val hasMore = list.length() > 0
+        val list = result.optJSONArray("data")
+        val hasMore = list != null && list.length() >= 30
         val items = mutableListOf<LiveRoomItem>()
-        for (i in 0 until list.length()) {
-            val item = list.getJSONObject(i)
-            val roomItem = LiveRoomItem(
-                roomId = item.optStringValue("roomid"),
-                title = item.optString("title", ""),
-                cover = "${item.optString("cover", "")}@400w.jpg",
-                userName = item.optString("uname", ""),
-                faceUrl = item.optString("face", ""),
-                online = item.optStringValue("online").toIntOrNull() ?: 0
-            )
-            items.add(roomItem)
+        if (list != null) {
+            for (i in 0 until list.length()) {
+                val item = list.getJSONObject(i)
+                val cover = item.optNullableStringValue("cover")
+                    ?: item.optNullableStringValue("user_cover")
+                    ?: item.optNullableStringValue("system_cover")
+                    ?: ""
+                val roomItem = LiveRoomItem(
+                    roomId = item.optStringValue("roomid"),
+                    title = item.optString("title", ""),
+                    cover = if (cover.isEmpty()) "" else "$cover@400w.jpg",
+                    userName = item.optString("uname", ""),
+                    faceUrl = item.optString("face", ""),
+                    online = item.optStringValue("online").toIntOrNull() ?: 0
+                )
+                items.add(roomItem)
+            }
         }
         return LiveCategoryResult(hasMore = hasMore, items = items)
     }

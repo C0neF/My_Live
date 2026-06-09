@@ -5,6 +5,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 
 class HomeLoadingPolicyTest {
 
@@ -37,6 +38,52 @@ class HomeLoadingPolicyTest {
         )
 
         assertFalse(shouldShowHomeInitialLoading(state, suppressInitialLoadingEffect = false))
+    }
+
+    @Test
+    fun loadMoreShowsRoomCardSkeletonsOnlyWhenAppending() {
+        val room = LiveRoomItem(
+            roomId = "1",
+            title = "Loaded room",
+            cover = "",
+            userName = "Anchor"
+        )
+
+        assertEquals(
+            4,
+            homeLoadMoreSkeletonItemCount(HomeUiState(isLoading = true, rooms = listOf(room)))
+        )
+        assertEquals(
+            0,
+            homeLoadMoreSkeletonItemCount(HomeUiState(isLoading = true, rooms = emptyList()))
+        )
+        assertEquals(
+            0,
+            homeLoadMoreSkeletonItemCount(HomeUiState(isLoading = false, rooms = listOf(room)))
+        )
+    }
+
+    @Test
+    fun loadMoreUsesSkeletonCardsInsteadOfCircularIndicator() {
+        val source = File("src/main/java/com/mylive/app/ui/screen/home/HomeScreen.kt").readText()
+
+        assertTrue(source.contains("LiveRoomCardSkeleton("))
+        assertFalse(source.contains("CircularProgressIndicator("))
+    }
+
+    @Test
+    fun backToTopButtonShowsOnlyWhenHomeListIsScrolledWithRooms() {
+        assertTrue(homeBackToTopButtonVisible(isAtTop = false, hasRooms = true))
+        assertFalse(homeBackToTopButtonVisible(isAtTop = true, hasRooms = true))
+        assertFalse(homeBackToTopButtonVisible(isAtTop = false, hasRooms = false))
+    }
+
+    @Test
+    fun homeBackToTopButtonUsesSharedCircularControl() {
+        val source = File("src/main/java/com/mylive/app/ui/screen/home/HomeScreen.kt").readText()
+
+        assertTrue(source.contains("BackToTopButton("))
+        assertFalse(source.contains("SmallFloatingActionButton("))
     }
 
     @Test

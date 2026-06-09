@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -30,12 +31,19 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mylive.app.ui.navigation.Navigator
 import com.mylive.app.ui.navigation.Route
 import com.mylive.app.R
+import com.mylive.app.ui.component.BackToTopButton
 import com.mylive.app.ui.component.LiveRoomGridMinCellWidth
 import com.mylive.app.ui.component.LiveRoomCard
+import com.mylive.app.ui.component.backToTopButtonMetrics
 import com.mylive.app.ui.component.status.EmptyState
 import com.mylive.app.ui.component.status.ErrorState
+import com.mylive.app.ui.component.status.LiveRoomCardSkeleton
 import com.mylive.app.ui.component.status.LiveRoomGridSkeleton
 import com.mylive.app.ui.motion.AppMotion
+import com.mylive.app.ui.screen.backToTopButtonVisible
+import com.mylive.app.ui.screen.isScrollableContentAtTop
+import com.mylive.app.ui.theme.livePlatformAccentColor
+import com.mylive.app.ui.theme.livePlatformOnAccentColor
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
@@ -51,10 +59,22 @@ fun HomeScreen(
     suppressInitialLoadingEffect: Boolean = false,
     refreshSignal: Int = 0,
     onInitialLoadingEffectSettled: () -> Unit = {},
+    onPlatformAccentColorChange: (Color?) -> Unit = {},
+    onRevealBottomBar: () -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val siteTabs by viewModel.siteTabs.collectAsStateWithLifecycle()
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+    val activePlatformAccentColor = homePlatformAccentColor(siteTabs.getOrNull(selectedTab)?.id.orEmpty())
+    val titleColor by animateColorAsState(
+        targetValue = activePlatformAccentColor ?: MaterialTheme.colorScheme.primary,
+        label = "homeTitleColor"
+    )
+
+    LaunchedEffect(activePlatformAccentColor) {
+        onPlatformAccentColorChange(activePlatformAccentColor)
+    }
 
     LaunchedEffect(suppressInitialLoadingEffect, uiState.isLoading, uiState.rooms.size) {
         if (suppressInitialLoadingEffect && (!uiState.isLoading || uiState.rooms.isNotEmpty())) {
@@ -86,7 +106,7 @@ fun HomeScreen(
                     fontWeight = FontWeight.ExtraBold,
                     letterSpacing = 0.5.sp
                 ),
-                color = MaterialTheme.colorScheme.primary
+                color = titleColor
             )
 
             Spacer(modifier = Modifier.width(12.dp))
@@ -130,7 +150,6 @@ fun HomeScreen(
         }
 
         // Platform selector: show all platforms and let the content pager handle swipes.
-        val siteTabs by viewModel.siteTabs.collectAsStateWithLifecycle()
         val pagerState = rememberPagerState(initialPage = 0, pageCount = { siteTabs.size })
         val coroutineScope = rememberCoroutineScope()
         val platformLayout = remember(siteTabs, selectedTab) {
@@ -171,6 +190,7 @@ fun HomeScreen(
             ) {
                 platformLayout.secondarySiteIndices.forEach { siteIndex ->
                     HomePlatformChip(
+                        platformId = siteTabs[siteIndex].id,
                         name = homePlatformDisplayName(siteTabs[siteIndex].name),
                         isSelected = platformLayout.primarySiteIndex == siteIndex,
                         modifier = Modifier
@@ -216,6 +236,7 @@ fun HomeScreen(
             HomeRoomsPage(
                 uiState = pageState,
                 suppressInitialLoadingEffect = suppressInitialLoadingEffect && page == selectedTab,
+                onRevealBottomBar = onRevealBottomBar,
                 onRefresh = {
                     if (page == selectedTab) {
                         viewModel.refresh()
@@ -250,11 +271,37 @@ fun HomeScreen(
 private fun HomeRoomsPage(
     uiState: HomeUiState,
     suppressInitialLoadingEffect: Boolean,
+    onRevealBottomBar: () -> Unit,
     onRefresh: () -> Unit,
     onRetry: () -> Unit,
     onLoadMore: () -> Unit,
     onRoomClick: (String) -> Unit
 ) {
+    val gridState = rememberLazyGridState()
+    val coroutineScope = rememberCoroutineScope()
+    var isAtTop by remember { mutableStateOf(true) }
+
+    LaunchedEffect(uiState.rooms.isEmpty()) {
+        if (uiState.rooms.isEmpty()) {
+            isAtTop = true
+        }
+    }
+
+    LaunchedEffect(gridState, uiState.rooms.isNotEmpty()) {
+        if (uiState.rooms.isNotEmpty()) {
+            snapshotFlow {
+                isScrollableContentAtTop(
+                    firstVisibleItemIndex = gridState.firstVisibleItemIndex,
+                    firstVisibleItemScrollOffset = gridState.firstVisibleItemScrollOffset
+                )
+            }
+                .distinctUntilChanged()
+                .collect {
+                    isAtTop = it
+                }
+        }
+    }
+
     PullToRefreshBox(
         isRefreshing = uiState.isRefreshing,
         onRefresh = onRefresh,
@@ -286,6 +333,7 @@ private fun HomeRoomsPage(
             else -> {
                 LazyVerticalGrid(
                     columns = GridCells.Adaptive(LiveRoomGridMinCellWidth),
+                    state = gridState,
                     contentPadding = PaddingValues(
                         start = 16.dp,
                         top = 8.dp,
@@ -313,48 +361,62 @@ private fun HomeRoomsPage(
                             }
                         }
                     }
-                    if (uiState.isLoading && uiState.rooms.isNotEmpty()) {
-                        item {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(16.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(24.dp),
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                            }
+                    val loadMoreSkeletonItemCount = homeLoadMoreSkeletonItemCount(uiState)
+                    if (loadMoreSkeletonItemCount > 0) {
+                        items(
+                            count = loadMoreSkeletonItemCount,
+                            key = { "home-load-more-skeleton-$it" }
+                        ) {
+                            LiveRoomCardSkeleton()
                         }
                     }
                 }
             }
+        }
+
+        if (homeBackToTopButtonVisible(isAtTop = isAtTop, hasRooms = uiState.rooms.isNotEmpty())) {
+            val metrics = backToTopButtonMetrics()
+            BackToTopButton(
+                onClick = {
+                    onRevealBottomBar()
+                    coroutineScope.launch {
+                        gridState.animateScrollToItem(0)
+                    }
+                },
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = metrics.endPaddingDp.dp, bottom = metrics.bottomPaddingDp.dp)
+            )
         }
     }
 }
 
 @Composable
 private fun HomePlatformChip(
+    platformId: String,
     name: String,
     isSelected: Boolean,
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
+    val selectedContainerColor = MaterialTheme.colorScheme.primary
+    val unselectedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)
     val containerColor by animateColorAsState(
-        targetValue = if (isSelected) {
-            MaterialTheme.colorScheme.primary
-        } else {
-            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)
-        },
+        targetValue = homePlatformChipContainerColor(
+            platformId = platformId,
+            selectedContainerColor = selectedContainerColor,
+            unselectedContainerColor = unselectedContainerColor,
+            isSelected = isSelected
+        ),
         label = "containerColor"
     )
     val contentColor by animateColorAsState(
-        targetValue = if (isSelected) {
-            MaterialTheme.colorScheme.onPrimary
-        } else {
-            MaterialTheme.colorScheme.onSurfaceVariant
-        },
+        targetValue = homePlatformChipContentColor(
+            platformId = platformId,
+            selectedContentColor = MaterialTheme.colorScheme.onPrimary,
+            unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            isSelected = isSelected
+        ),
         label = "contentColor"
     )
 
@@ -398,6 +460,14 @@ internal fun shouldShowHomeInitialLoading(
     return uiState.isLoading && uiState.rooms.isEmpty() && !suppressInitialLoadingEffect
 }
 
+internal fun homeLoadMoreSkeletonItemCount(uiState: HomeUiState): Int {
+    return if (uiState.isLoading && uiState.rooms.isNotEmpty()) 4 else 0
+}
+
+internal fun homeBackToTopButtonVisible(isAtTop: Boolean, hasRooms: Boolean): Boolean {
+    return backToTopButtonVisible(isAtTop = isAtTop, hasItems = hasRooms)
+}
+
 internal fun homePlatformSelectorLayout(
     siteTabs: List<com.mylive.app.core.site.LiveSite>,
     selectedIndex: Int
@@ -421,6 +491,34 @@ internal fun homePlatformDisplayName(siteName: String): String {
         return "哔哩哔哩"
     }
     return siteName
+}
+
+internal fun homePlatformAccentColor(platformId: String): Color? {
+    return livePlatformAccentColor(platformId)
+}
+
+internal fun homePlatformChipContainerColor(
+    platformId: String,
+    selectedContainerColor: Color,
+    unselectedContainerColor: Color,
+    isSelected: Boolean
+): Color {
+    if (!isSelected) {
+        return unselectedContainerColor
+    }
+    return homePlatformAccentColor(platformId) ?: selectedContainerColor
+}
+
+internal fun homePlatformChipContentColor(
+    platformId: String,
+    selectedContentColor: Color,
+    unselectedContentColor: Color,
+    isSelected: Boolean
+): Color {
+    if (!isSelected) {
+        return unselectedContentColor
+    }
+    return livePlatformOnAccentColor(platformId, selectedContentColor)
 }
 
 internal fun homeLiveRoomRoute(

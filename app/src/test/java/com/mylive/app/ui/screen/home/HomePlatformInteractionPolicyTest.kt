@@ -1,5 +1,6 @@
 package com.mylive.app.ui.screen.home
 
+import androidx.compose.ui.graphics.Color
 import com.mylive.app.core.model.LiveCategory
 import com.mylive.app.core.model.LiveCategoryResult
 import com.mylive.app.core.model.LiveContributionRankItem
@@ -61,6 +62,68 @@ class HomePlatformInteractionPolicyTest {
         assertEquals("虎牙直播", homePlatformDisplayName("虎牙直播"))
         assertEquals("抖音直播", homePlatformDisplayName("抖音直播"))
         assertEquals("其它平台", homePlatformDisplayName("其它平台"))
+    }
+
+    @Test
+    fun platformAccentUsesRequestedBrandColors() {
+        assertEquals(Color(0xFFFF5D23), homePlatformAccentColor("douyu"))
+        assertEquals(Color(0xFFFFD736), homePlatformAccentColor("huya"))
+        assertEquals(null, homePlatformAccentColor("douyin"))
+        assertEquals(Color(0xFFF07775), homePlatformAccentColor("bilibili"))
+    }
+
+    @Test
+    fun platformChipUsesBrandBackgroundOnlyWhenSelected() {
+        val selectedFallback = Color.Blue
+        val unselectedFallback = Color.Gray
+
+        assertEquals(
+            Color(0xFFFF5D23),
+            homePlatformChipContainerColor("douyu", selectedFallback, unselectedFallback, isSelected = true)
+        )
+        assertEquals(
+            Color(0xFFFFD736),
+            homePlatformChipContainerColor("huya", selectedFallback, unselectedFallback, isSelected = true)
+        )
+        assertEquals(
+            selectedFallback,
+            homePlatformChipContainerColor("douyin", selectedFallback, unselectedFallback, isSelected = true)
+        )
+        assertEquals(
+            Color(0xFFF07775),
+            homePlatformChipContainerColor("bilibili", selectedFallback, unselectedFallback, isSelected = true)
+        )
+        assertEquals(
+            unselectedFallback,
+            homePlatformChipContainerColor("douyu", selectedFallback, unselectedFallback, isSelected = false)
+        )
+    }
+
+    @Test
+    fun platformChipUsesReadableContentColorOnBrandBackgrounds() {
+        val selectedFallback = Color.White
+        val unselectedFallback = Color.Gray
+
+        assertEquals(
+            Color.Black,
+            homePlatformChipContentColor("douyu", selectedFallback, unselectedFallback, isSelected = true)
+        )
+        assertEquals(
+            unselectedFallback,
+            homePlatformChipContentColor("huya", selectedFallback, unselectedFallback, isSelected = false)
+        )
+        assertEquals(
+            selectedFallback,
+            homePlatformChipContentColor("douyin", selectedFallback, unselectedFallback, isSelected = true)
+        )
+        assertEquals(
+            Color.Black,
+            homePlatformChipContentColor("bilibili", selectedFallback, unselectedFallback, isSelected = true)
+        )
+        assertEquals(
+            unselectedFallback,
+            homePlatformChipContentColor("bilibili", selectedFallback, unselectedFallback, isSelected = false)
+        )
     }
 
     private class FakeLiveSite(override val id: String) : LiveSite {

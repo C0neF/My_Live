@@ -1,5 +1,8 @@
 package com.mylive.app.ui.theme
 
+import androidx.compose.material.icons.Icons as MaterialIcons
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.ui.graphics.vector.ImageVector
 import compose.icons.TablerIcons
 import compose.icons.tablericons.*
@@ -7,8 +10,8 @@ import compose.icons.tablericons.*
 object Icons {
     object Default {
         val Home: ImageVector = TablerIcons.Home
-        val Favorite: ImageVector = TablerIcons.Heart
-        val FavoriteBorder: ImageVector = TablerIcons.Heart // Tabler is outline by default
+        val Favorite: ImageVector = MaterialIcons.Filled.Favorite
+        val FavoriteBorder: ImageVector = MaterialIcons.Outlined.FavoriteBorder
         val Category: ImageVector = TablerIcons.Apps
         val Chat: ImageVector = TablerIcons.MessageCircle
         val Music: ImageVector = TablerIcons.Music

@@ -67,6 +67,7 @@ fun PlayerView(
     // Danmaku toggling and setting
     danmuEnable: Boolean = true,
     onDanmuToggle: ((Boolean) -> Unit)? = null,
+    accentColor: Color? = null,
     // Danmaku setting callbacks
     danmuSize: Double = 16.0,
     onDanmuSizeChange: ((Double) -> Unit)? = null,
@@ -113,6 +114,7 @@ fun PlayerView(
     val activity = context as? Activity
     val configuration = LocalConfiguration.current
     val isPortrait = configuration.orientation == Configuration.ORIENTATION_PORTRAIT
+    val resolvedAccentColor = accentColor ?: MaterialTheme.colorScheme.primary
 
     // Fullscreen behavior handler
     val isFullscreen = state.isFullscreen
@@ -442,6 +444,7 @@ fun PlayerView(
                             danmuEnable = danmuEnable,
                             onDanmuToggle = { onDanmuToggle?.invoke(!danmuEnable) },
                             onDanmuSettingsClick = { showDanmuSettingsSheet = true },
+                            accentColor = resolvedAccentColor,
                             currentQualityName = currentQualityName,
                             onQualityClick = onQualityClick,
                             currentLineName = currentLineName,
@@ -636,6 +639,7 @@ private fun PlayerBottomBar(
     danmuEnable: Boolean,
     onDanmuToggle: () -> Unit,
     onDanmuSettingsClick: () -> Unit,
+    accentColor: Color,
     currentQualityName: String,
     onQualityClick: (() -> Unit)?,
     currentLineName: String,
@@ -690,7 +694,10 @@ private fun PlayerBottomBar(
             Icon(
                 if (danmuEnable) Icons.Default.Subtitles else Icons.Default.SubtitlesOff,
                 contentDescription = "弹幕开关",
-                tint = if (danmuEnable) MaterialTheme.colorScheme.primary else Color.White,
+                tint = resolvePlayerDanmuButtonTint(
+                    danmuEnable = danmuEnable,
+                    accentColor = accentColor
+                ),
                 modifier = Modifier.size(24.dp)
             )
         }
@@ -747,6 +754,13 @@ private fun PlayerBottomBar(
             )
         }
     }
+}
+
+internal fun resolvePlayerDanmuButtonTint(
+    danmuEnable: Boolean,
+    accentColor: Color
+): Color {
+    return if (danmuEnable) accentColor else Color.White
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1004,11 +1018,15 @@ private fun IndicatorOverlay(
     Surface(
         shape = RoundedCornerShape(8.dp),
         color = Color.Black.copy(alpha = 0.7f),
-        modifier = modifier.padding(16.dp)
+        modifier = modifier
+            .padding(16.dp)
+            .width(72.dp)
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 12.dp)
         ) {
             Icon(
                 imageVector = icon,
@@ -1020,7 +1038,10 @@ private fun IndicatorOverlay(
             Text(
                 text = value,
                 color = Color.White,
-                style = MaterialTheme.typography.labelMedium
+                style = MaterialTheme.typography.labelMedium,
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                modifier = Modifier.fillMaxWidth()
             )
         }
     }

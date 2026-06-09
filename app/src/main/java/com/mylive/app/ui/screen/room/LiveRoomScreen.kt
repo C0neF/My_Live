@@ -119,6 +119,31 @@ enum class RoomSettingsSectionKey {
     FILTER
 }
 
+internal fun liveRoomUiStateForRoute(
+    uiState: LiveRoomUiState,
+    viewModelRoomId: String,
+    viewModelSiteId: String,
+    routeRoomId: String,
+    routeSiteId: String,
+    routeInitialIsFollowing: Boolean? = null
+): LiveRoomUiState {
+    val routeSite = routeSiteId.trim()
+    val isSameRoom = viewModelRoomId.trim() == routeRoomId.trim()
+    val isSameSite = routeSite.isEmpty() || viewModelSiteId.trim() == routeSite
+    return if (isSameRoom && isSameSite) {
+        uiState
+    } else {
+        loadingLiveRoomUiState(routeInitialIsFollowing)
+    }
+}
+
+internal fun canShowLiveRoomFollowButton(
+    hasDetail: Boolean,
+    isFollowStatusKnown: Boolean
+): Boolean {
+    return isFollowStatusKnown
+}
+
 internal fun defaultExpandedRoomSettingsSections(): Set<RoomSettingsSectionKey> {
     return setOf(RoomSettingsSectionKey.PLAYER_DANMAKU)
 }
@@ -132,11 +157,19 @@ fun LiveRoomScreen(
     key: Route.LiveRoomDetail
 ) {
     val viewModel: LiveRoomViewModel = hiltViewModel()
-    LaunchedEffect(key.roomId, key.siteId) {
-        viewModel.openRoute(key.roomId, key.siteId)
+    LaunchedEffect(key.roomId, key.siteId, key.initialIsFollowing) {
+        viewModel.openRoute(key.roomId, key.siteId, key.initialIsFollowing)
     }
 
-    val uiState by viewModel.uiState.collectAsState()
+    val rawUiState by viewModel.uiState.collectAsState()
+    val uiState = liveRoomUiStateForRoute(
+        uiState = rawUiState,
+        viewModelRoomId = viewModel.roomId,
+        viewModelSiteId = viewModel.siteId,
+        routeRoomId = key.roomId,
+        routeSiteId = key.siteId,
+        routeInitialIsFollowing = key.initialIsFollowing
+    )
     val danmakuMessages by viewModel.danmakuMessages.collectAsState()
     val isLandscape = LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
     val context = LocalContext.current
@@ -176,6 +209,14 @@ fun LiveRoomScreen(
             siteId = viewModel.siteId
         )
     }
+    val accentSiteId = resolveLiveRoomAccentSiteId(
+        routeSiteId = key.siteId,
+        viewModelSiteId = viewModel.siteId
+    )
+    val roomPlatformAccentColor = resolveLiveRoomPlatformAccentColor(
+        siteId = accentSiteId,
+        defaultAccentColor = MaterialTheme.colorScheme.primary
+    )
 
     DisposableEffect(componentActivity) {
         val listener = androidx.core.util.Consumer<androidx.core.app.PictureInPictureModeChangedInfo> { info ->
@@ -382,10 +423,14 @@ fun LiveRoomScreen(
             currentSiteId = viewModel.siteId,
             currentRoomId = viewModel.roomId,
             currentCategoryId = uiState.detail?.categoryId,
-            onNavigateToRoom = { siteId, roomId ->
+            onNavigateToRoom = { siteId, roomId, initialIsFollowing ->
                 showQuickAccess = false
                 navigator.navigate(
-                    Route.LiveRoomDetail(roomId = roomId, siteId = siteId),
+                    Route.LiveRoomDetail(
+                        roomId = roomId,
+                        siteId = siteId,
+                        initialIsFollowing = initialIsFollowing
+                    ),
                     singleTop = true,
                     popUpToRoute = Route.Index::class.java,
                     inclusive = false
@@ -420,6 +465,7 @@ fun LiveRoomScreen(
                 onRefreshClick = {},
                 danmuEnable = pipDanmuEnable && !pipHideDanmu,
                 onDanmuToggle = {},
+                accentColor = roomPlatformAccentColor,
                 danmuSize = pipDanmuSize,
                 onDanmuSizeChange = {},
                 danmuSpeed = pipDanmuSpeed,
@@ -450,6 +496,7 @@ fun LiveRoomScreen(
                 uiState = uiState,
                 danmakuMessages = danmakuMessages,
                 viewModel = viewModel,
+                accentSiteId = accentSiteId,
                 navigator = navigator,
                 playerController = playerController,
                 activity = activity,
@@ -468,6 +515,7 @@ fun LiveRoomScreen(
                 uiState = uiState,
                 danmakuMessages = danmakuMessages,
                 viewModel = viewModel,
+                accentSiteId = accentSiteId,
                 navigator = navigator,
                 playerController = playerController,
                 activity = activity,
@@ -485,6 +533,7 @@ private fun PortraitLayout(
     uiState: LiveRoomUiState,
     danmakuMessages: List<DisplayLiveMessage>,
     viewModel: LiveRoomViewModel,
+    accentSiteId: String,
     navigator: Navigator,
     playerController: PlayerController?,
     activity: Activity?,
@@ -536,6 +585,10 @@ private fun PortraitLayout(
             siteId = viewModel.siteId
         )
     }
+    val roomPlatformAccentColor = resolveLiveRoomPlatformAccentColor(
+        siteId = accentSiteId,
+        defaultAccentColor = MaterialTheme.colorScheme.primary
+    )
 
     var danmakuController by remember { mutableStateOf<DanmakuController?>(null) }
     var showQuickAccess by remember { mutableStateOf(false) }
@@ -562,10 +615,14 @@ private fun PortraitLayout(
                     }
                 )
             },
-            onNavigateToRoom = { siteId, roomId ->
+            onNavigateToRoom = { siteId, roomId, initialIsFollowing ->
                 showQuickAccess = false
                 navigator.navigate(
-                    Route.LiveRoomDetail(roomId = roomId, siteId = siteId),
+                    Route.LiveRoomDetail(
+                        roomId = roomId,
+                        siteId = siteId,
+                        initialIsFollowing = initialIsFollowing
+                    ),
                     singleTop = true,
                     popUpToRoute = Route.Index::class.java,
                     inclusive = false
@@ -620,6 +677,7 @@ private fun PortraitLayout(
                 onRefreshClick = { viewModel.refreshPlay() },
                 danmuEnable = danmuEnable,
                 onDanmuToggle = { settingsViewModel.setDanmuEnable(it) },
+                accentColor = roomPlatformAccentColor,
                 danmuSize = danmuSize,
                 onDanmuSizeChange = { settingsViewModel.setDanmuSize(it) },
                 danmuSpeed = danmuSpeed,
@@ -650,6 +708,8 @@ private fun PortraitLayout(
         CompactPortraitRoomHeader(
             detail = uiState.detail,
             isFollowing = uiState.isFollowing,
+            isFollowStatusKnown = uiState.isFollowStatusKnown,
+            accentColor = roomPlatformAccentColor,
             onToggleFollow = { viewModel.toggleFollow() },
             onRefreshClick = { viewModel.refreshPlay() },
             onSettingsClick = { activeAuxiliaryPanel = PortraitLiveRoomPanel.SETTINGS },
@@ -729,6 +789,7 @@ private fun LandscapeLayout(
     uiState: LiveRoomUiState,
     danmakuMessages: List<DisplayLiveMessage>,
     viewModel: LiveRoomViewModel,
+    accentSiteId: String,
     navigator: Navigator,
     playerController: PlayerController?,
     activity: Activity?,
@@ -795,6 +856,10 @@ private fun LandscapeLayout(
             siteId = viewModel.siteId
         )
     }
+    val roomPlatformAccentColor = resolveLiveRoomPlatformAccentColor(
+        siteId = accentSiteId,
+        defaultAccentColor = MaterialTheme.colorScheme.primary
+    )
     val landscapePagerState = rememberPagerState(initialPage = 0, pageCount = { roomTabs.size })
     val selectedLandscapeTab = landscapePagerState.currentPage.coerceIn(0, roomTabs.lastIndex.coerceAtLeast(0))
 
@@ -856,6 +921,7 @@ private fun LandscapeLayout(
                 onRefreshClick = { viewModel.refreshPlay() },
                 danmuEnable = danmuEnable,
                 onDanmuToggle = { settingsViewModel.setDanmuEnable(it) },
+                accentColor = roomPlatformAccentColor,
                 danmuSize = danmuSize,
                 onDanmuSizeChange = { settingsViewModel.setDanmuSize(it) },
                 danmuSpeed = danmuSpeed,
@@ -970,15 +1036,15 @@ private fun LandscapeLayout(
                             )
                         }
                     }
-                    IconButton(onClick = { viewModel.toggleFollow() }) {
-                        Icon(
-                            imageVector = if (uiState.isFollowing) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                            contentDescription = if (uiState.isFollowing) stringResource(R.string.room_following)
-                            else stringResource(R.string.room_follow),
-                            tint = if (uiState.isFollowing) Color.Red else MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(22.dp)
-                        )
-                    }
+                    val canToggleFollow = uiState.isFollowStatusKnown
+                    LiveRoomFollowButton(
+                        isFollowing = uiState.isFollowing,
+                        accentColor = roomPlatformAccentColor,
+                        enabled = canToggleFollow,
+                        onClick = { viewModel.toggleFollow() },
+                        modifier = Modifier.size(36.dp),
+                        iconSizeDp = 22
+                    )
                 }
             }
 
@@ -1056,6 +1122,8 @@ private fun LandscapeLayout(
 private fun CompactPortraitRoomHeader(
     detail: com.mylive.app.core.model.LiveRoomDetail?,
     isFollowing: Boolean,
+    isFollowStatusKnown: Boolean,
+    accentColor: Color,
     onToggleFollow: () -> Unit,
     onRefreshClick: () -> Unit,
     onSettingsClick: () -> Unit,
@@ -1145,16 +1213,46 @@ private fun CompactPortraitRoomHeader(
                     modifier = Modifier.size(18.dp)
                 )
             }
-            IconButton(onClick = onToggleFollow, modifier = Modifier.size(36.dp)) {
-                Icon(
-                    imageVector = if (isFollowing) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                    contentDescription = if (isFollowing) stringResource(R.string.room_following)
-                    else stringResource(R.string.room_follow),
-                    tint = if (isFollowing) Color.Red else MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(18.dp)
-                )
-            }
+            val canToggleFollow = detail != null && isFollowStatusKnown
+            LiveRoomFollowButton(
+                isFollowing = isFollowing,
+                accentColor = accentColor,
+                enabled = canToggleFollow,
+                onClick = onToggleFollow,
+                modifier = Modifier.size(36.dp),
+                iconSizeDp = 18
+            )
         }
+    }
+}
+
+@Composable
+private fun LiveRoomFollowButton(
+    isFollowing: Boolean,
+    accentColor: Color,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    iconSizeDp: Int
+) {
+    IconButton(
+        onClick = {
+            if (enabled) {
+                onClick()
+            }
+        },
+        modifier = modifier
+    ) {
+        Icon(
+            imageVector = if (isFollowing) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+            contentDescription = if (isFollowing) {
+                stringResource(R.string.room_following)
+            } else {
+                stringResource(R.string.room_follow)
+            },
+            tint = accentColor,
+            modifier = Modifier.size(iconSizeDp.dp)
+        )
     }
 }
 
@@ -1436,6 +1534,10 @@ fun ChatPanel(
                 .padding(end = 12.dp, bottom = 12.dp)
         ) {
             SmallFloatingActionButton(
+                modifier = Modifier.border(
+                    BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.8f)),
+                    CircleShape
+                ),
                 onClick = {
                     coroutineScope.launch {
                         val latestMessages = messages.takeLast(ChatPanelMaxMessages)
@@ -1449,7 +1551,15 @@ fun ChatPanel(
                         }
                     }
                 },
-                shape = CircleShape
+                shape = CircleShape,
+                containerColor = MaterialTheme.colorScheme.surface,
+                contentColor = MaterialTheme.colorScheme.primary,
+                elevation = FloatingActionButtonDefaults.elevation(
+                    defaultElevation = 4.dp,
+                    pressedElevation = 6.dp,
+                    focusedElevation = 4.dp,
+                    hoveredElevation = 4.dp
+                )
             ) {
                 Icon(
                     imageVector = Icons.Default.KeyboardArrowDown,
@@ -2169,7 +2279,11 @@ fun FollowListPanel(
                         isPlaying = isPlaying,
                         onTap = {
                             navigator.navigate(
-                                Route.LiveRoomDetail(roomId = item.roomId, siteId = item.siteId),
+                                Route.LiveRoomDetail(
+                                    roomId = item.roomId,
+                                    siteId = item.siteId,
+                                    initialIsFollowing = true
+                                ),
                                 popUpToRoute = Route.LiveRoomDetail::class.java,
                                 inclusive = true
                             )

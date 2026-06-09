@@ -15,4 +15,12 @@ class FollowRefreshPolicyTest {
         assertTrue(source.contains("onRefresh = { viewModel.updateFollowStatus() }"))
         assertFalse(source.contains("contentDescription = \"刷新关注\""))
     }
+
+    @Test
+    fun followScreenShowsSharedBackToTopButtonThatRevealsBottomBar() {
+        val source = File("src/main/java/com/mylive/app/ui/screen/follow/FollowScreen.kt").readText()
+
+        assertTrue(source.contains("BackToTopButton("))
+        assertTrue(source.contains("onRevealBottomBar()"))
+    }
 }

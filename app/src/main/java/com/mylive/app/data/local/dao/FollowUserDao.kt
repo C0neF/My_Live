@@ -27,6 +27,9 @@ interface FollowUserDao {
     @Query("SELECT * FROM follow_users WHERE siteId = :siteId AND roomId = :roomId LIMIT 1")
     suspend fun getBySiteAndRoom(siteId: String, roomId: String): FollowUserEntity?
 
+    @Query("SELECT * FROM follow_users WHERE siteId = :siteId AND roomId = :roomId LIMIT 1")
+    fun observeBySiteAndRoom(siteId: String, roomId: String): Flow<FollowUserEntity?>
+
     @Query("UPDATE follow_users SET liveStatus = :status, liveStartTime = :startTime, showTime = :showTime WHERE id = :id")
     suspend fun updateLiveStatus(id: String, status: Int, startTime: Long?, showTime: String? = null)
 

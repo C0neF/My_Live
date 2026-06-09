@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -41,10 +42,15 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.mylive.app.R
 import com.mylive.app.data.local.entity.FollowUserEntity
 import com.mylive.app.data.local.entity.FollowUserTagEntity
+import com.mylive.app.ui.component.BackToTopButton
 import com.mylive.app.ui.component.FollowUserItem
+import com.mylive.app.ui.component.backToTopButtonMetrics
 import com.mylive.app.ui.component.status.EmptyState
 import com.mylive.app.ui.navigation.Navigator
 import com.mylive.app.ui.navigation.navigateToRoom
+import com.mylive.app.ui.screen.backToTopButtonVisible
+import com.mylive.app.ui.screen.isScrollableContentAtTop
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -53,6 +59,7 @@ import kotlin.math.roundToInt
 fun FollowScreen(
     navigator: Navigator,
     refreshSignal: Int = 0,
+    onRevealBottomBar: () -> Unit = {},
     viewModel: FollowViewModel = hiltViewModel()
 ) {
     val filteredFollows by viewModel.filteredFollows.collectAsState()
@@ -64,6 +71,8 @@ fun FollowScreen(
     val updatingStatus by viewModel.updatingStatus.collectAsState()
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
+    val listState = rememberLazyListState()
+    var isAtTop by remember { mutableStateOf(true) }
     var showMenu by remember { mutableStateOf(false) }
     var showGroupModeMenu by remember { mutableStateOf(false) }
     var showExportDialog by remember { mutableStateOf(false) }
@@ -87,6 +96,25 @@ fun FollowScreen(
     LaunchedEffect(refreshSignal) {
         if (refreshSignal > 0) {
             viewModel.updateFollowStatus()
+        }
+    }
+
+    LaunchedEffect(filteredFollows.isEmpty()) {
+        if (filteredFollows.isEmpty()) {
+            isAtTop = true
+        }
+    }
+
+    LaunchedEffect(listState, filteredFollows.isNotEmpty()) {
+        if (filteredFollows.isNotEmpty()) {
+            snapshotFlow {
+                isScrollableContentAtTop(
+                    firstVisibleItemIndex = listState.firstVisibleItemIndex,
+                    firstVisibleItemScrollOffset = listState.firstVisibleItemScrollOffset
+                )
+            }
+                .distinctUntilChanged()
+                .collect { isAtTop = it }
         }
     }
 
@@ -282,6 +310,7 @@ fun FollowScreen(
 
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
+                    state = listState,
                     contentPadding = PaddingValues(bottom = 96.dp)
                 ) {
                     // 直播中
@@ -342,6 +371,21 @@ fun FollowScreen(
                         }
                     }
                 }
+            }
+
+            if (backToTopButtonVisible(isAtTop = isAtTop, hasItems = filteredFollows.isNotEmpty())) {
+                val metrics = backToTopButtonMetrics()
+                BackToTopButton(
+                    onClick = {
+                        onRevealBottomBar()
+                        scope.launch {
+                            listState.animateScrollToItem(0)
+                        }
+                    },
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = metrics.endPaddingDp.dp, bottom = metrics.bottomPaddingDp.dp)
+                )
             }
         } // PullToRefreshBox
     }
@@ -791,7 +835,8 @@ private fun SwipeableFollowItem(
                     } else {
                         navigator.navigateToRoom(
                             siteId = follow.siteId,
-                            roomId = follow.roomId
+                            roomId = follow.roomId,
+                            initialIsFollowing = true
                         )
                     }
                 },

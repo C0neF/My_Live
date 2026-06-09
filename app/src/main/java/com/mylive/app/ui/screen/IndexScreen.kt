@@ -14,6 +14,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
@@ -75,6 +76,7 @@ fun IndexScreen(
     var homeRefreshSignal by rememberSaveable { mutableIntStateOf(0) }
     var followRefreshSignal by rememberSaveable { mutableIntStateOf(0) }
     var categoryRefreshSignal by rememberSaveable { mutableIntStateOf(0) }
+    var homePlatformAccentColor by remember { mutableStateOf<Color?>(null) }
     LaunchedEffect(bottomNavItems) {
         if (bottomNavItems.none { it.key == selectedPageKey }) {
             selectedPageKey = bottomNavItems.firstOrNull()?.key ?: "recommend"
@@ -86,6 +88,10 @@ fun IndexScreen(
     val selectedContent = BottomNavSelection(
         index = selectedIndex,
         key = bottomNavItems.getOrNull(selectedIndex)?.key ?: "recommend"
+    )
+    val bottomNavActiveColor = indexBottomNavActiveColor(
+        homePlatformAccentColor = homePlatformAccentColor,
+        defaultActiveColor = MaterialTheme.colorScheme.primary
     )
     val topRoute = navigator.backStack.lastOrNull()
     var sawLiveRoomOnTop by remember { mutableStateOf(false) }
@@ -150,7 +156,7 @@ fun IndexScreen(
 
                         val contentColor by animateColorAsState(
                             targetValue = if (isSelected) {
-                                MaterialTheme.colorScheme.primary
+                                bottomNavActiveColor
                             } else {
                                 MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                             },
@@ -169,17 +175,19 @@ fun IndexScreen(
                                     interactionSource = remember { MutableInteractionSource() },
                                     indication = null,
                                     onClick = {
-                                        val shouldRefresh = shouldRefreshBottomTab(
+                                        val repeatAction = bottomTabRepeatAction(
                                             currentKey = selectedPageKey,
-                                            clickedKey = item.key
+                                            clickedKey = item.key,
+                                            isCurrentPageAtTop = true
                                         )
                                         selectedPageKey = item.key
-                                        if (shouldRefresh) {
-                                            when (item.key) {
+                                        when (repeatAction) {
+                                            BottomTabRepeatAction.Refresh -> when (item.key) {
                                                 "recommend" -> homeRefreshSignal += 1
                                                 "follow" -> followRefreshSignal += 1
                                                 "category" -> categoryRefreshSignal += 1
                                             }
+                                            BottomTabRepeatAction.None -> Unit
                                         }
                                     }
                                 )
@@ -234,11 +242,20 @@ fun IndexScreen(
                         refreshSignal = homeRefreshSignal,
                         onInitialLoadingEffectSettled = {
                             suppressHomeInitialLoadingEffect = false
+                        },
+                        onPlatformAccentColorChange = {
+                            homePlatformAccentColor = it
+                        },
+                        onRevealBottomBar = {
+                            bottomBarOffsetPx = indexBottomBarOffsetAfterRevealRequest(bottomBarOffsetPx)
                         }
                     )
                     "follow" -> FollowScreen(
                         navigator = navigator,
-                        refreshSignal = followRefreshSignal
+                        refreshSignal = followRefreshSignal,
+                        onRevealBottomBar = {
+                            bottomBarOffsetPx = indexBottomBarOffsetAfterRevealRequest(bottomBarOffsetPx)
+                        }
                     )
                     "category" -> CategoryScreen(
                         navigator = navigator,
@@ -249,4 +266,15 @@ fun IndexScreen(
             }
         }
     }
+}
+
+internal fun indexBottomNavActiveColor(
+    homePlatformAccentColor: Color?,
+    defaultActiveColor: Color
+): Color {
+    return homePlatformAccentColor ?: defaultActiveColor
+}
+
+internal fun indexBottomBarOffsetAfterRevealRequest(currentOffsetPx: Float): Float {
+    return 0f
 }

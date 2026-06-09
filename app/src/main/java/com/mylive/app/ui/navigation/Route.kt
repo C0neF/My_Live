@@ -21,7 +21,8 @@ sealed interface Route : NavKey {
     @Serializable
     data class LiveRoomDetail(
         val roomId: String,
-        val siteId: String = ""
+        val siteId: String = "",
+        val initialIsFollowing: Boolean? = null
     ) : Route
 
     @Serializable

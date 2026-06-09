@@ -1,5 +1,7 @@
 package com.mylive.app.ui.screen.room.player
 
+import androidx.compose.ui.graphics.Color
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -37,5 +39,25 @@ class PlayerDanmakuSettingsPolicyTest {
         assertTrue(dividerIndex > titleIndex)
         assertTrue(scrollIndex > dividerIndex)
         assertTrue(settingsIndex > scrollIndex)
+    }
+
+    @Test
+    fun playerDanmuButtonUsesAccentColorOnlyWhenEnabled() {
+        val accentColor = Color(0xFFFF5D23)
+
+        assertEquals(accentColor, resolvePlayerDanmuButtonTint(danmuEnable = true, accentColor = accentColor))
+        assertEquals(Color.White, resolvePlayerDanmuButtonTint(danmuEnable = false, accentColor = accentColor))
+    }
+
+    @Test
+    fun playerViewPropagatesAccentColorToDanmuButton() {
+        val source = File("src/main/java/com/mylive/app/ui/screen/room/player/PlayerView.kt").readText()
+
+        assertTrue(source.contains("accentColor: Color? = null"))
+        assertTrue(source.contains("val resolvedAccentColor = accentColor ?: MaterialTheme.colorScheme.primary"))
+        assertTrue(source.contains("accentColor = resolvedAccentColor"))
+        assertTrue(source.contains("resolvePlayerDanmuButtonTint("))
+        assertTrue(source.contains("IconButton(onClick = onDanmuToggle)"))
+        assertTrue(!source.contains("resolvePlayerDanmuButtonContainerColor("))
     }
 }

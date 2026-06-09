@@ -6,6 +6,7 @@ import com.mylive.app.data.local.entity.FollowUserEntity
 import com.mylive.app.data.local.entity.FollowUserTagEntity
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
@@ -26,6 +27,9 @@ class FollowRepository @Inject constructor(
 
     suspend fun getFollow(siteId: String, roomId: String): FollowUserEntity? =
         followUserDao.getBySiteAndRoom(siteId, roomId)
+
+    fun observeFollowing(siteId: String, roomId: String): Flow<Boolean> =
+        followUserDao.observeBySiteAndRoom(siteId, roomId).map { it != null }
 
     suspend fun updateLiveStatus(id: String, status: Int, startTime: Long? = null, showTime: String? = null) =
         followUserDao.updateLiveStatus(id, status, startTime, showTime)

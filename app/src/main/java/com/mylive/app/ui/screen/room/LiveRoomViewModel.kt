@@ -48,10 +48,25 @@ data class LiveRoomUiState(
     val detail: LiveRoomDetail? = null,
     val error: String? = null,
     val isFollowing: Boolean = false,
+    val isFollowStatusKnown: Boolean = false,
     val onlineCount: Int = 0,
     val playQualities: List<LivePlayQuality> = emptyList(),
     val currentQualityIndex: Int = 0
 )
+
+internal fun loadingLiveRoomUiState(initialIsFollowing: Boolean? = null): LiveRoomUiState {
+    return LiveRoomUiState(
+        isLoading = true,
+        isFollowing = initialIsFollowing ?: false,
+        isFollowStatusKnown = initialIsFollowing != null
+    )
+}
+
+private fun LiveRoomUiState.asLoadingStatePreservingFollow(): LiveRoomUiState {
+    return loadingLiveRoomUiState(
+        initialIsFollowing = if (isFollowStatusKnown) isFollowing else null
+    )
+}
 
 @HiltViewModel
 class LiveRoomViewModel @Inject constructor(
@@ -155,6 +170,7 @@ class LiveRoomViewModel @Inject constructor(
     private var currentDanmaku: LiveDanmaku? = null
     private var activeRoute: Pair<String, String>? = null
     private var loadRoomJob: Job? = null
+    private var followStatusJob: Job? = null
     var playerController: PlayerController? = null // Set from Composable
         set(value) {
             field = value
@@ -190,10 +206,11 @@ class LiveRoomViewModel @Inject constructor(
         }
     }
 
-    fun openRoute(roomId: String, siteId: String) {
+    fun openRoute(roomId: String, siteId: String, initialIsFollowing: Boolean? = null) {
         val nextRoomId = roomId.trim()
         val nextSiteId = siteId.trim()
         if (nextRoomId.isEmpty()) {
+            followStatusJob?.cancel()
             this.roomId = ""
             this.siteId = nextSiteId
             playerController?.stop()
@@ -208,6 +225,7 @@ class LiveRoomViewModel @Inject constructor(
         activeRoute = nextRoute
         this.roomId = nextRoomId
         this.siteId = nextSiteId
+        _uiState.value = loadingLiveRoomUiState(initialIsFollowing)
         pendingPlayRequest = false
         currentSite = null
         playerController?.stop()
@@ -226,6 +244,10 @@ class LiveRoomViewModel @Inject constructor(
         currentDanmaku = null
 
         loadRoomJob?.cancel()
+        followStatusJob?.cancel()
+        if (nextSiteId.isNotEmpty()) {
+            observeCurrentRoomFollowStatus(nextSiteId, nextRoomId, nextRoute)
+        }
         loadRoomJob = viewModelScope.launch {
             // Stagger API and database loading so the first route frames stay light.
             kotlinx.coroutines.delay(AppMotion.LiveRoomDataStartupDelayMillis.toLong())
@@ -298,7 +320,7 @@ class LiveRoomViewModel @Inject constructor(
         val routeRoomId = route.second
         applyAccountCookies()
         if (!isActiveRoute(route)) return
-        _uiState.value = LiveRoomUiState(isLoading = true)
+        _uiState.update { it.asLoadingStatePreservingFollow() }
         try {
             // Use siteId to directly locate the target site if available
             var detail: LiveRoomDetail? = null
@@ -349,8 +371,6 @@ class LiveRoomViewModel @Inject constructor(
             }
 
             currentSite = site
-
-            // Check follow status
             val isFollowing = followRepository.isFollowing(site.id, routeRoomId)
 
             // Add to history
@@ -374,8 +394,10 @@ class LiveRoomViewModel @Inject constructor(
             _uiState.value = _uiState.value.copy(
                 isLoading = false,
                 detail = detail,
-                isFollowing = isFollowing
+                isFollowing = isFollowing,
+                isFollowStatusKnown = true
             )
+            observeCurrentRoomFollowStatus(site.id, routeRoomId, route)
 
             refreshSuperChats(detail, route)
 
@@ -397,6 +419,34 @@ class LiveRoomViewModel @Inject constructor(
                 error = message
             )
             playerController?.showError(message)
+        }
+    }
+
+    private fun observeCurrentRoomFollowStatus(
+        siteId: String,
+        roomId: String,
+        route: Pair<String, String>
+    ) {
+        followStatusJob?.cancel()
+        followStatusJob = viewModelScope.launch {
+            val initialFollowing = followRepository.isFollowing(siteId, roomId)
+            if (isActiveRoute(route)) {
+                _uiState.update {
+                    it.copy(
+                        isFollowing = initialFollowing,
+                        isFollowStatusKnown = true
+                    )
+                }
+            }
+            followRepository.observeFollowing(siteId, roomId).collect { isFollowing ->
+                if (!isActiveRoute(route)) return@collect
+                _uiState.update {
+                    it.copy(
+                        isFollowing = isFollowing,
+                        isFollowStatusKnown = true
+                    )
+                }
+            }
         }
     }
 
@@ -600,7 +650,8 @@ class LiveRoomViewModel @Inject constructor(
         val site = currentSite ?: return
         viewModelScope.launch {
             try {
-                if (_uiState.value.isFollowing) {
+                val wasFollowing = _uiState.value.isFollowing
+                if (wasFollowing) {
                     val follow = followRepository.getFollow(site.id, roomId)
                     if (follow != null) {
                         followRepository.removeFollow(follow.id)
@@ -622,7 +673,10 @@ class LiveRoomViewModel @Inject constructor(
                         )
                     )
                 }
-                _uiState.value = _uiState.value.copy(isFollowing = !_uiState.value.isFollowing)
+                _uiState.value = _uiState.value.copy(
+                    isFollowing = !wasFollowing,
+                    isFollowStatusKnown = true
+                )
             } catch (e: Exception) {
                 Timber.e(e, "Failed to toggle follow")
             }

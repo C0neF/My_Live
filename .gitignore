@@ -23,6 +23,10 @@ local.properties
 /tmp/
 /docs/superpowers/
 
+# Device test artifacts
+/device_backups/
+/device_screenshots/
+
 # Node / Cloudflare local runtime state
 **/node_modules/
 **/.wrangler/

@@ -409,6 +409,18 @@ class LiveRoomViewModel @Inject constructor(
             // Start danmaku
             startDanmaku(detail, route)
 
+            // Notify chat when the room is playing a recorded loop
+            if (detail.isRecord) {
+                _messages.tryEmit(
+                    LiveMessage(
+                        type = LiveMessageType.CHAT,
+                        userName = "LiveSysMessage",
+                        message = "当前为轮播录像",
+                        color = LiveMessageColor.WHITE
+                    )
+                )
+            }
+
         } catch (e: Throwable) {
             if (e is CancellationException) throw e
             if (!isActiveRoute(route)) return

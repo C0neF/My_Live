@@ -180,6 +180,7 @@ fun LiveRoomScreen(
     val scaleMode by settingsViewModel.scaleMode.collectAsState()
     val playerCompatMode by settingsViewModel.playerCompatMode.collectAsState()
     val pipHideDanmu by settingsViewModel.pipHideDanmu.collectAsState(initial = false)
+    val chatBubbleStyle by settingsViewModel.chatBubbleStyle.collectAsState()
     val pipDanmuEnable by settingsViewModel.danmuEnable.collectAsState(initial = true)
     val pipDanmuSize by settingsViewModel.danmuSize.collectAsState(initial = 16.0)
     val pipDanmuSpeed by settingsViewModel.danmuSpeed.collectAsState(initial = 10.0)
@@ -488,6 +489,8 @@ fun LiveRoomScreen(
                 scaleMode = scaleMode,
                 playerCompatMode = playerCompatMode,
                 danmuRenderEmoji = pipDanmuRenderEmoji,
+                chatBubbleStyle = chatBubbleStyle,
+                onChatBubbleStyleChange = { settingsViewModel.setChatBubbleStyle(it) },
                 onDanmakuControllerCreated = { pipDanmakuController = it },
                 isExiting = isExiting
             )
@@ -700,6 +703,8 @@ private fun PortraitLayout(
                 scaleMode = scaleMode,
                 playerCompatMode = playerCompatMode,
                 danmuRenderEmoji = danmuRenderEmoji,
+                chatBubbleStyle = chatBubbleStyle,
+                onChatBubbleStyleChange = { settingsViewModel.setChatBubbleStyle(it) },
                 onDanmakuControllerCreated = { danmakuController = it },
                 isExiting = isExiting
             )
@@ -944,6 +949,8 @@ private fun LandscapeLayout(
                 scaleMode = scaleMode,
                 playerCompatMode = playerCompatMode,
                 danmuRenderEmoji = danmuRenderEmoji,
+                chatBubbleStyle = chatBubbleStyle,
+                onChatBubbleStyleChange = { settingsViewModel.setChatBubbleStyle(it) },
                 onDanmakuControllerCreated = { danmakuController = it },
                 onHorizontalDragDelta = { deltaX ->
                     coroutineScope.launch {
@@ -1589,11 +1596,7 @@ private fun ChatMessageItem(
             val colorPolicy = remember(message.color) {
                 resolveChatMessageColorPolicy(message.color)
             }
-            val userNameColor = if (colorPolicy.applyMessageColorToUserName) {
-                liveMessageColor
-            } else {
-                Color.Unspecified
-            }
+            val userNameColor = Color.Gray
             val messageTextColor = if (colorPolicy.applyMessageColorToText) {
                 liveMessageColor
             } else {
@@ -1719,12 +1722,7 @@ private fun ChatMessageItem(
                     horizontalArrangement = Arrangement.Start
                 ) {
                     Surface(
-                        shape = RoundedCornerShape(
-                            topStart = 0.dp,
-                            topEnd = 12.dp,
-                            bottomStart = 12.dp,
-                            bottomEnd = 12.dp
-                        ),
+                        shape = RoundedCornerShape(12.dp),
                         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
                         border = BorderStroke(
                             width = 0.5.dp,

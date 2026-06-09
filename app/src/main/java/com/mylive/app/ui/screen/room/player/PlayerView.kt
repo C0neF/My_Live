@@ -92,6 +92,8 @@ fun PlayerView(
     scaleMode: Int = 0,
     playerCompatMode: Boolean = false,
     danmuRenderEmoji: Boolean = true,
+    chatBubbleStyle: Boolean = false,
+    onChatBubbleStyleChange: ((Boolean) -> Unit)? = null,
     onDanmakuControllerCreated: ((DanmakuController) -> Unit)? = null,
     onHorizontalDragDelta: ((Float) -> Unit)? = null,
     onHorizontalDragEnd: (() -> Unit)? = null,
@@ -542,6 +544,8 @@ fun PlayerView(
             onDanmuAreaChange = { onDanmuAreaChange?.invoke(it) },
             danmuOpacity = danmuOpacity,
             onDanmuOpacityChange = { onDanmuOpacityChange?.invoke(it) },
+            chatBubbleStyle = chatBubbleStyle,
+            onChatBubbleStyleChange = { onChatBubbleStyleChange?.invoke(it) },
             onDismiss = { showDanmuSettingsSheet = false }
         )
     }
@@ -858,6 +862,8 @@ private fun DanmakuSettingsBottomSheet(
     onDanmuAreaChange: (Double) -> Unit,
     danmuOpacity: Double,
     onDanmuOpacityChange: (Double) -> Unit,
+    chatBubbleStyle: Boolean,
+    onChatBubbleStyleChange: (Boolean) -> Unit,
     onDismiss: () -> Unit
 ) {
     ModalBottomSheet(
@@ -966,6 +972,29 @@ private fun DanmakuSettingsBottomSheet(
                             label = { Text(opacityLabels[idx]) }
                         )
                     }
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Bubble style toggle
+                HorizontalDivider()
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("气泡样式", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            text = "聊天消息使用气泡背景",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = chatBubbleStyle,
+                        onCheckedChange = onChatBubbleStyleChange
+                    )
                 }
             }
         }

@@ -35,6 +35,15 @@ class SettingsRepository @Inject constructor(
     val danmuArea: Flow<Double> = settingsDataStore.getFlow(SettingsDataStore.DanmuArea, 0.8)
     suspend fun setDanmuArea(value: Double) = settingsDataStore.setValue(SettingsDataStore.DanmuArea, value)
 
+    val danmuLineCount: Flow<Int> = settingsDataStore.getFlow(SettingsDataStore.DanmuLineCount, 8)
+    suspend fun setDanmuLineCount(value: Int) = settingsDataStore.setValue(SettingsDataStore.DanmuLineCount, value)
+
+    val danmuDelay: Flow<Double> = settingsDataStore.getFlow(SettingsDataStore.DanmuDelay, 0.0)
+    suspend fun setDanmuDelay(value: Double) = settingsDataStore.setValue(SettingsDataStore.DanmuDelay, value)
+
+    val danmuDelayBySiteJson: Flow<String> = settingsDataStore.getFlow(SettingsDataStore.DanmuDelayBySite, "{}")
+    suspend fun setDanmuDelayBySiteJson(value: String) = settingsDataStore.setValue(SettingsDataStore.DanmuDelayBySite, value)
+
     val danmuOpacity: Flow<Double> = settingsDataStore.getFlow(SettingsDataStore.DanmuOpacity, 1.0)
     suspend fun setDanmuOpacity(value: Double) = settingsDataStore.setValue(SettingsDataStore.DanmuOpacity, value)
 
@@ -50,6 +59,9 @@ class SettingsRepository @Inject constructor(
     // Quality
     val qualityLevel: Flow<Int> = settingsDataStore.getFlow(SettingsDataStore.QualityLevel, 1)
     suspend fun setQualityLevel(value: Int) = settingsDataStore.setValue(SettingsDataStore.QualityLevel, value)
+
+    val qualityLevelCellular: Flow<Int> = settingsDataStore.getFlow(SettingsDataStore.QualityLevelCellular, 1)
+    suspend fun setQualityLevelCellular(value: Int) = settingsDataStore.setValue(SettingsDataStore.QualityLevelCellular, value)
 
     // Danmaku extended
     val danmuRenderEmoji: Flow<Boolean> = settingsDataStore.getFlow(SettingsDataStore.DanmuRenderEmoji, true)
@@ -70,12 +82,21 @@ class SettingsRepository @Inject constructor(
     val danmuStrokeWidth: Flow<Double> = settingsDataStore.getFlow(SettingsDataStore.DanmuStrokeWidth, 2.0)
     suspend fun setDanmuStrokeWidth(value: Double) = settingsDataStore.setValue(SettingsDataStore.DanmuStrokeWidth, value)
 
+    val danmuTopMargin: Flow<Double> = settingsDataStore.getFlow(SettingsDataStore.DanmuTopMargin, 0.0)
+    suspend fun setDanmuTopMargin(value: Double) = settingsDataStore.setValue(SettingsDataStore.DanmuTopMargin, value)
+
+    val danmuBottomMargin: Flow<Double> = settingsDataStore.getFlow(SettingsDataStore.DanmuBottomMargin, 0.0)
+    suspend fun setDanmuBottomMargin(value: Double) = settingsDataStore.setValue(SettingsDataStore.DanmuBottomMargin, value)
+
     // Deduplication
     val danmuDedupeEnable: Flow<Boolean> = settingsDataStore.getFlow(SettingsDataStore.DanmuDedupeEnable, false)
     suspend fun setDanmuDedupeEnable(value: Boolean) = settingsDataStore.setValue(SettingsDataStore.DanmuDedupeEnable, value)
 
-    val danmuDedupeWindow: Flow<Int> = settingsDataStore.getFlow(SettingsDataStore.DanmuDedupeWindow, 20)
+    val danmuDedupeWindow: Flow<Int> = settingsDataStore.getFlow(SettingsDataStore.DanmuDedupeWindow, 10)
     suspend fun setDanmuDedupeWindow(value: Int) = settingsDataStore.setValue(SettingsDataStore.DanmuDedupeWindow, value)
+
+    val danmuDedupeStep: Flow<Int> = settingsDataStore.getFlow(SettingsDataStore.DanmuDedupeStep, 2)
+    suspend fun setDanmuDedupeStep(value: Int) = settingsDataStore.setValue(SettingsDataStore.DanmuDedupeStep, value)
 
     val danmuDedupeStrictMode: Flow<Boolean> = settingsDataStore.getFlow(SettingsDataStore.DanmuDedupeStrictMode, false)
     suspend fun setDanmuDedupeStrictMode(value: Boolean) = settingsDataStore.setValue(SettingsDataStore.DanmuDedupeStrictMode, value)
@@ -132,8 +153,8 @@ class SettingsRepository @Inject constructor(
     val chatTextGap: Flow<Double> = settingsDataStore.getFlow(SettingsDataStore.ChatTextGap, 4.0)
     suspend fun setChatTextGap(value: Double) = settingsDataStore.setValue(SettingsDataStore.ChatTextGap, value)
 
-    val playerShowSuperChat: Flow<Boolean> = settingsDataStore.getFlow(SettingsDataStore.PlayerShowSuperChat, true)
-    suspend fun setPlayerShowSuperChat(value: Boolean) = settingsDataStore.setValue(SettingsDataStore.PlayerShowSuperChat, value)
+    val autoFullScreen: Flow<Boolean> = settingsDataStore.getFlow(SettingsDataStore.AutoFullScreen, false)
+    suspend fun setAutoFullScreen(value: Boolean) = settingsDataStore.setValue(SettingsDataStore.AutoFullScreen, value)
 
     // Account cookies
     val bilibiliCookie: Flow<String> = settingsDataStore.getFlow(SettingsDataStore.BilibiliCookie, "")

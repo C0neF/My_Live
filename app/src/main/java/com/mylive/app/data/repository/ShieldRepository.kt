@@ -16,6 +16,8 @@ class ShieldRepository @Inject constructor(
 
     suspend fun addShield(shield: ShieldEntity) = shieldDao.insertShield(shield)
 
+    suspend fun updateShield(shield: ShieldEntity) = shieldDao.insertShield(shield)
+
     suspend fun removeShield(id: Long) = shieldDao.deleteShield(id)
 
     suspend fun clearAllKeywords() = shieldDao.clearAllKeywords()

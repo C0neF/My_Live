@@ -52,6 +52,7 @@ import kotlin.math.roundToInt
 @Composable
 fun FollowScreen(
     navigator: Navigator,
+    refreshSignal: Int = 0,
     viewModel: FollowViewModel = hiltViewModel()
 ) {
     val filteredFollows by viewModel.filteredFollows.collectAsState()
@@ -81,6 +82,12 @@ fun FollowScreen(
 
     LaunchedEffect(Unit) {
         viewModel.updateFollowStatus()
+    }
+
+    LaunchedEffect(refreshSignal) {
+        if (refreshSignal > 0) {
+            viewModel.updateFollowStatus()
+        }
     }
 
     // File export launcher
@@ -139,15 +146,6 @@ fun FollowScreen(
             )
 
             Spacer(modifier = Modifier.weight(1f))
-
-            if (updatingStatus) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(20.dp),
-                    strokeWidth = 2.dp,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Spacer(modifier = Modifier.width(12.dp))
-            }
 
             Box {
                 IconButton(onClick = { showMenu = true }) {

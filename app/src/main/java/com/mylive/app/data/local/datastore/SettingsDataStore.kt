@@ -42,6 +42,7 @@ class SettingsDataStore(private val context: Context) {
         val DanmuArea = doublePreferencesKey("DanmuArea")
         val DanmuLineCount = intPreferencesKey("DanmuLineCount")
         val DanmuDelay = doublePreferencesKey("DanmuDelay")
+        val DanmuDelayBySite = stringPreferencesKey("DanmuDelayBySite")
         val DanmuOpacity = doublePreferencesKey("DanmuOpacity")
         val DanmuStrokeWidth = doublePreferencesKey("DanmuStrokeWidth")
         val DanmuFontWeight = intPreferencesKey("DanmuFontWeight")

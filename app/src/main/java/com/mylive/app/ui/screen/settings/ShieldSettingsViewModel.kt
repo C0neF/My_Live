@@ -80,6 +80,14 @@ class ShieldSettingsViewModel @Inject constructor(
         }
     }
 
+    fun updateKeyword(entity: ShieldEntity, keyword: String) {
+        val trimmed = keyword.trim()
+        if (trimmed.isEmpty()) return
+        viewModelScope.launch {
+            shieldRepository.updateShield(entity.copy(value = "keyword:$trimmed"))
+        }
+    }
+
     fun clearKeywords() {
         viewModelScope.launch {
             shieldRepository.clearAllKeywords()
@@ -92,6 +100,18 @@ class ShieldSettingsViewModel @Inject constructor(
         if (trimmed.isEmpty()) return
         viewModelScope.launch {
             shieldRepository.addShield(ShieldEntity(value = "user:$siteId:$trimmed"))
+        }
+    }
+
+    fun updateUserShield(entity: ShieldEntity, username: String) {
+        val trimmed = username.trim()
+        if (trimmed.isEmpty()) return
+        val siteId = entity.value
+            .removePrefix("user:")
+            .substringBefore(':', missingDelimiterValue = "__all__")
+            .ifBlank { "__all__" }
+        viewModelScope.launch {
+            shieldRepository.updateShield(entity.copy(value = "user:$siteId:$trimmed"))
         }
     }
 

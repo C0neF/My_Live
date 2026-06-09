@@ -42,9 +42,25 @@ private val areaValues = listOf(0.25, 0.333, 0.5, 0.667, 1.0)
 private val opacityValues = listOf(0.2, 0.4, 0.6, 0.8, 1.0)
 private val fontWeightValues = listOf(200, 400, 600, 800)
 private val strokeWidthValues = listOf(0.0, 0.5, 1.0, 2.0)
+private val lineCountValues = (0..12).toList()
+private val delayValues = (0..50).map { it * 100 }
+private val safeMarginValues = (0..12).map { it * 4 }
+private val dedupeWindowValues = listOf(1, 5, 10, 20, 30, 50, 100)
+private val dedupeStepValues = listOf(1, 2, 3, 5, 10, 20)
 
 enum class DanmuSettingDialog {
-    FONT_SIZE, SPEED, AREA, OPACITY, FONT_WEIGHT, STROKE_WIDTH
+    FONT_SIZE,
+    SPEED,
+    AREA,
+    LINE_COUNT,
+    OPACITY,
+    FONT_WEIGHT,
+    STROKE_WIDTH,
+    DELAY,
+    TOP_MARGIN,
+    BOTTOM_MARGIN,
+    DEDUPE_WINDOW,
+    DEDUPE_STEP
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -61,9 +77,20 @@ fun DanmuSettingsScreen(
     val danmuSize by viewModel.danmuSize.collectAsStateWithLifecycle()
     val danmuSpeed by viewModel.danmuSpeed.collectAsStateWithLifecycle()
     val danmuArea by viewModel.danmuArea.collectAsStateWithLifecycle()
+    val danmuLineCount by viewModel.danmuLineCount.collectAsStateWithLifecycle()
+    val danmuDelay by viewModel.danmuDelay.collectAsStateWithLifecycle()
     val danmuOpacity by viewModel.danmuOpacity.collectAsStateWithLifecycle()
     val danmuFontWeight by viewModel.danmuFontWeight.collectAsStateWithLifecycle()
     val danmuStrokeWidth by viewModel.danmuStrokeWidth.collectAsStateWithLifecycle()
+    val danmuTopMargin by viewModel.danmuTopMargin.collectAsStateWithLifecycle()
+    val danmuBottomMargin by viewModel.danmuBottomMargin.collectAsStateWithLifecycle()
+    val danmuDedupeEnable by viewModel.danmuDedupeEnable.collectAsStateWithLifecycle()
+    val danmuDedupeWindow by viewModel.danmuDedupeWindow.collectAsStateWithLifecycle()
+    val danmuDedupeStep by viewModel.danmuDedupeStep.collectAsStateWithLifecycle()
+    val danmuDedupeStrictMode by viewModel.danmuDedupeStrictMode.collectAsStateWithLifecycle()
+    val danmuShieldEnable by viewModel.danmuShieldEnable.collectAsStateWithLifecycle()
+    val danmuKeywordShieldEnable by viewModel.danmuKeywordShieldEnable.collectAsStateWithLifecycle()
+    val danmuUserShieldEnable by viewModel.danmuUserShieldEnable.collectAsStateWithLifecycle()
 
     val fontSizeOptions = stringArrayResource(R.array.danmu_font_size_options)
     val speedOptions = stringArrayResource(R.array.danmu_speed_options)
@@ -116,7 +143,40 @@ fun DanmuSettingsScreen(
                 .background(MaterialTheme.colorScheme.background)
                 .verticalScroll(rememberScrollState())
         ) {
-            // Toggle switches
+            SettingsSectionTitle("弹幕屏蔽")
+
+            SettingsSwitch(
+                title = "启用弹幕屏蔽",
+                subtitle = "关闭后关键词和用户屏蔽都会暂时失效",
+                checked = danmuShieldEnable,
+                onCheckedChange = { viewModel.setDanmuShieldEnable(it) }
+            )
+            HorizontalDivider()
+
+            SettingsSwitch(
+                title = "启用关键词屏蔽",
+                checked = danmuKeywordShieldEnable,
+                onCheckedChange = { viewModel.setDanmuKeywordShieldEnable(it) }
+            )
+            HorizontalDivider()
+
+            SettingsSwitch(
+                title = "启用用户屏蔽",
+                subtitle = "可按平台分别管理，也可在直播间点击用户名快速处理",
+                checked = danmuUserShieldEnable,
+                onCheckedChange = { viewModel.setDanmuUserShieldEnable(it) }
+            )
+            HorizontalDivider()
+
+            SettingsMenu(
+                title = "打开屏蔽管理",
+                subtitle = "添加、编辑关键词和屏蔽用户，管理屏蔽预设",
+                onClick = { navigator.navigate(Route.SettingsDanmuShield) }
+            )
+            HorizontalDivider()
+
+            SettingsSectionTitle("弹幕显示")
+
             SettingsSwitch(
                 title = stringResource(R.string.danmu_switch_title),
                 subtitle = stringResource(R.string.danmu_enable_subtitle),
@@ -177,6 +237,14 @@ fun DanmuSettingsScreen(
             HorizontalDivider()
 
             SettingsMenu(
+                title = "显示几行",
+                subtitle = "0 表示不显示播放器弹幕，超过当前区域上限时自动收紧",
+                value = danmuLineCountText(danmuLineCount),
+                onClick = { activeDialog = DanmuSettingDialog.LINE_COUNT }
+            )
+            HorizontalDivider()
+
+            SettingsMenu(
                 title = stringResource(R.string.danmu_opacity_title),
                 value = opacityOptions.getOrElse(opacityValues.indexOf(danmuOpacity)) { opacityDefault },
                 onClick = { activeDialog = DanmuSettingDialog.OPACITY }
@@ -198,9 +266,60 @@ fun DanmuSettingsScreen(
             HorizontalDivider()
 
             SettingsMenu(
-                title = stringResource(R.string.shield_title),
-                subtitle = stringResource(R.string.settings_danmu_subtitle),
-                onClick = { navigator.navigate(Route.SettingsDanmuShield) }
+                title = "全局弹幕延迟",
+                subtitle = "单位毫秒，适合不同平台节奏不同或网络抖动时微调",
+                value = "${danmuDelay.toInt()} ms",
+                onClick = { activeDialog = DanmuSettingDialog.DELAY }
+            )
+            HorizontalDivider()
+
+            SettingsMenu(
+                title = "顶部安全边距",
+                subtitle = "异形屏或状态栏遮挡时可微调",
+                value = "${danmuTopMargin.toInt()} dp",
+                onClick = { activeDialog = DanmuSettingDialog.TOP_MARGIN }
+            )
+            HorizontalDivider()
+
+            SettingsMenu(
+                title = "底部安全边距",
+                subtitle = "导航栏或手势条遮挡时可微调",
+                value = "${danmuBottomMargin.toInt()} dp",
+                onClick = { activeDialog = DanmuSettingDialog.BOTTOM_MARGIN }
+            )
+            HorizontalDivider()
+
+            SettingsSectionTitle("弹幕过滤")
+
+            SettingsSwitch(
+                title = "重复弹幕过滤",
+                subtitle = "同一用户在最近若干条内重复刷同一句时只显示一次",
+                checked = danmuDedupeEnable,
+                onCheckedChange = { viewModel.setDanmuDedupeEnable(it) }
+            )
+            HorizontalDivider()
+
+            SettingsSwitch(
+                title = "严格去重模式",
+                subtitle = "全局过滤不同观众发送的相同弹幕",
+                checked = danmuDedupeStrictMode,
+                onCheckedChange = { viewModel.setDanmuDedupeStrictMode(it) }
+            )
+            HorizontalDivider()
+
+            SettingsMenu(
+                title = "过滤窗口",
+                subtitle = "默认 10 条；窗口越大越容易过滤刷屏",
+                value = "$danmuDedupeWindow 条",
+                onClick = { activeDialog = DanmuSettingDialog.DEDUPE_WINDOW }
+            )
+            HorizontalDivider()
+
+            SettingsMenu(
+                title = "过滤步长",
+                subtitle = "默认 2；数值越大检查窗口移动越少",
+                value = "$danmuDedupeStep 条",
+                onClick = { activeDialog = DanmuSettingDialog.DEDUPE_STEP }
             )
         }
     }
@@ -236,6 +355,16 @@ fun DanmuSettingsScreen(
                 onDismiss = { activeDialog = null }
             )
         }
+        DanmuSettingDialog.LINE_COUNT -> {
+            SelectionDialog(
+                title = "显示几行",
+                options = lineCountValues.map { danmuLineCountText(it) }.toTypedArray(),
+                values = lineCountValues,
+                selectedValue = danmuLineCount,
+                onSelect = { viewModel.setDanmuLineCount(it) },
+                onDismiss = { activeDialog = null }
+            )
+        }
         DanmuSettingDialog.OPACITY -> {
             SelectionDialog(
                 title = stringResource(R.string.danmu_opacity_title),
@@ -266,9 +395,72 @@ fun DanmuSettingsScreen(
                 onDismiss = { activeDialog = null }
             )
         }
+        DanmuSettingDialog.DELAY -> {
+            SelectionDialog(
+                title = "全局弹幕延迟",
+                options = delayValues.map { "$it ms" }.toTypedArray(),
+                values = delayValues,
+                selectedValue = danmuDelay.toInt(),
+                onSelect = { viewModel.setDanmuDelay(it.toDouble()) },
+                onDismiss = { activeDialog = null }
+            )
+        }
+        DanmuSettingDialog.TOP_MARGIN -> {
+            SelectionDialog(
+                title = "顶部安全边距",
+                options = safeMarginValues.map { "$it dp" }.toTypedArray(),
+                values = safeMarginValues,
+                selectedValue = danmuTopMargin.toInt(),
+                onSelect = { viewModel.setDanmuTopMargin(it.toDouble()) },
+                onDismiss = { activeDialog = null }
+            )
+        }
+        DanmuSettingDialog.BOTTOM_MARGIN -> {
+            SelectionDialog(
+                title = "底部安全边距",
+                options = safeMarginValues.map { "$it dp" }.toTypedArray(),
+                values = safeMarginValues,
+                selectedValue = danmuBottomMargin.toInt(),
+                onSelect = { viewModel.setDanmuBottomMargin(it.toDouble()) },
+                onDismiss = { activeDialog = null }
+            )
+        }
+        DanmuSettingDialog.DEDUPE_WINDOW -> {
+            SelectionDialog(
+                title = "过滤窗口",
+                options = dedupeWindowValues.map { "$it 条" }.toTypedArray(),
+                values = dedupeWindowValues,
+                selectedValue = danmuDedupeWindow,
+                onSelect = { viewModel.setDanmuDedupeWindow(it) },
+                onDismiss = { activeDialog = null }
+            )
+        }
+        DanmuSettingDialog.DEDUPE_STEP -> {
+            SelectionDialog(
+                title = "过滤步长",
+                options = dedupeStepValues.map { "$it 条" }.toTypedArray(),
+                values = dedupeStepValues,
+                selectedValue = danmuDedupeStep,
+                onSelect = { viewModel.setDanmuDedupeStep(it) },
+                onDismiss = { activeDialog = null }
+            )
+        }
         null -> { /* Do nothing */ }
     }
 }
+
+@Composable
+private fun SettingsSectionTitle(title: String) {
+    Text(
+        text = title,
+        style = MaterialTheme.typography.titleSmall,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 4.dp)
+    )
+}
+
+private fun danmuLineCountText(value: Int): String =
+    if (value <= 0) "不显示弹幕" else "$value 行"
 
 @Composable
 private fun <T> SelectionDialog(

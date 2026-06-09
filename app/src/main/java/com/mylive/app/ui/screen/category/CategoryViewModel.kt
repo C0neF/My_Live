@@ -81,7 +81,7 @@ class CategoryViewModel @Inject constructor(
         loadCategories()
     }
 
-    private fun loadCategories() {
+    private fun loadCategories(forceRefresh: Boolean = false) {
         val sites = siteList.value
         val index = _selectedSiteIndex.value
         if (index !in sites.indices) return
@@ -90,7 +90,7 @@ class CategoryViewModel @Inject constructor(
 
         // If already cached with data, use cache immediately (no flicker)
         val cached = siteCache[site.id]
-        if (cached != null && cached.categories.isNotEmpty()) {
+        if (cached != null && shouldUseCachedCategories(forceRefresh, cachedHasData = cached.categories.isNotEmpty())) {
             loadJob?.cancel()
             _loadedSiteId.value = site.id
             _categories.value = cached.categories
@@ -108,7 +108,7 @@ class CategoryViewModel @Inject constructor(
             if (cached == null || cached.categories.isEmpty()) {
                 _categories.value = emptyList()
             }
-            siteCache[site.id] = SiteCache(loading = true)
+            siteCache[site.id] = SiteCache(categories = cached?.categories.orEmpty(), loading = true)
             try {
                 val result = site.getCategories()
                 _categories.value = result
@@ -117,8 +117,9 @@ class CategoryViewModel @Inject constructor(
                 if (e is kotlinx.coroutines.CancellationException) throw e
                 Timber.e(e, "Failed to load categories for ${site.name}")
                 _error.value = e.message ?: "加载分类失败"
-                _categories.value = emptyList()
-                siteCache[site.id] = SiteCache(error = _error.value)
+                val fallbackCategories = cached?.categories.orEmpty()
+                _categories.value = fallbackCategories
+                siteCache[site.id] = SiteCache(categories = fallbackCategories, error = _error.value)
             } finally {
                 _loading.value = false
             }
@@ -140,8 +141,12 @@ class CategoryViewModel @Inject constructor(
         )
     }
 
+    fun refresh() {
+        loadCategories(forceRefresh = true)
+    }
+
     fun retry() {
-        loadCategories()
+        loadCategories(forceRefresh = true)
     }
 
     fun getSelectedSite(): LiveSite? {

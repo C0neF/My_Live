@@ -17,6 +17,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import com.mylive.app.ui.theme.Icons
@@ -29,6 +30,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -72,14 +74,19 @@ fun PlayerView(
     onDanmuSpeedChange: ((Double) -> Unit)? = null,
     danmuArea: Double = 0.8,
     onDanmuAreaChange: ((Double) -> Unit)? = null,
+    danmuLineCount: Int = 8,
+    danmuDelayMs: Int = 0,
     danmuOpacity: Double = 1.0,
     onDanmuOpacityChange: ((Double) -> Unit)? = null,
     // Other danmaku settings
     danmuFontWeight: Int = 4,
     danmuStrokeWidth: Double = 2.0,
+    danmuTopMargin: Double = 0.0,
+    danmuBottomMargin: Double = 0.0,
     danmuHideScroll: Boolean = false,
     danmuDedupeEnable: Boolean = false,
-    danmuDedupeWindow: Int = 20,
+    danmuDedupeWindow: Int = 10,
+    danmuDedupeStep: Int = 2,
     danmuDedupeStrictMode: Boolean = false,
     scaleMode: Int = 0,
     playerCompatMode: Boolean = false,
@@ -198,12 +205,17 @@ fun PlayerView(
                                 resolvedSize,
                                 resolvedSpeed,
                                 danmuArea,
+                                danmuLineCount,
+                                danmuDelayMs,
                                 danmuOpacity,
                                 danmuFontWeight,
                                 danmuStrokeWidth,
+                                danmuTopMargin,
+                                danmuBottomMargin,
                                 danmuHideScroll,
                                 danmuDedupeEnable,
                                 danmuDedupeWindow,
+                                danmuDedupeStep,
                                 danmuDedupeStrictMode,
                                 danmuRenderEmoji
                             )
@@ -216,12 +228,17 @@ fun PlayerView(
                             resolvedSize,
                             resolvedSpeed,
                             danmuArea,
+                            danmuLineCount,
+                            danmuDelayMs,
                             danmuOpacity,
                             danmuFontWeight,
                             danmuStrokeWidth,
+                            danmuTopMargin,
+                            danmuBottomMargin,
                             danmuHideScroll,
                             danmuDedupeEnable,
                             danmuDedupeWindow,
+                            danmuDedupeStep,
                             danmuDedupeStrictMode,
                             danmuRenderEmoji
                         )
@@ -494,27 +511,7 @@ fun PlayerView(
 
         // Error state
         if (state.error != null) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.7f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(
-                        Icons.Default.ErrorOutline,
-                        contentDescription = null,
-                        tint = Color.Red,
-                        modifier = Modifier.size(48.dp)
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = state.error ?: "",
-                        color = Color.White,
-                        style = MaterialTheme.typography.bodyLarge
-                    )
-                }
-            }
+            PlayerErrorOverlay(message = state.error ?: "")
         }
     }
 
@@ -544,6 +541,47 @@ fun PlayerView(
             onDanmuOpacityChange = { onDanmuOpacityChange?.invoke(it) },
             onDismiss = { showDanmuSettingsSheet = false }
         )
+    }
+}
+
+@Composable
+private fun PlayerErrorOverlay(
+    message: String,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(horizontal = 24.dp, vertical = 72.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Surface(
+            modifier = Modifier.widthIn(max = 320.dp),
+            shape = RoundedCornerShape(12.dp),
+            color = Color.Black.copy(alpha = 0.78f),
+            contentColor = Color.White
+        ) {
+            Column(
+                modifier = Modifier.padding(horizontal = 18.dp, vertical = 16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Icon(
+                    Icons.Default.ErrorOutline,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(34.dp)
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = message,
+                    color = Color.White,
+                    style = MaterialTheme.typography.bodyMedium,
+                    textAlign = TextAlign.Center,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
     }
 }
 
@@ -816,7 +854,6 @@ private fun DanmakuSettingsBottomSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp)
-                .padding(bottom = 32.dp)
         ) {
             Text(
                 text = "弹幕快捷设置",
@@ -825,87 +862,96 @@ private fun DanmakuSettingsBottomSheet(
                 modifier = Modifier.padding(vertical = 12.dp)
             )
             HorizontalDivider()
-            Spacer(modifier = Modifier.height(16.dp))
 
-            // Size Selector
-            Text("弹幕字号", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-            Spacer(modifier = Modifier.height(8.dp))
-            val sizeValues = listOf(0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.5)
-            Row(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    .weight(1f, fill = false)
+                    .verticalScroll(rememberScrollState())
+                    .padding(bottom = 32.dp)
             ) {
-                sizeValues.forEach { size ->
-                    FilterChip(
-                        selected = danmuSize == size,
-                        onClick = { onDanmuSizeChange(size) },
-                        label = { Text("${size}x") }
-                    )
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Size Selector
+                Text("弹幕字号", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                Spacer(modifier = Modifier.height(8.dp))
+                val sizeValues = listOf(0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.5)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    sizeValues.forEach { size ->
+                        FilterChip(
+                            selected = danmuSize == size,
+                            onClick = { onDanmuSizeChange(size) },
+                            label = { Text("${size}x") }
+                        )
+                    }
                 }
-            }
-            Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(16.dp))
 
-            // Speed Selector
-            Text("弹幕速度", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-            Spacer(modifier = Modifier.height(8.dp))
-            val speedValues = listOf(0.6, 0.8, 1.0, 1.2, 1.5)
-            val speedLabels = listOf("极慢", "较慢", "正常", "较快", "最快")
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                speedValues.forEachIndexed { idx, speed ->
-                    FilterChip(
-                        selected = danmuSpeed == speed,
-                        onClick = { onDanmuSpeedChange(speed) },
-                        label = { Text(speedLabels[idx]) }
-                    )
+                // Speed Selector
+                Text("弹幕速度", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                Spacer(modifier = Modifier.height(8.dp))
+                val speedValues = listOf(0.6, 0.8, 1.0, 1.2, 1.5)
+                val speedLabels = listOf("极慢", "较慢", "正常", "较快", "最快")
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    speedValues.forEachIndexed { idx, speed ->
+                        FilterChip(
+                            selected = danmuSpeed == speed,
+                            onClick = { onDanmuSpeedChange(speed) },
+                            label = { Text(speedLabels[idx]) }
+                        )
+                    }
                 }
-            }
-            Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(16.dp))
 
-            // Area Selector
-            Text("显示区域", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-            Spacer(modifier = Modifier.height(8.dp))
-            val areaValues = listOf(0.25, 0.333, 0.5, 0.667, 1.0)
-            val areaLabels = listOf("1/4屏", "1/3屏", "1/2屏", "2/3屏", "全屏")
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                areaValues.forEachIndexed { idx, area ->
-                    FilterChip(
-                        selected = danmuArea == area,
-                        onClick = { onDanmuAreaChange(area) },
-                        label = { Text(areaLabels[idx]) }
-                    )
+                // Area Selector
+                Text("显示区域", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                Spacer(modifier = Modifier.height(8.dp))
+                val areaValues = listOf(0.25, 0.333, 0.5, 0.667, 1.0)
+                val areaLabels = listOf("1/4屏", "1/3屏", "1/2屏", "2/3屏", "全屏")
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    areaValues.forEachIndexed { idx, area ->
+                        FilterChip(
+                            selected = danmuArea == area,
+                            onClick = { onDanmuAreaChange(area) },
+                            label = { Text(areaLabels[idx]) }
+                        )
+                    }
                 }
-            }
-            Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(16.dp))
 
-            // Opacity Selector
-            Text("不透明度", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-            Spacer(modifier = Modifier.height(8.dp))
-            val opacityValues = listOf(0.2, 0.4, 0.6, 0.8, 1.0)
-            val opacityLabels = listOf("20%", "40%", "60%", "80%", "100%")
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                opacityValues.forEachIndexed { idx, opacity ->
-                    FilterChip(
-                        selected = danmuOpacity == opacity,
-                        onClick = { onDanmuOpacityChange(opacity) },
-                        label = { Text(opacityLabels[idx]) }
-                    )
+                // Opacity Selector
+                Text("不透明度", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                Spacer(modifier = Modifier.height(8.dp))
+                val opacityValues = listOf(0.2, 0.4, 0.6, 0.8, 1.0)
+                val opacityLabels = listOf("20%", "40%", "60%", "80%", "100%")
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    opacityValues.forEachIndexed { idx, opacity ->
+                        FilterChip(
+                            selected = danmuOpacity == opacity,
+                            onClick = { onDanmuOpacityChange(opacity) },
+                            label = { Text(opacityLabels[idx]) }
+                        )
+                    }
                 }
             }
         }
@@ -917,24 +963,34 @@ private fun updateControllerConfig(
     danmuSize: Double,
     danmuSpeed: Double,
     danmuArea: Double,
+    danmuLineCount: Int,
+    danmuDelayMs: Int,
     danmuOpacity: Double,
     danmuFontWeight: Int,
     danmuStrokeWidth: Double,
+    danmuTopMargin: Double,
+    danmuBottomMargin: Double,
     danmuHideScroll: Boolean,
     danmuDedupeEnable: Boolean,
     danmuDedupeWindow: Int,
+    danmuDedupeStep: Int,
     danmuDedupeStrictMode: Boolean,
     danmuRenderEmoji: Boolean
 ) {
     controller.danmuSize = danmuSize.toFloat()
     controller.danmuSpeed = danmuSpeed.toFloat()
     controller.danmuArea = danmuArea.toFloat()
+    controller.danmuLineCount = danmuLineCount
+    controller.danmuDelayMs = danmuDelayMs
     controller.danmuOpacity = danmuOpacity.toFloat()
     controller.danmuFontWeight = danmuFontWeight
     controller.danmuStrokeWidth = danmuStrokeWidth.toFloat()
+    controller.danmuTopMargin = danmuTopMargin.toFloat()
+    controller.danmuBottomMargin = danmuBottomMargin.toFloat()
     controller.danmuHideScroll = danmuHideScroll
     controller.dedupeEnabled = danmuDedupeEnable
     controller.dedupeWindowSize = danmuDedupeWindow
+    controller.dedupeStepSize = danmuDedupeStep
     controller.dedupeStrictMode = danmuDedupeStrictMode
     controller.danmuRenderEmoji = danmuRenderEmoji
 }

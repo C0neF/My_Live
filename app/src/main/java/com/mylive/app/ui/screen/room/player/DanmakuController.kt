@@ -10,6 +10,7 @@ import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Typeface
 import android.graphics.drawable.BitmapDrawable
+import android.os.SystemClock
 import android.util.LruCache
 import coil.Coil
 import coil.request.ImageRequest
@@ -41,7 +42,11 @@ class DanmakuItem(
     val type: LiveMessageType
 )
 
-private class PendingDanmaku(val parts: List<DanmakuPart>, val type: LiveMessageType)
+private class PendingDanmaku(
+    val parts: List<DanmakuPart>,
+    val type: LiveMessageType,
+    val releaseTimeMs: Long
+)
 
 /**
  * Renders scrolling danmaku onto a SurfaceView canvas.
@@ -74,19 +79,23 @@ class DanmakuController(private val context: Context) {
 
     // De-duplication window (touched on addDanmaku threads, guarded by its own lock).
     private val dedupeLock = Any()
-    private val dedupeQueue = ArrayDeque<String>()
-    private val dedupeSet = HashSet<String>()
+    private val dedupeWindow = DanmakuDedupeWindow()
 
     // Config options — written on UI thread, read on render thread.
     @Volatile var danmuSize = 16f // sp
     @Volatile var danmuSpeed = 1.0f // speed multiplier
     @Volatile var danmuArea = 0.8f // coverage percentage (0.0 to 1.0)
+    @Volatile var danmuLineCount = 8
+    @Volatile var danmuDelayMs = 0
     @Volatile var danmuOpacity = 1.0f
     @Volatile var danmuFontWeight = 4 // 2=Light, 4=Normal, 6=Bold, 8=ExtraBold
     @Volatile var danmuStrokeWidth = 2.0f
+    @Volatile var danmuTopMargin = 0.0f
+    @Volatile var danmuBottomMargin = 0.0f
     @Volatile var danmuHideScroll = false
     @Volatile var dedupeEnabled = false
     @Volatile var dedupeWindowSize = 20
+    @Volatile var dedupeStepSize = 2
     @Volatile var dedupeStrictMode = false
     @Volatile var danmuRenderEmoji = true
 
@@ -120,22 +129,23 @@ class DanmakuController(private val context: Context) {
     fun addDanmaku(msg: LiveMessage) {
         if (msg.type != LiveMessageType.CHAT) return
         if (danmuHideScroll) return
+        if (danmuLineCount <= 0) return
 
         // Repeat filter (de-duplication).
-        if (dedupeEnabled) {
-            val key = if (dedupeStrictMode) msg.message else "${msg.userName}:${msg.message}"
-            synchronized(dedupeLock) {
-                if (!dedupeSet.add(key)) return // duplicate
-                dedupeQueue.addLast(key)
-                while (dedupeQueue.size > dedupeWindowSize) {
-                    dedupeSet.remove(dedupeQueue.removeFirst())
-                }
-            }
+        synchronized(dedupeLock) {
+            dedupeWindow.configure(
+                enabled = dedupeEnabled,
+                windowSize = dedupeWindowSize,
+                stepSize = dedupeStepSize,
+                strictMode = dedupeStrictMode
+            )
+            if (dedupeWindow.shouldDrop(msg)) return
         }
 
         val parts = buildParts(msg)
         preloadImages(parts)
-        pending.add(PendingDanmaku(parts, msg.type))
+        val releaseTimeMs = SystemClock.uptimeMillis() + danmuDelayMs.coerceIn(0, 5000)
+        pending.add(PendingDanmaku(parts, msg.type, releaseTimeMs))
     }
 
     private fun buildParts(msg: LiveMessage): List<DanmakuPart> {
@@ -196,8 +206,7 @@ class DanmakuController(private val context: Context) {
         clearRequested = true
         pending.clear()
         synchronized(dedupeLock) {
-            dedupeQueue.clear()
-            dedupeSet.clear()
+            dedupeWindow.clear()
         }
     }
 
@@ -226,6 +235,12 @@ class DanmakuController(private val context: Context) {
         }
 
         configurePaintsIfNeeded()
+        if (danmuHideScroll || danmuLineCount <= 0) {
+            pending.clear()
+            activeDanmakus.clear()
+            lastDanmakusOnTrack.fill(null)
+            return
+        }
         drainPending()
 
         val dtMs = if (lastFrameNanos == 0L) {
@@ -322,14 +337,31 @@ class DanmakuController(private val context: Context) {
             return
         }
 
+        val layout = resolveDanmakuTrackLayout(
+            viewportHeightPx = h,
+            density = cfgDensity,
+            fontSizeSp = danmuSize,
+            area = danmuArea,
+            requestedLineCount = danmuLineCount,
+            topMarginDp = danmuTopMargin,
+            bottomMarginDp = danmuBottomMargin,
+            maxTracks = MAX_TRACKS
+        )
+        if (layout.trackCount <= 0) {
+            pending.clear()
+            return
+        }
         val fontHeight = danmuSize * cfgDensity
-        val trackHeight = fontHeight * 1.5f
-        val maxTracks = ((h * danmuArea) / trackHeight).toInt().coerceIn(1, MAX_TRACKS)
+        val trackHeight = layout.trackHeightPx
+        val maxTracks = layout.trackCount
         val pad = 50 * cfgDensity
         val durationMs = 8000f / danmuSpeed.coerceAtLeast(0.1f)
+        val nowMs = SystemClock.uptimeMillis()
 
-        var p = pending.poll()
+        var p = pending.peek()
         while (p != null) {
+            if (p.releaseTimeMs > nowMs) return
+            pending.poll()
             val itemWidth = measureWidth(p.parts, fontHeight)
 
             var track = -1
@@ -345,7 +377,7 @@ class DanmakuController(private val context: Context) {
             val item = DanmakuItem(
                 parts = p.parts,
                 x = w.toFloat(),
-                y = (track + 1) * trackHeight,
+                y = layout.topOffsetPx + (track + 1) * trackHeight,
                 speedPxPerMs = (w + itemWidth) / durationMs,
                 width = itemWidth,
                 track = track,
@@ -353,7 +385,7 @@ class DanmakuController(private val context: Context) {
             )
             lastDanmakusOnTrack[track] = item
             activeDanmakus.add(item)
-            p = pending.poll()
+            p = pending.peek()
         }
     }
 

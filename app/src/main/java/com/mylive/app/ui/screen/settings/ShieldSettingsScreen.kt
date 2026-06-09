@@ -2,6 +2,8 @@ package com.mylive.app.ui.screen.settings
 
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -66,6 +68,44 @@ fun ShieldSettingsScreen(
 
     var showImportDialog by remember { mutableStateOf(false) }
     var importJsonText by remember { mutableStateOf("") }
+    var exportJsonForFile by remember { mutableStateOf("") }
+
+    val exportFileLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null && exportJsonForFile.isNotBlank()) {
+            runCatching {
+                context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { writer ->
+                    writer.write(exportJsonForFile)
+                }
+            }.onSuccess {
+                Toast.makeText(context, "屏蔽配置已导出", Toast.LENGTH_SHORT).show()
+            }.onFailure {
+                Toast.makeText(context, "导出失败", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    val importFileLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            runCatching {
+                context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { reader ->
+                    reader.readText()
+                }.orEmpty()
+            }.onSuccess { json ->
+                val success = viewModel.importPresetJson(json)
+                Toast.makeText(
+                    context,
+                    if (success) R.string.shield_preset_import_success else R.string.shield_preset_import_failed,
+                    Toast.LENGTH_SHORT
+                ).show()
+            }.onFailure {
+                Toast.makeText(context, R.string.shield_preset_import_failed, Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -127,6 +167,7 @@ fun ShieldSettingsScreen(
                         onToggleChange = { viewModel.setDanmuKeywordShieldEnable(it) },
                         keywords = keywords,
                         onAdd = { viewModel.addKeyword(it) },
+                        onUpdateKeyword = { entity, keyword -> viewModel.updateKeyword(entity, keyword) },
                         onDelete = { viewModel.deleteShield(it) },
                         onClear = { viewModel.clearKeywords() }
                     )
@@ -138,6 +179,7 @@ fun ShieldSettingsScreen(
                         activeUsers = activeUserShields,
                         onSiteSelect = { viewModel.selectUserSite(it) },
                         onAdd = { username -> viewModel.addUserShield(username, selectedUserSiteId) },
+                        onUpdateUser = { entity, username -> viewModel.updateUserShield(entity, username) },
                         onDelete = { viewModel.deleteShield(it) },
                         onClearGroup = { viewModel.clearUserShields(selectedUserSiteId) },
                         onClearAll = { viewModel.clearAllUserShields() }
@@ -145,9 +187,10 @@ fun ShieldSettingsScreen(
                     2 -> PresetTabContent(
                         presets = presets,
                         onSaveCurrent = { viewModel.savePreset(it) },
+                        onOverwrite = { viewModel.savePreset(it.name) },
                         onApply = { viewModel.applyPreset(it) },
                         onDelete = { viewModel.deletePreset(it.name) },
-                        onExport = {
+                        onExportText = {
                             coroutineScope.launch {
                                 val json = viewModel.generateExportJson()
                                 if (json.isNotEmpty()) {
@@ -156,9 +199,21 @@ fun ShieldSettingsScreen(
                                 }
                             }
                         },
-                        onImportClick = {
+                        onExportFile = {
+                            coroutineScope.launch {
+                                val json = viewModel.generateExportJson()
+                                if (json.isNotEmpty()) {
+                                    exportJsonForFile = json
+                                    exportFileLauncher.launch("my_live_danmu_shield.json")
+                                }
+                            }
+                        },
+                        onImportTextClick = {
                             importJsonText = ""
                             showImportDialog = true
+                        },
+                        onImportFileClick = {
+                            importFileLauncher.launch(arrayOf("application/json", "text/*"))
                         }
                     )
                 }
@@ -213,10 +268,13 @@ private fun KeywordTabContent(
     onToggleChange: (Boolean) -> Unit,
     keywords: List<ShieldEntity>,
     onAdd: (String) -> Unit,
+    onUpdateKeyword: (ShieldEntity, String) -> Unit,
     onDelete: (Long) -> Unit,
     onClear: () -> Unit
 ) {
     var textInput by remember { mutableStateOf("") }
+    var editingKeyword by remember { mutableStateOf<ShieldEntity?>(null) }
+    var editingText by remember { mutableStateOf("") }
 
     Column(modifier = Modifier.fillMaxSize()) {
         SettingsSwitch(
@@ -265,8 +323,14 @@ private fun KeywordTabContent(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.End
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
+                Text(
+                    text = "已添加 ${keywords.size} 个关键词（点击编辑，点叉移除）",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 TextButton(
                     onClick = onClear,
                     colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
@@ -303,6 +367,19 @@ private fun KeywordTabContent(
                             modifier = Modifier.weight(1f)
                         )
                         IconButton(
+                            onClick = {
+                                editingKeyword = entity
+                                editingText = keyword
+                            },
+                            enabled = enabled
+                        ) {
+                            Icon(
+                                Icons.Default.Edit,
+                                contentDescription = "编辑",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        IconButton(
                             onClick = { onDelete(entity.id) },
                             enabled = enabled
                         ) {
@@ -317,6 +394,38 @@ private fun KeywordTabContent(
             }
         }
     }
+
+    editingKeyword?.let { entity ->
+        AlertDialog(
+            onDismissRequest = { editingKeyword = null },
+            title = { Text("编辑关键词") },
+            text = {
+                OutlinedTextField(
+                    value = editingText,
+                    onValueChange = { editingText = it },
+                    placeholder = { Text(stringResource(R.string.shield_keyword_hint)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onUpdateKeyword(entity, editingText)
+                        editingKeyword = null
+                    },
+                    enabled = editingText.isNotBlank()
+                ) {
+                    Text(stringResource(R.string.action_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { editingKeyword = null }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            }
+        )
+    }
 }
 
 @Composable
@@ -328,11 +437,14 @@ private fun UserTabContent(
     activeUsers: List<ShieldEntity>,
     onSiteSelect: (String) -> Unit,
     onAdd: (String) -> Unit,
+    onUpdateUser: (ShieldEntity, String) -> Unit,
     onDelete: (Long) -> Unit,
     onClearGroup: () -> Unit,
     onClearAll: () -> Unit
 ) {
     var textInput by remember { mutableStateOf("") }
+    var editingUser by remember { mutableStateOf<ShieldEntity?>(null) }
+    var editingText by remember { mutableStateOf("") }
     val siteOptions = listOf(
         "__all__" to "所有平台",
         "bilibili" to "哔哩哔哩",
@@ -450,6 +562,19 @@ private fun UserTabContent(
                             modifier = Modifier.weight(1f)
                         )
                         IconButton(
+                            onClick = {
+                                editingUser = entity
+                                editingText = username
+                            },
+                            enabled = enabled
+                        ) {
+                            Icon(
+                                Icons.Default.Edit,
+                                contentDescription = "编辑",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        IconButton(
                             onClick = { onDelete(entity.id) },
                             enabled = enabled
                         ) {
@@ -464,18 +589,55 @@ private fun UserTabContent(
             }
         }
     }
+
+    editingUser?.let { entity ->
+        AlertDialog(
+            onDismissRequest = { editingUser = null },
+            title = { Text("编辑屏蔽用户") },
+            text = {
+                OutlinedTextField(
+                    value = editingText,
+                    onValueChange = { editingText = it },
+                    placeholder = { Text(stringResource(R.string.shield_user_hint)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onUpdateUser(entity, editingText)
+                        editingUser = null
+                    },
+                    enabled = editingText.isNotBlank()
+                ) {
+                    Text(stringResource(R.string.action_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { editingUser = null }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            }
+        )
+    }
 }
 
 @Composable
 private fun PresetTabContent(
     presets: List<ShieldPresetEntity>,
     onSaveCurrent: (String) -> Unit,
+    onOverwrite: (ShieldPresetEntity) -> Unit,
     onApply: (ShieldPresetEntity) -> Unit,
     onDelete: (ShieldPresetEntity) -> Unit,
-    onExport: () -> Unit,
-    onImportClick: () -> Unit
+    onExportText: () -> Unit,
+    onExportFile: () -> Unit,
+    onImportTextClick: () -> Unit,
+    onImportFileClick: () -> Unit
 ) {
     var textInput by remember { mutableStateOf("") }
+    var showImportMenu by remember { mutableStateOf(false) }
+    var showExportMenu by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -487,21 +649,63 @@ private fun PresetTabContent(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            OutlinedButton(
-                onClick = onImportClick,
-                modifier = Modifier.weight(1f)
-            ) {
-                Icon(Icons.Default.Download, contentDescription = null)
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(stringResource(R.string.shield_preset_import))
+            Box(modifier = Modifier.weight(1f)) {
+                OutlinedButton(
+                    onClick = { showImportMenu = true },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.Download, contentDescription = null)
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(stringResource(R.string.shield_preset_import))
+                }
+                DropdownMenu(
+                    expanded = showImportMenu,
+                    onDismissRequest = { showImportMenu = false }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("从文件导入") },
+                        onClick = {
+                            showImportMenu = false
+                            onImportFileClick()
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("从文本导入") },
+                        onClick = {
+                            showImportMenu = false
+                            onImportTextClick()
+                        }
+                    )
+                }
             }
-            OutlinedButton(
-                onClick = onExport,
-                modifier = Modifier.weight(1f)
-            ) {
-                Icon(Icons.Default.Upload, contentDescription = null)
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(stringResource(R.string.shield_preset_export))
+            Box(modifier = Modifier.weight(1f)) {
+                OutlinedButton(
+                    onClick = { showExportMenu = true },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.Upload, contentDescription = null)
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(stringResource(R.string.shield_preset_export))
+                }
+                DropdownMenu(
+                    expanded = showExportMenu,
+                    onDismissRequest = { showExportMenu = false }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("导出到文件") },
+                        onClick = {
+                            showExportMenu = false
+                            onExportFile()
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("导出为文本") },
+                        onClick = {
+                            showExportMenu = false
+                            onExportText()
+                        }
+                    )
+                }
             }
         }
 
@@ -575,6 +779,9 @@ private fun PresetTabContent(
                             horizontalArrangement = Arrangement.spacedBy(4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
+                            TextButton(onClick = { onOverwrite(preset) }) {
+                                Text("覆盖保存")
+                            }
                             TextButton(onClick = { onApply(preset) }) {
                                 Text(stringResource(R.string.shield_preset_apply))
                             }

@@ -3,18 +3,16 @@ package com.mylive.app.ui.screen.search
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -27,10 +25,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.mylive.app.ui.navigation.Navigator
-import com.mylive.app.ui.navigation.Route
 import com.mylive.app.R
 import com.mylive.app.ui.component.LiveRoomCard
 import com.mylive.app.ui.component.LiveRoomGridMinCellWidth
@@ -51,6 +52,7 @@ fun SearchScreen(
     val uiState by viewModel.uiState.collectAsState()
     var searchText by remember { mutableStateOf("") }
     var selectedTab by remember { mutableIntStateOf(0) }
+    var showSearchTypeMenu by remember { mutableStateOf(false) }
 
     var isExiting by remember { mutableStateOf(false) }
     val handleBack: () -> Unit = {
@@ -63,27 +65,35 @@ fun SearchScreen(
         handleBack()
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.search_title)) },
-                navigationIcon = {
-                    IconButton(onClick = handleBack) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(R.string.cd_back)
-                        )
-                    }
-                }
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .imePadding()
+    ) {
+        // Compact Premium Header
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = handleBack) {
+                Icon(
+                    Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = stringResource(R.string.cd_back)
+                )
+            }
+            Text(
+                text = stringResource(R.string.search_title),
+                style = MaterialTheme.typography.titleLarge.copy(
+                    fontWeight = FontWeight.ExtraBold,
+                    letterSpacing = 0.5.sp
+                ),
+                color = MaterialTheme.colorScheme.onSurface
             )
         }
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .imePadding()
-        ) {
+
             // Premium Pill Search bar
             TextField(
                 value = searchText,
@@ -133,84 +143,69 @@ fun SearchScreen(
                 )
             )
 
-            // Platform Selector Chip LazyRow
+            // Compact search filter row
             if (viewModel.siteTabs.isNotEmpty()) {
-                LazyRow(
+                val compactFilterMetrics = searchCompactPlatformFilterMetrics()
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 8.dp),
-                    contentPadding = PaddingValues(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        .padding(
+                            horizontal = compactFilterMetrics.horizontalPaddingDp.dp,
+                            vertical = 2.dp
+                        ),
+                    horizontalArrangement = Arrangement.spacedBy(compactFilterMetrics.itemGapDp.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    itemsIndexed(viewModel.siteTabs) { index, site ->
-                        val isSelected = selectedTab == index
+                    CompactSearchTypeMenu(
+                        modifier = Modifier.width(searchCompactModeSelectorWidthDp().dp),
+                        searchType = uiState.searchType,
+                        expanded = showSearchTypeMenu,
+                        onExpandedChange = { showSearchTypeMenu = it },
+                        onTypeSelected = viewModel::setSearchType,
+                        metrics = compactFilterMetrics
+                    )
 
-                        // Color animations
-                        val containerColor by animateColorAsState(
-                            targetValue = if (isSelected) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)
+                    viewModel.siteTabs.forEachIndexed { index, site ->
+                        CompactSearchFilterPill(
+                            modifier = Modifier.weight(1f),
+                            text = searchPlatformDisplayName(site.name),
+                            selected = selectedTab == index,
+                            onClick = {
+                                selectedTab = index
+                                viewModel.selectSite(index)
                             },
-                            label = "containerColor"
+                            metrics = compactFilterMetrics
                         )
-                        val contentColor by animateColorAsState(
-                            targetValue = if (isSelected) {
-                                MaterialTheme.colorScheme.onPrimary
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            },
-                            label = "contentColor"
-                        )
-
-                        Box(
-                            modifier = Modifier
-                                .height(36.dp)
-                                .background(containerColor, shape = RoundedCornerShape(18.dp))
-                                .border(
-                                    width = 1.dp,
-                                    color = if (isSelected) Color.Transparent else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
-                                    shape = RoundedCornerShape(18.dp)
-                                )
-                                .clickable(
-                                    interactionSource = remember { MutableInteractionSource() },
-                                    indication = null,
-                                    onClick = {
-                                        selectedTab = index
-                                        viewModel.selectSite(index)
-                                    }
-                                )
-                                .padding(horizontal = 16.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = site.name,
-                                color = contentColor,
-                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold)
-                            )
-                        }
                     }
                 }
             }
 
-            // Search type toggle
-            Row(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                FilterChip(
-                    selected = uiState.searchType == 0,
-                    onClick = { viewModel.setSearchType(0) },
-                    label = { Text(stringResource(R.string.search_type_room)) },
-                    modifier = Modifier.padding(end = 8.dp)
-                )
-                FilterChip(
-                    selected = uiState.searchType == 1,
-                    onClick = { viewModel.setSearchType(1) },
-                    label = { Text(stringResource(R.string.search_type_anchor)) }
-                )
-            }
-
             AnimatedContent(
                 targetState = selectedTab to uiState.searchType,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier
+                    .weight(1f)
+                    .pointerInput(selectedTab, viewModel.siteTabs.size) {
+                        var dragX = 0f
+                        detectHorizontalDragGestures(
+                            onDragStart = { dragX = 0f },
+                            onHorizontalDrag = { change, dragAmount ->
+                                change.consume()
+                                dragX += dragAmount
+                            },
+                            onDragEnd = {
+                                val targetIndex = searchPlatformSwipeTargetIndex(
+                                    currentIndex = selectedTab,
+                                    siteCount = viewModel.siteTabs.size,
+                                    dragX = dragX
+                                )
+                                if (targetIndex != selectedTab) {
+                                    selectedTab = targetIndex
+                                    viewModel.selectSite(targetIndex)
+                                }
+                            },
+                            onDragCancel = { dragX = 0f }
+                        )
+                    },
                 transitionSpec = {
                     val direction = if (initialState.first != targetState.first) {
                         AppMotion.indexDirection(initialState.first, targetState.first)
@@ -356,5 +351,156 @@ fun SearchScreen(
                 }
             }
         }
+    }
+
+@Composable
+private fun CompactSearchTypeMenu(
+    modifier: Modifier = Modifier,
+    searchType: Int,
+    expanded: Boolean,
+    onExpandedChange: (Boolean) -> Unit,
+    onTypeSelected: (Int) -> Unit,
+    metrics: SearchCompactPlatformFilterMetrics
+) {
+    val roomLabel = stringResource(R.string.search_type_room)
+    val anchorLabel = stringResource(R.string.search_type_anchor)
+    val selectedLabel = if (searchType == 0) roomLabel else anchorLabel
+
+    Box(modifier = modifier) {
+        CompactSearchFilterPill(
+            modifier = Modifier.fillMaxWidth(),
+            text = selectedLabel,
+            selected = true,
+            onClick = { onExpandedChange(true) },
+            showDropdownIcon = true,
+            metrics = metrics
+        )
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { onExpandedChange(false) }
+        ) {
+            listOf(0 to roomLabel, 1 to anchorLabel).forEach { (type, label) ->
+                DropdownMenuItem(
+                    text = { Text(label) },
+                    onClick = {
+                        onExpandedChange(false)
+                        onTypeSelected(type)
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CompactSearchFilterPill(
+    modifier: Modifier = Modifier,
+    text: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    showDropdownIcon: Boolean = false,
+    metrics: SearchCompactPlatformFilterMetrics
+) {
+    val containerColor by animateColorAsState(
+        targetValue = if (selected) {
+            MaterialTheme.colorScheme.primaryContainer
+        } else {
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+        },
+        label = "searchFilterContainerColor"
+    )
+    val contentColor by animateColorAsState(
+        targetValue = if (selected) {
+            MaterialTheme.colorScheme.onPrimaryContainer
+        } else {
+            MaterialTheme.colorScheme.onSurfaceVariant
+        },
+        label = "searchFilterContentColor"
+    )
+
+    Surface(
+        modifier = modifier
+            .height(34.dp)
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(12.dp),
+        color = containerColor,
+        border = if (selected) {
+            null
+        } else {
+            BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f))
+        }
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = metrics.pillHorizontalPaddingDp.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
+        ) {
+            Text(
+                modifier = if (showDropdownIcon) Modifier.weight(1f, fill = false) else Modifier.fillMaxWidth(),
+                text = text,
+                color = contentColor,
+                fontSize = metrics.fontSizeSp.sp,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center
+            )
+            if (showDropdownIcon) {
+                Spacer(modifier = Modifier.width(2.dp))
+                Icon(
+                    imageVector = Icons.Default.KeyboardArrowDown,
+                    contentDescription = null,
+                    tint = contentColor,
+                    modifier = Modifier.size(metrics.iconSizeDp.dp)
+                )
+            }
+        }
+    }
+}
+
+internal data class SearchCompactPlatformFilterMetrics(
+    val horizontalPaddingDp: Int,
+    val itemGapDp: Int,
+    val pillHorizontalPaddingDp: Int,
+    val fontSizeSp: Int,
+    val iconSizeDp: Int
+)
+
+internal fun searchCompactPlatformFilterMetrics(): SearchCompactPlatformFilterMetrics {
+    return SearchCompactPlatformFilterMetrics(
+        horizontalPaddingDp = 16,
+        itemGapDp = 6,
+        pillHorizontalPaddingDp = 4,
+        fontSizeSp = 12,
+        iconSizeDp = 14
+    )
+}
+
+internal fun searchCompactModeSelectorWidthDp(): Int {
+    return 72
+}
+
+internal fun searchPlatformDisplayName(siteName: String): String {
+    return if (siteName == "哔哩哔哩直播") {
+        "哔哩哔哩"
+    } else {
+        siteName
+    }
+}
+
+internal fun searchPlatformSwipeTargetIndex(
+    currentIndex: Int,
+    siteCount: Int,
+    dragX: Float,
+    thresholdPx: Float = 72f
+): Int {
+    if (siteCount <= 0) return 0
+    val clampedIndex = currentIndex.coerceIn(0, siteCount - 1)
+    return when {
+        dragX <= -thresholdPx -> (clampedIndex + 1).coerceAtMost(siteCount - 1)
+        dragX >= thresholdPx -> (clampedIndex - 1).coerceAtLeast(0)
+        else -> clampedIndex
     }
 }

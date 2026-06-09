@@ -72,6 +72,9 @@ fun IndexScreen(
         sortedKeys.mapNotNull { key -> allBottomNavItems[key] }
     }
     var selectedPageKey by rememberSaveable { mutableStateOf("recommend") }
+    var homeRefreshSignal by rememberSaveable { mutableIntStateOf(0) }
+    var followRefreshSignal by rememberSaveable { mutableIntStateOf(0) }
+    var categoryRefreshSignal by rememberSaveable { mutableIntStateOf(0) }
     LaunchedEffect(bottomNavItems) {
         if (bottomNavItems.none { it.key == selectedPageKey }) {
             selectedPageKey = bottomNavItems.firstOrNull()?.key ?: "recommend"
@@ -166,7 +169,18 @@ fun IndexScreen(
                                     interactionSource = remember { MutableInteractionSource() },
                                     indication = null,
                                     onClick = {
+                                        val shouldRefresh = shouldRefreshBottomTab(
+                                            currentKey = selectedPageKey,
+                                            clickedKey = item.key
+                                        )
                                         selectedPageKey = item.key
+                                        if (shouldRefresh) {
+                                            when (item.key) {
+                                                "recommend" -> homeRefreshSignal += 1
+                                                "follow" -> followRefreshSignal += 1
+                                                "category" -> categoryRefreshSignal += 1
+                                            }
+                                        }
                                     }
                                 )
                                 .padding(vertical = 8.dp),
@@ -217,12 +231,19 @@ fun IndexScreen(
                     "recommend" -> HomeScreen(
                         navigator = navigator,
                         suppressInitialLoadingEffect = suppressHomeInitialLoadingEffect,
+                        refreshSignal = homeRefreshSignal,
                         onInitialLoadingEffectSettled = {
                             suppressHomeInitialLoadingEffect = false
                         }
                     )
-                    "follow" -> FollowScreen(navigator = navigator)
-                    "category" -> CategoryScreen(navigator = navigator)
+                    "follow" -> FollowScreen(
+                        navigator = navigator,
+                        refreshSignal = followRefreshSignal
+                    )
+                    "category" -> CategoryScreen(
+                        navigator = navigator,
+                        refreshSignal = categoryRefreshSignal
+                    )
                     "user" -> MineScreen(navigator = navigator)
                 }
             }

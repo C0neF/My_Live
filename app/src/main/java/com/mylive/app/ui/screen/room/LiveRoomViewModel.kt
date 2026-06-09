@@ -1,5 +1,8 @@
 package com.mylive.app.ui.screen.room
 
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -14,11 +17,13 @@ import com.mylive.app.data.repository.AccountRepository
 import com.mylive.app.data.repository.FollowRepository
 import com.mylive.app.data.repository.HistoryRepository
 import com.mylive.app.data.repository.SettingsRepository
+import com.mylive.app.data.repository.ShieldRepository
 import com.mylive.app.data.local.entity.FollowUserEntity
 import com.mylive.app.data.local.entity.HistoryEntity
 import com.mylive.app.ui.motion.AppMotion
 import com.mylive.app.ui.screen.room.player.PlayerController
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -31,6 +36,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -54,7 +60,9 @@ class LiveRoomViewModel @Inject constructor(
     private val followRepository: FollowRepository,
     private val historyRepository: HistoryRepository,
     private val accountRepository: AccountRepository,
-    val settingsRepository: SettingsRepository
+    private val shieldRepository: ShieldRepository,
+    val settingsRepository: SettingsRepository,
+    @param:ApplicationContext private val appContext: Context
 ) : ViewModel() {
 
     private fun selectPreferredQuality(qualities: List<LivePlayQuality>, preferredLevel: Int): Int {
@@ -98,7 +106,18 @@ class LiveRoomViewModel @Inject constructor(
     fun removeExpiredSuperChats() {
         val now = System.currentTimeMillis()
         _superChats.update { list ->
-            list.filter { it.endTime > now }
+            activeSuperChats(list, now).sortedBy { it.endTime }
+        }
+    }
+
+    private fun appendSuperChats(items: Iterable<LiveSuperChatMessage>) {
+        val now = System.currentTimeMillis()
+        _superChats.update { current ->
+            mergeActiveSuperChats(
+                current = current,
+                incoming = items,
+                nowMillis = now
+            )
         }
     }
 
@@ -130,6 +149,7 @@ class LiveRoomViewModel @Inject constructor(
      * ViewModel.
      */
     private val cleanupScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val liveMessageShieldConfig = MutableStateFlow(LiveMessageShieldConfig())
 
     private var currentSite: LiveSite? = null
     private var currentDanmaku: LiveDanmaku? = null
@@ -220,20 +240,42 @@ class LiveRoomViewModel @Inject constructor(
 
     private fun startRuntimeCollectors() {
         viewModelScope.launch {
+            combine(
+                settingsRepository.danmuShieldEnable,
+                settingsRepository.danmuKeywordShieldEnable,
+                settingsRepository.danmuUserShieldEnable,
+                shieldRepository.getAllShields()
+            ) { shieldEnabled, keywordShieldEnabled, userShieldEnabled, shields ->
+                LiveMessageShieldConfig(
+                    shieldValues = shields.map { it.value },
+                    shieldEnabled = shieldEnabled,
+                    keywordShieldEnabled = keywordShieldEnabled,
+                    userShieldEnabled = userShieldEnabled
+                )
+            }.collect { config ->
+                liveMessageShieldConfig.value = config
+            }
+        }
+
+        viewModelScope.launch {
             _messages.collect { message ->
                 if (message.type == LiveMessageType.ONLINE) {
                     _uiState.update { it.copy(onlineCount = message.onlineCount ?: 0) }
                 } else {
                     if (message.type == LiveMessageType.SUPER_CHAT) {
                         message.superChatMessage?.let { sc ->
-                            _superChats.update { current ->
-                                val exists = current.any { it.id == sc.id || (it.userName == sc.userName && it.message == sc.message && it.startTime == sc.startTime) }
-                                if (exists) current else current + sc
-                            }
+                            appendSuperChats(listOf(sc))
                         }
                     }
                     _danmakuMessages.value = liveMessageBuffer.add(message)
                 }
+            }
+        }
+
+        viewModelScope.launch {
+            while (true) {
+                removeExpiredSuperChats()
+                kotlinx.coroutines.delay(1000L)
             }
         }
 
@@ -335,6 +377,8 @@ class LiveRoomViewModel @Inject constructor(
                 isFollowing = isFollowing
             )
 
+            refreshSuperChats(detail, route)
+
             // Load play qualities
             loadPlayQualities(detail, route)
 
@@ -356,6 +400,20 @@ class LiveRoomViewModel @Inject constructor(
         }
     }
 
+    private fun refreshSuperChats(detail: LiveRoomDetail, route: Pair<String, String>) {
+        val site = currentSite ?: return
+        viewModelScope.launch {
+            try {
+                val items = site.getSuperChatMessage(route.second, detail)
+                if (!isActiveRoute(route)) return@launch
+                appendSuperChats(items)
+            } catch (e: Throwable) {
+                if (e is CancellationException) throw e
+                Timber.w(e, "Failed to load super chat messages")
+            }
+        }
+    }
+
     private suspend fun applyAccountCookies() {
         val bilibiliCookie = accountRepository.bilibiliCookie.first()
         sites.filterIsInstance<BiliBiliSite>().forEach { it.cookie = bilibiliCookie }
@@ -370,7 +428,11 @@ class LiveRoomViewModel @Inject constructor(
         try {
             val qualities = site.getPlayQualites(detail)
             if (!isActiveRoute(route)) return
-            val preferredLevel = settingsRepository.qualityLevel.first()
+            val preferredLevel = selectLiveRoomPreferredQualityLevel(
+                defaultQualityLevel = settingsRepository.qualityLevel.first(),
+                cellularQualityLevel = settingsRepository.qualityLevelCellular.first(),
+                isCellularNetwork = isCellularNetworkActive()
+            )
             val matchIndex = selectPreferredQuality(qualities, preferredLevel)
             if (!isActiveRoute(route)) return
 
@@ -461,6 +523,7 @@ class LiveRoomViewModel @Inject constructor(
 
         danmaku.onMessage = onMessage@ { message ->
             if (!isActiveRoute(route)) return@onMessage
+            if (shouldDropMessageForShield(message, route)) return@onMessage
             // Hand off to the serial consumer started in init. tryEmit never fails
             // because the flow is configured with extraBufferCapacity + DROP_OLDEST.
             _messages.tryEmit(message)
@@ -513,6 +576,23 @@ class LiveRoomViewModel @Inject constructor(
                 Timber.e(e, "Failed to start danmaku")
             }
         }
+    }
+
+    private fun isCellularNetworkActive(): Boolean {
+        val connectivityManager = appContext.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            ?: return false
+        val network = connectivityManager.activeNetwork ?: return false
+        val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
+        return capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)
+    }
+
+    private fun shouldDropMessageForShield(message: LiveMessage, route: Pair<String, String>): Boolean {
+        val resolvedSiteId = currentSite?.id ?: route.first
+        return shouldShieldLiveMessage(
+            message = message,
+            siteId = resolvedSiteId,
+            config = liveMessageShieldConfig.value
+        )
     }
 
     fun toggleFollow() {

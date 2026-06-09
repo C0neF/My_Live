@@ -49,6 +49,7 @@ internal data class HomePlatformSelectorLayout(
 fun HomeScreen(
     navigator: Navigator,
     suppressInitialLoadingEffect: Boolean = false,
+    refreshSignal: Int = 0,
     onInitialLoadingEffectSettled: () -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel()
 ) {
@@ -58,6 +59,12 @@ fun HomeScreen(
     LaunchedEffect(suppressInitialLoadingEffect, uiState.isLoading, uiState.rooms.size) {
         if (suppressInitialLoadingEffect && (!uiState.isLoading || uiState.rooms.isNotEmpty())) {
             onInitialLoadingEffectSettled()
+        }
+    }
+
+    LaunchedEffect(refreshSignal) {
+        if (refreshSignal > 0) {
+            viewModel.refresh()
         }
     }
 

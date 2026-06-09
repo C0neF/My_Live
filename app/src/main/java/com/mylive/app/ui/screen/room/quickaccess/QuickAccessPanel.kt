@@ -8,6 +8,8 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -15,6 +17,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -42,6 +46,14 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 // ─── QuickAccess ViewModel ───────────────────────────────────────────────────
+
+data class QuickAccessExtraTab(
+    val key: String,
+    val label: String,
+    val icon: ImageVector,
+    val badgeCount: Int? = null,
+    val content: @Composable () -> Unit
+)
 
 @HiltViewModel
 class QuickAccessViewModel @Inject constructor(
@@ -109,6 +121,7 @@ fun QuickAccessPanel(
     currentSiteId: String,
     currentRoomId: String,
     currentCategoryId: String?,
+    extraTabs: List<QuickAccessExtraTab> = emptyList(),
     onNavigateToRoom: (siteId: String, roomId: String) -> Unit,
     onDismiss: () -> Unit,
     viewModel: QuickAccessViewModel = hiltViewModel()
@@ -121,10 +134,16 @@ fun QuickAccessPanel(
         return
     }
 
-    val orderedKeys = remember(sortStr) {
+    val extraTabsByKey = remember(extraTabs) {
+        extraTabs.associateBy { it.key }
+    }
+
+    val orderedKeys = remember(sortStr, extraTabs) {
         val default = listOf("follow", "history", "recommendation")
         val keys = sortStr.split(",").filter { it.isNotBlank() }
-        (keys + default).distinct()
+        val defaultKeys = (keys + default).distinct()
+        val extraKeys = extraTabs.map { it.key }
+        (extraKeys + defaultKeys.filterNot { it in extraKeys }).distinct()
     }
 
     val tabLabels = mapOf(
@@ -133,7 +152,14 @@ fun QuickAccessPanel(
         "recommendation" to "推荐"
     )
 
-    var selectedTab by remember { mutableIntStateOf(0) }
+    val pagerState = rememberPagerState(initialPage = 0, pageCount = { orderedKeys.size })
+    val coroutineScope = rememberCoroutineScope()
+
+    LaunchedEffect(orderedKeys.size) {
+        if (pagerState.currentPage > orderedKeys.lastIndex) {
+            pagerState.scrollToPage(orderedKeys.lastIndex.coerceAtLeast(0))
+        }
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -144,62 +170,151 @@ fun QuickAccessPanel(
                 .fillMaxWidth()
                 .navigationBarsPadding()
         ) {
-            // Tab row
-            ScrollableTabRow(
-                selectedTabIndex = selectedTab,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                edgePadding = 0.dp
-            ) {
-                orderedKeys.forEachIndexed { index, key ->
-                    Tab(
-                        selected = selectedTab == index,
-                        onClick = { selectedTab = index },
-                        text = {
-                            Text(
-                                text = tabLabels[key] ?: key,
-                                fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Normal
-                            )
-                        },
-                        icon = {
-                            val icon = when (key) {
-                                "follow" -> Icons.Default.Favorite
-                                "history" -> Icons.Default.History
-                                "recommendation" -> Icons.Default.Category
-                                else -> Icons.Default.Info
-                            }
-                            Icon(imageVector = icon, contentDescription = null)
-                        }
-                    )
+            QuickAccessIslandTabBar(
+                orderedKeys = orderedKeys,
+                selectedTab = pagerState.currentPage.coerceIn(0, orderedKeys.lastIndex.coerceAtLeast(0)),
+                extraTabsByKey = extraTabsByKey,
+                tabLabels = tabLabels,
+                onSelectedTabChange = { index ->
+                    coroutineScope.launch {
+                        pagerState.animateScrollToPage(index)
+                    }
                 }
-            }
+            )
 
-            // Content
-            Box(
+            HorizontalPager(
+                state = pagerState,
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = 300.dp, max = 500.dp)
-            ) {
-                when (orderedKeys.getOrNull(selectedTab)) {
-                    "follow" -> FollowQuickPanel(
-                        viewModel = viewModel,
-                        onNavigateToRoom = onNavigateToRoom
-                    )
-                    "history" -> HistoryQuickPanel(
-                        viewModel = viewModel,
-                        onNavigateToRoom = onNavigateToRoom
-                    )
-                    "recommendation" -> RecommendationQuickPanel(
-                        viewModel = viewModel,
-                        currentSiteId = currentSiteId,
-                        currentRoomId = currentRoomId,
-                        currentCategoryId = currentCategoryId,
-                        onNavigateToRoom = onNavigateToRoom
-                    )
+            ) { page ->
+                Box(modifier = Modifier.fillMaxSize()) {
+                    val selectedKey = orderedKeys.getOrNull(page)
+                    val extraTab = extraTabsByKey[selectedKey]
+                    if (extraTab != null) {
+                        extraTab.content()
+                    } else {
+                        when (selectedKey) {
+                            "follow" -> FollowQuickPanel(
+                                viewModel = viewModel,
+                                onNavigateToRoom = onNavigateToRoom
+                            )
+                            "history" -> HistoryQuickPanel(
+                                viewModel = viewModel,
+                                onNavigateToRoom = onNavigateToRoom
+                            )
+                            "recommendation" -> RecommendationQuickPanel(
+                                viewModel = viewModel,
+                                currentSiteId = currentSiteId,
+                                currentRoomId = currentRoomId,
+                                currentCategoryId = currentCategoryId,
+                                onNavigateToRoom = onNavigateToRoom
+                            )
+                        }
+                    }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun QuickAccessIslandTabBar(
+    orderedKeys: List<String>,
+    selectedTab: Int,
+    extraTabsByKey: Map<String, QuickAccessExtraTab>,
+    tabLabels: Map<String, String>,
+    onSelectedTabChange: (Int) -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        shape = RoundedCornerShape(28.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            orderedKeys.forEachIndexed { index, key ->
+                val extraTab = extraTabsByKey[key]
+                val label = when {
+                    extraTab?.badgeCount != null -> "${extraTab.label} ${extraTab.badgeCount}"
+                    extraTab != null -> extraTab.label
+                    else -> tabLabels[key] ?: key
+                }
+                val icon = extraTab?.icon ?: when (key) {
+                    "follow" -> Icons.Default.Favorite
+                    "history" -> Icons.Default.History
+                    "recommendation" -> Icons.Default.Category
+                    else -> Icons.Default.Info
+                }
+                QuickAccessIslandTab(
+                    selected = selectedTab == index,
+                    label = label,
+                    icon = icon,
+                    onClick = { onSelectedTabChange(index) },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun QuickAccessIslandTab(
+    selected: Boolean,
+    label: String,
+    icon: ImageVector,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val containerColor by animateColorAsState(
+        targetValue = if (selected) {
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
+        } else {
+            Color.Transparent
+        }
+    )
+    val contentColor by animateColorAsState(
+        targetValue = if (selected) {
+            MaterialTheme.colorScheme.primary
+        } else {
+            MaterialTheme.colorScheme.onSurfaceVariant
+        }
+    )
+
+    Column(
+        modifier = modifier
+            .height(68.dp)
+            .clip(RoundedCornerShape(24.dp))
+            .background(containerColor)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 4.dp, vertical = 7.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = label,
+            tint = contentColor,
+            modifier = Modifier.size(24.dp)
+        )
+        Spacer(modifier = Modifier.height(3.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            color = contentColor,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 

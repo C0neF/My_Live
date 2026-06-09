@@ -21,6 +21,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -53,6 +54,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun CategoryScreen(
     navigator: Navigator,
+    refreshSignal: Int = 0,
     viewModel: CategoryViewModel = hiltViewModel()
 ) {
     val siteTabs by viewModel.siteList.collectAsStateWithLifecycle()
@@ -64,6 +66,12 @@ fun CategoryScreen(
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     val pagerState = rememberPagerState(initialPage = 0, pageCount = { siteTabs.size })
     val coroutineScope = rememberCoroutineScope()
+
+    LaunchedEffect(refreshSignal) {
+        if (refreshSignal > 0) {
+            viewModel.refresh()
+        }
+    }
 
     fun selectCategorySite(index: Int) {
         if (siteTabs.isEmpty()) return
@@ -154,61 +162,67 @@ fun CategoryScreen(
             }
         }
 
-        // HorizontalPager — same pattern as HomeScreen
-        HorizontalPager(
-            state = pagerState,
-            modifier = Modifier.weight(1f),
-            userScrollEnabled = siteTabs.size > 1
-        ) { page ->
-            val selectedSite = siteTabs.getOrNull(page)
+        PullToRefreshBox(
+            isRefreshing = loading,
+            onRefresh = { viewModel.refresh() },
+            modifier = Modifier.weight(1f)
+        ) {
+            // HorizontalPager — same pattern as HomeScreen
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxSize(),
+                userScrollEnabled = siteTabs.size > 1
+            ) { page ->
+                val selectedSite = siteTabs.getOrNull(page)
 
-            // Use cached state for non-current pages (same as HomeScreen's HomeStateCache)
-            val pageState = if (page == selectedTab) {
-                CategoryPageState(categories = categories, loading = loading, error = error)
-            } else {
-                viewModel.getCachedState(page) ?: CategoryPageState(loading = true)
-            }
+                // Use cached state for non-current pages (same as HomeScreen's HomeStateCache)
+                val pageState = if (page == selectedTab) {
+                    CategoryPageState(categories = categories, loading = loading, error = error)
+                } else {
+                    viewModel.getCachedState(page) ?: CategoryPageState(loading = true)
+                }
 
-            val pageCategories = pageState.categories
-            val pageLoading = pageState.loading && pageCategories.isEmpty()
-            val pageError = pageState.error
+                val pageCategories = pageState.categories
+                val pageLoading = pageState.loading && pageCategories.isEmpty()
+                val pageError = pageState.error
 
-            Box(modifier = Modifier.fillMaxSize()) {
-                when {
-                    pageLoading -> LoadingState(modifier = Modifier.align(Alignment.Center))
-                    pageError != null -> ErrorState(
-                        message = pageError ?: "加载失败",
-                        onRetry = { viewModel.retry() },
-                        modifier = Modifier.align(Alignment.Center)
-                    )
-                    pageCategories.isEmpty() -> {
-                        Column(
-                            modifier = Modifier.fillMaxSize(),
-                            verticalArrangement = Arrangement.Center,
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Text(
-                                text = stringResource(R.string.category_no_categories),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                Box(modifier = Modifier.fillMaxSize()) {
+                    when {
+                        pageLoading -> LoadingState(modifier = Modifier.align(Alignment.Center))
+                        pageError != null -> ErrorState(
+                            message = pageError ?: "加载失败",
+                            onRetry = { viewModel.retry() },
+                            modifier = Modifier.align(Alignment.Center)
+                        )
+                        pageCategories.isEmpty() -> {
+                            Column(
+                                modifier = Modifier.fillMaxSize(),
+                                verticalArrangement = Arrangement.Center,
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.category_no_categories),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        else -> {
+                            CategoryList(
+                                categories = pageCategories,
+                                onSubCategoryClick = { subCategory ->
+                                    if (selectedSite != null) {
+                                        navigator.navigate(
+                                            Route.CategoryDetail(
+                                                siteId = selectedSite.id,
+                                                categoryId = subCategory.id,
+                                                categoryName = subCategory.name
+                                            )
+                                        )
+                                    }
+                                }
                             )
                         }
-                    }
-                    else -> {
-                        CategoryList(
-                            categories = pageCategories,
-                            onSubCategoryClick = { subCategory ->
-                                if (selectedSite != null) {
-                                    navigator.navigate(
-                                        Route.CategoryDetail(
-                                            siteId = selectedSite.id,
-                                            categoryId = subCategory.id,
-                                            categoryName = subCategory.name
-                                        )
-                                    )
-                                }
-                            }
-                        )
                     }
                 }
             }

@@ -46,6 +46,8 @@ class PlayerController(
     private var currentUrlIndex = 0
     private var urls: List<String> = emptyList()
     private var headers: Map<String, String>? = null
+    private var usingSoftwareDecoderOnly = !hardwareDecodeEnabled
+    private var softwareDecoderFallbackAttempted = false
 
     private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     private val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
@@ -71,13 +73,17 @@ class PlayerController(
 
         override fun onPlayerError(error: PlaybackException) {
             Timber.e(error, "Player error")
+            val errorText = playbackExceptionText(error)
             if (currentUrlIndex < urls.size - 1) {
                 currentUrlIndex++
-                play(urls, headers, currentUrlIndex)
+                softwareDecoderFallbackAttempted = false
+                playCurrentUrl()
+            } else if (shouldRetryWithSoftwareDecoder(errorText)) {
+                retryCurrentUrlWithSoftwareDecoder()
             } else {
                 _state.value = _state.value.copy(
                     isLoading = false,
-                    error = error.message ?: "播放失败"
+                    error = userVisiblePlaybackError(errorText)
                 )
             }
         }
@@ -87,13 +93,16 @@ class PlayerController(
         initialize()
     }
 
-    private fun initialize() {
+    private fun initialize(softwareDecoderOnly: Boolean = !hardwareDecodeEnabled) {
+        usingSoftwareDecoderOnly = softwareDecoderOnly
+
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(1000, 3000, 500, 1000)
             .build()
 
         val renderersFactory = DefaultRenderersFactory(context)
-        if (!hardwareDecodeEnabled) {
+        renderersFactory.setEnableDecoderFallback(true)
+        if (softwareDecoderOnly) {
             val softwareCodecSelector = MediaCodecSelector { mimeType, requiresSecureDecoder, requiresTunnelingDecoder ->
                 val allDecoders = MediaCodecSelector.DEFAULT.getDecoderInfos(mimeType, requiresSecureDecoder, requiresTunnelingDecoder)
                 val softwareDecoders = allDecoders.filter { !it.hardwareAccelerated }
@@ -117,9 +126,14 @@ class PlayerController(
         this.urls = processedUrls
         this.headers = headers
         this.currentUrlIndex = startIndex
+        this.softwareDecoderFallbackAttempted = false
 
+        playCurrentUrl()
+    }
+
+    private fun playCurrentUrl() {
         val p = player ?: return
-        missingPlaybackUrlError(processedUrls, startIndex)?.let { message ->
+        missingPlaybackUrlError(urls, currentUrlIndex)?.let { message ->
             _state.value = _state.value.copy(
                 isLoading = false,
                 error = message,
@@ -128,7 +142,7 @@ class PlayerController(
             return
         }
 
-        val url = processedUrls[startIndex]
+        val url = urls[currentUrlIndex]
         unsupportedPlaybackUrlError(url)?.let { message ->
             _state.value = _state.value.copy(
                 isLoading = false,
@@ -140,8 +154,9 @@ class PlayerController(
 
         _state.value = _state.value.copy(isLoading = true, currentUrl = url)
 
-        val dataSourceFactory = if (headers != null) {
-            DefaultHttpDataSource.Factory().setDefaultRequestProperties(headers)
+        val requestHeaders = headers
+        val dataSourceFactory = if (requestHeaders != null) {
+            DefaultHttpDataSource.Factory().setDefaultRequestProperties(requestHeaders)
         } else {
             DefaultHttpDataSource.Factory()
         }
@@ -162,6 +177,23 @@ class PlayerController(
         p.setMediaSource(mediaSource)
         p.prepare()
         p.playWhenReady = true
+    }
+
+    private fun shouldRetryWithSoftwareDecoder(errorText: String): Boolean {
+        return hardwareDecodeEnabled &&
+            !usingSoftwareDecoderOnly &&
+            !softwareDecoderFallbackAttempted &&
+            isVideoDecoderPlaybackError(errorText)
+    }
+
+    private fun retryCurrentUrlWithSoftwareDecoder() {
+        softwareDecoderFallbackAttempted = true
+        player?.removeListener(playerListener)
+        player?.release()
+        player = null
+        initialize(softwareDecoderOnly = true)
+        _state.value = _state.value.copy(isLoading = true, error = null)
+        playCurrentUrl()
     }
 
     fun showError(message: String) {
@@ -277,4 +309,32 @@ internal fun buildPlaybackUrlCandidates(urls: List<String>, forceHttps: Boolean)
             listOf(url)
         }
     }.distinct()
+}
+
+internal fun isVideoDecoderPlaybackError(errorText: String?): Boolean {
+    val lowerText = errorText.orEmpty().lowercase()
+    return lowerText.contains("mediacodecvideorenderer") ||
+        (lowerText.contains("mediacodec") && lowerText.contains("video")) ||
+        (lowerText.contains("decoder") && lowerText.contains("video"))
+}
+
+internal fun userVisiblePlaybackError(errorText: String?): String {
+    val message = errorText.orEmpty().trim()
+    if (isVideoDecoderPlaybackError(message)) {
+        return "视频解码失败，已尝试切换解码方式，请刷新重试"
+    }
+    if (message.isBlank()) return "播放失败，请刷新重试"
+    if (message.length > 48 || message.contains("Format(") || message.contains('\n')) {
+        return "播放失败，请刷新重试"
+    }
+    return message
+}
+
+private fun playbackExceptionText(error: PlaybackException): String {
+    return listOfNotNull(
+        error.message,
+        error.cause?.message,
+        error.cause?.toString(),
+        error.toString()
+    ).joinToString(separator = "\n")
 }

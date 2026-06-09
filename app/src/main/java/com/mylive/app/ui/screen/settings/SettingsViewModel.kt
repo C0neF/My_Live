@@ -54,6 +54,15 @@ class SettingsViewModel @Inject constructor(
     val danmuArea: StateFlow<Double> = settingsRepository.danmuArea
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.8)
 
+    val danmuLineCount: StateFlow<Int> = settingsRepository.danmuLineCount
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 8)
+
+    val danmuDelay: StateFlow<Double> = settingsRepository.danmuDelay
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
+
+    val danmuDelayBySiteJson: StateFlow<String> = settingsRepository.danmuDelayBySiteJson
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "{}")
+
     val danmuOpacity: StateFlow<Double> = settingsRepository.danmuOpacity
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 1.0)
 
@@ -63,6 +72,12 @@ class SettingsViewModel @Inject constructor(
     val danmuStrokeWidth: StateFlow<Double> = settingsRepository.danmuStrokeWidth
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 2.0)
 
+    val danmuTopMargin: StateFlow<Double> = settingsRepository.danmuTopMargin
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
+
+    val danmuBottomMargin: StateFlow<Double> = settingsRepository.danmuBottomMargin
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
+
     fun setDanmuEnable(value: Boolean) = viewModelScope.launch { settingsRepository.setDanmuEnable(value) }
     fun setDanmuRenderEmoji(value: Boolean) = viewModelScope.launch { settingsRepository.setDanmuRenderEmoji(value) }
     fun setDanmuHideScroll(value: Boolean) = viewModelScope.launch { settingsRepository.setDanmuHideScroll(value) }
@@ -71,25 +86,50 @@ class SettingsViewModel @Inject constructor(
     fun setDanmuSize(value: Double) = viewModelScope.launch { settingsRepository.setDanmuSize(value) }
     fun setDanmuSpeed(value: Double) = viewModelScope.launch { settingsRepository.setDanmuSpeed(value) }
     fun setDanmuArea(value: Double) = viewModelScope.launch { settingsRepository.setDanmuArea(value) }
+    fun setDanmuLineCount(value: Int) = viewModelScope.launch { settingsRepository.setDanmuLineCount(value) }
+    fun setDanmuDelay(value: Double) = viewModelScope.launch { settingsRepository.setDanmuDelay(value) }
+    fun setDanmuDelayBySiteJson(value: String) = viewModelScope.launch { settingsRepository.setDanmuDelayBySiteJson(value) }
     fun setDanmuOpacity(value: Double) = viewModelScope.launch { settingsRepository.setDanmuOpacity(value) }
     fun setDanmuFontWeight(value: Int) = viewModelScope.launch { settingsRepository.setDanmuFontWeight(value) }
     fun setDanmuStrokeWidth(value: Double) = viewModelScope.launch { settingsRepository.setDanmuStrokeWidth(value) }
+    fun setDanmuTopMargin(value: Double) = viewModelScope.launch { settingsRepository.setDanmuTopMargin(value) }
+    fun setDanmuBottomMargin(value: Double) = viewModelScope.launch { settingsRepository.setDanmuBottomMargin(value) }
 
     val danmuDedupeEnable: StateFlow<Boolean> = settingsRepository.danmuDedupeEnable
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     val danmuDedupeWindow: StateFlow<Int> = settingsRepository.danmuDedupeWindow
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 20)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 10)
+
+    val danmuDedupeStep: StateFlow<Int> = settingsRepository.danmuDedupeStep
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 2)
 
     val danmuDedupeStrictMode: StateFlow<Boolean> = settingsRepository.danmuDedupeStrictMode
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     fun setDanmuDedupeEnable(value: Boolean) = viewModelScope.launch { settingsRepository.setDanmuDedupeEnable(value) }
     fun setDanmuDedupeWindow(value: Int) = viewModelScope.launch { settingsRepository.setDanmuDedupeWindow(value) }
+    fun setDanmuDedupeStep(value: Int) = viewModelScope.launch { settingsRepository.setDanmuDedupeStep(value) }
     fun setDanmuDedupeStrictMode(value: Boolean) = viewModelScope.launch { settingsRepository.setDanmuDedupeStrictMode(value) }
+
+    val danmuShieldEnable: StateFlow<Boolean> = settingsRepository.danmuShieldEnable
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
+    val danmuKeywordShieldEnable: StateFlow<Boolean> = settingsRepository.danmuKeywordShieldEnable
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
+    val danmuUserShieldEnable: StateFlow<Boolean> = settingsRepository.danmuUserShieldEnable
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
+    fun setDanmuShieldEnable(value: Boolean) = viewModelScope.launch { settingsRepository.setDanmuShieldEnable(value) }
+    fun setDanmuKeywordShieldEnable(value: Boolean) = viewModelScope.launch { settingsRepository.setDanmuKeywordShieldEnable(value) }
+    fun setDanmuUserShieldEnable(value: Boolean) = viewModelScope.launch { settingsRepository.setDanmuUserShieldEnable(value) }
 
     // --- Playback ---
     val qualityLevel: StateFlow<Int> = settingsRepository.qualityLevel
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 1)
+
+    val qualityLevelCellular: StateFlow<Int> = settingsRepository.qualityLevelCellular
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 1)
 
     val scaleMode: StateFlow<Int> = settingsRepository.scaleMode
@@ -111,6 +151,7 @@ class SettingsViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     fun setQualityLevel(value: Int) = viewModelScope.launch { settingsRepository.setQualityLevel(value) }
+    fun setQualityLevelCellular(value: Int) = viewModelScope.launch { settingsRepository.setQualityLevelCellular(value) }
     fun setScaleMode(value: Int) = viewModelScope.launch { settingsRepository.setScaleMode(value) }
     fun setHardwareDecode(value: Boolean) = viewModelScope.launch { settingsRepository.setHardwareDecode(value) }
     fun setPlayerCompatMode(value: Boolean) = viewModelScope.launch { settingsRepository.setPlayerCompatMode(value) }
@@ -154,8 +195,8 @@ class SettingsViewModel @Inject constructor(
     val chatTextGap: StateFlow<Double> = settingsRepository.chatTextGap
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 4.0)
 
-    val playerShowSuperChat: StateFlow<Boolean> = settingsRepository.playerShowSuperChat
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+    val autoFullScreen: StateFlow<Boolean> = settingsRepository.autoFullScreen
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     fun setDebugMode(value: Boolean) = viewModelScope.launch { settingsRepository.setDebugMode(value) }
     fun setLogEnable(value: Boolean) = viewModelScope.launch { settingsRepository.setLogEnable(value) }
@@ -164,7 +205,7 @@ class SettingsViewModel @Inject constructor(
     fun setChatTextSize(value: Double) = viewModelScope.launch { settingsRepository.setChatTextSize(value) }
     fun setChatBubbleStyle(value: Boolean) = viewModelScope.launch { settingsRepository.setChatBubbleStyle(value) }
     fun setChatTextGap(value: Double) = viewModelScope.launch { settingsRepository.setChatTextGap(value) }
-    fun setPlayerShowSuperChat(value: Boolean) = viewModelScope.launch { settingsRepository.setPlayerShowSuperChat(value) }
+    fun setAutoFullScreen(value: Boolean) = viewModelScope.launch { settingsRepository.setAutoFullScreen(value) }
 
     // --- Follow ---
     val autoUpdateFollowEnable: StateFlow<Boolean> = settingsRepository.autoUpdateFollowEnable

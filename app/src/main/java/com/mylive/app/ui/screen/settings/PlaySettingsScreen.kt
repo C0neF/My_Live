@@ -41,10 +41,9 @@ import com.mylive.app.ui.navigation.Navigator
 
 private val qualityValues = listOf(0, 1, 2, 3, 4, 5)
 private val scaleModeValues = listOf(0, 1, 2, 3, 4)
-private val hwDecodeValues = listOf(true, false)
 
 enum class PlaySettingDialog {
-    QUALITY, SCALE
+    QUALITY, CELLULAR_QUALITY, SCALE
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -54,16 +53,19 @@ fun PlaySettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val qualityLevel by viewModel.qualityLevel.collectAsStateWithLifecycle()
+    val qualityLevelCellular by viewModel.qualityLevelCellular.collectAsStateWithLifecycle()
     val scaleMode by viewModel.scaleMode.collectAsStateWithLifecycle()
     val hardwareDecode by viewModel.hardwareDecode.collectAsStateWithLifecycle()
     val playerCompatMode by viewModel.playerCompatMode.collectAsStateWithLifecycle()
     val playerAutoPause by viewModel.playerAutoPause.collectAsStateWithLifecycle()
     val allowBackgroundPlayback by viewModel.allowBackgroundPlayback.collectAsStateWithLifecycle()
     val playerForceHttps by viewModel.playerForceHttps.collectAsStateWithLifecycle()
+    val autoFullScreen by viewModel.autoFullScreen.collectAsStateWithLifecycle()
+    val autoPipOnExit by viewModel.autoPipOnExit.collectAsStateWithLifecycle()
+    val pipHideDanmu by viewModel.pipHideDanmu.collectAsStateWithLifecycle()
 
     val qualityOptions = stringArrayResource(R.array.play_quality_options)
     val scaleModeOptions = stringArrayResource(R.array.play_scale_options)
-    val hwDecodeOptions = stringArrayResource(R.array.play_hw_decode_options)
 
     val qualityDefault = stringResource(R.string.play_quality_default)
     val scaleDefault = stringResource(R.string.play_scale_default)
@@ -104,6 +106,13 @@ fun PlaySettingsScreen(
                 .background(MaterialTheme.colorScheme.background)
                 .verticalScroll(rememberScrollState())
         ) {
+            Text(
+                text = "清晰度",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 4.dp)
+            )
+
             SettingsMenu(
                 title = stringResource(R.string.play_quality_title),
                 subtitle = stringResource(R.string.play_quality_subtitle),
@@ -113,6 +122,21 @@ fun PlaySettingsScreen(
             HorizontalDivider()
 
             SettingsMenu(
+                title = "数据网络清晰度",
+                subtitle = "使用蜂窝数据时优先选择的播放画质",
+                value = qualityOptions.getOrElse(qualityValues.indexOf(qualityLevelCellular)) { qualityDefault },
+                onClick = { activeDialog = PlaySettingDialog.CELLULAR_QUALITY }
+            )
+            HorizontalDivider()
+
+            Text(
+                text = "播放器",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 4.dp)
+            )
+
+            SettingsMenu(
                 title = stringResource(R.string.play_scale_title),
                 subtitle = stringResource(R.string.play_scale_subtitle),
                 value = scaleModeOptions.getOrElse(scaleModeValues.indexOf(scaleMode)) { scaleDefault },
@@ -120,11 +144,11 @@ fun PlaySettingsScreen(
             )
             HorizontalDivider()
 
-            SettingsMenu(
+            SettingsSwitch(
                 title = stringResource(R.string.play_hw_decode_title),
                 subtitle = stringResource(R.string.play_hw_decode_subtitle),
-                value = hwDecodeOptions.getOrElse(hwDecodeValues.indexOf(hardwareDecode)) { hwDecodeOptions[1] },
-                onClick = { viewModel.setHardwareDecode(!hardwareDecode) }
+                checked = hardwareDecode,
+                onCheckedChange = { viewModel.setHardwareDecode(it) }
             )
             HorizontalDivider()
 
@@ -158,6 +182,37 @@ fun PlaySettingsScreen(
                 checked = playerForceHttps,
                 onCheckedChange = { viewModel.setPlayerForceHttps(it) }
             )
+            HorizontalDivider()
+
+            Text(
+                text = "直播间",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 4.dp)
+            )
+
+            SettingsSwitch(
+                title = "进入直播间自动全屏",
+                subtitle = "打开直播间后自动进入横屏全屏播放",
+                checked = autoFullScreen,
+                onCheckedChange = { viewModel.setAutoFullScreen(it) }
+            )
+            HorizontalDivider()
+
+            SettingsSwitch(
+                title = "退出时自动小窗",
+                subtitle = "按 Home 键或系统手势退到后台时进入小窗",
+                checked = autoPipOnExit,
+                onCheckedChange = { viewModel.setAutoPipOnExit(it) }
+            )
+            HorizontalDivider()
+
+            SettingsSwitch(
+                title = "进入小窗隐藏弹幕",
+                subtitle = "小窗播放时隐藏播放器滚动弹幕",
+                checked = pipHideDanmu,
+                onCheckedChange = { viewModel.setPipHideDanmu(it) }
+            )
         }
     }
 
@@ -169,6 +224,16 @@ fun PlaySettingsScreen(
                 values = qualityValues,
                 selectedValue = qualityLevel,
                 onSelect = { viewModel.setQualityLevel(it) },
+                onDismiss = { activeDialog = null }
+            )
+        }
+        PlaySettingDialog.CELLULAR_QUALITY -> {
+            SelectionDialog(
+                title = "数据网络清晰度",
+                options = qualityOptions,
+                values = qualityValues,
+                selectedValue = qualityLevelCellular,
+                onSelect = { viewModel.setQualityLevelCellular(it) },
                 onDismiss = { activeDialog = null }
             )
         }

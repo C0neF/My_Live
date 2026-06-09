@@ -8,6 +8,17 @@ plugins {
     id("jacoco")
 }
 
+val releaseStoreFilePath = providers.environmentVariable("MYLIVE_RELEASE_STORE_FILE").orNull
+val releaseStorePassword = providers.environmentVariable("MYLIVE_RELEASE_STORE_PASSWORD").orNull
+val releaseKeyAlias = providers.environmentVariable("MYLIVE_RELEASE_KEY_ALIAS").orNull
+val releaseKeyPassword = providers.environmentVariable("MYLIVE_RELEASE_KEY_PASSWORD").orNull
+val hasReleaseSigning = listOf(
+    releaseStoreFilePath,
+    releaseStorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword
+).all { !it.isNullOrBlank() }
+
 android {
     namespace = "com.mylive.app"
     compileSdk = 36
@@ -28,6 +39,17 @@ android {
         }
     }
 
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = file(releaseStoreFilePath!!)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
     sourceSets {
         // Make the exported Room schemas available to MigrationTestHelper in instrumented tests.
         getByName("androidTest").assets.srcDir("$projectDir/schemas")
@@ -35,6 +57,9 @@ android {
 
     buildTypes {
         release {
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             isMinifyEnabled = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),

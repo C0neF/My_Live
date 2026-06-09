@@ -22,6 +22,11 @@ local.properties
 /.android-codex/
 /tmp/
 /docs/superpowers/
+PRODUCT.md
+
+# Local signing material
+*.jks
+*.keystore
 
 # Device test artifacts
 /device_backups/

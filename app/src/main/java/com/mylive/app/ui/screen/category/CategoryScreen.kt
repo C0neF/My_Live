@@ -65,6 +65,7 @@ fun CategoryScreen(
     val selectedSiteIndex by viewModel.selectedSiteIndex.collectAsState()
     val categories by viewModel.categories.collectAsState()
     val loading by viewModel.loading.collectAsState()
+    val isRefreshing by viewModel.isRefreshing.collectAsState()
     val error by viewModel.error.collectAsState()
 
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
@@ -167,8 +168,8 @@ fun CategoryScreen(
         }
 
         PullToRefreshBox(
-            isRefreshing = loading,
-            onRefresh = { viewModel.refresh() },
+            isRefreshing = isRefreshing,
+            onRefresh = { viewModel.refreshFromPull() },
             modifier = Modifier.weight(1f)
         ) {
             // HorizontalPager — same pattern as HomeScreen

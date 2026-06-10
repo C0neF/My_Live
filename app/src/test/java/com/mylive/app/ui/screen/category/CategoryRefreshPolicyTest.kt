@@ -19,8 +19,11 @@ class CategoryRefreshPolicyTest {
         val source = File("src/main/java/com/mylive/app/ui/screen/category/CategoryScreen.kt").readText()
 
         assertTrue(source.contains("PullToRefreshBox("))
-        assertTrue(source.contains("isRefreshing = loading"))
-        assertTrue(source.contains("onRefresh = { viewModel.refresh() }"))
+        // The indicator is driven by a dedicated pull flag, not the general loading
+        // state, so it doesn't appear on page entry / platform switch — only on a pull.
+        assertFalse(source.contains("isRefreshing = loading"))
+        assertTrue(source.contains("isRefreshing = isRefreshing"))
+        assertTrue(source.contains("onRefresh = { viewModel.refreshFromPull() }"))
         assertFalse(source.contains("contentDescription = \"刷新分类\""))
     }
 

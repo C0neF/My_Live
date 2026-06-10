@@ -47,6 +47,11 @@ class CategoryViewModel @Inject constructor(
     private val _loading = MutableStateFlow(false)
     val loading: StateFlow<Boolean> = _loading.asStateFlow()
 
+    // Drives the pull-to-refresh indicator only. Set exclusively by the pull gesture,
+    // never by initial loads or platform-page switches.
+    private val _isRefreshing = MutableStateFlow(false)
+    val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
+
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
 
@@ -84,7 +89,10 @@ class CategoryViewModel @Inject constructor(
     private fun loadCategories(forceRefresh: Boolean = false) {
         val sites = siteList.value
         val index = _selectedSiteIndex.value
-        if (index !in sites.indices) return
+        if (index !in sites.indices) {
+            _isRefreshing.value = false
+            return
+        }
 
         val site = sites[index]
 
@@ -95,6 +103,7 @@ class CategoryViewModel @Inject constructor(
             _loadedSiteId.value = site.id
             _categories.value = cached.categories
             _loading.value = false
+            _isRefreshing.value = false
             _error.value = cached.error
             return
         }
@@ -122,6 +131,7 @@ class CategoryViewModel @Inject constructor(
                 siteCache[site.id] = SiteCache(categories = fallbackCategories, error = _error.value)
             } finally {
                 _loading.value = false
+                _isRefreshing.value = false
             }
         }
     }
@@ -142,6 +152,12 @@ class CategoryViewModel @Inject constructor(
     }
 
     fun refresh() {
+        loadCategories(forceRefresh = true)
+    }
+
+    /** Triggered only by the pull-to-refresh gesture; drives the PTR indicator. */
+    fun refreshFromPull() {
+        _isRefreshing.value = true
         loadCategories(forceRefresh = true)
     }
 

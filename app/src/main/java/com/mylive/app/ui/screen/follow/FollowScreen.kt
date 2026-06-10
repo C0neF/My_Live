@@ -902,12 +902,12 @@ private fun CompactFilterPill(
 ) {
     val shape = RoundedCornerShape(12.dp)
     val containerColor = if (selected) {
-        MaterialTheme.colorScheme.primaryContainer
+        MaterialTheme.colorScheme.primary
     } else {
-        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
     }
     val contentColor = if (selected) {
-        MaterialTheme.colorScheme.onPrimaryContainer
+        MaterialTheme.colorScheme.onPrimary
     } else {
         MaterialTheme.colorScheme.onSurfaceVariant
     }
@@ -917,12 +917,7 @@ private fun CompactFilterPill(
             .height(34.dp)
             .clickable(onClick = onClick),
         shape = shape,
-        color = containerColor,
-        border = if (selected) {
-            null
-        } else {
-            BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f))
-        }
+        color = containerColor
     ) {
         Row(
             modifier = Modifier

@@ -38,7 +38,7 @@ fun FollowUserItem(
     horizontalGap: Dp = 16.dp,
     liveBadgeSize: Dp = 12.dp,
     playIconSize: Dp = 24.dp,
-    cornerRadius: Dp = 16.dp
+    cornerRadius: Dp = 12.dp
 ) {
     val containerColor = MaterialTheme.colorScheme.surfaceVariant
         .copy(alpha = 0.25f)
@@ -55,8 +55,7 @@ fun FollowUserItem(
         colors = CardDefaults.cardColors(
             containerColor = containerColor
         ),
-        shape = RoundedCornerShape(cornerRadius),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
+        shape = RoundedCornerShape(cornerRadius)
     ) {
         Row(
             modifier = Modifier

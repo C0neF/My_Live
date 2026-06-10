@@ -2,8 +2,9 @@ package com.mylive.app.ui.screen
 
 import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
@@ -15,7 +16,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
@@ -137,16 +137,16 @@ fun IndexScreen(
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 24.dp, vertical = 12.dp)
+                    .padding(horizontal = 16.dp, vertical = 10.dp)
                     .offset { IntOffset(x = 0, y = bottomBarOffsetPx.toInt()) },
-                shape = RoundedCornerShape(24.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f),
-                tonalElevation = 8.dp
+                shape = RoundedCornerShape(20.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                        .padding(horizontal = 8.dp, vertical = 8.dp),
                     horizontalArrangement = Arrangement.SpaceAround,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -158,14 +158,19 @@ fun IndexScreen(
                             targetValue = if (isSelected) {
                                 bottomNavActiveColor
                             } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                             },
                             label = "navColor"
                         )
-                        val scale by animateFloatAsState(
-                            targetValue = if (isSelected) 1.1f else 1.0f,
-                            animationSpec = AppMotion.contentSpec(),
-                            label = "navScale"
+                        // Active destination gets an M3-style pill behind the icon
+                        // instead of a scale bump — calmer and more legible.
+                        val indicatorColor by animateColorAsState(
+                            targetValue = if (isSelected) {
+                                bottomNavActiveColor.copy(alpha = 0.16f)
+                            } else {
+                                Color.Transparent
+                            },
+                            label = "navIndicator"
                         )
 
                         Column(
@@ -191,26 +196,29 @@ fun IndexScreen(
                                         }
                                     }
                                 )
-                                .padding(vertical = 8.dp),
+                                .padding(vertical = 2.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Icon(
-                                imageVector = item.icon,
-                                contentDescription = label,
-                                tint = contentColor,
+                            Box(
                                 modifier = Modifier
-                                    .size(24.dp)
-                                    .graphicsLayer {
-                                        scaleX = scale
-                                        scaleY = scale
-                                    }
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
+                                    .width(52.dp)
+                                    .height(28.dp)
+                                    .background(indicatorColor, shape = RoundedCornerShape(14.dp)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = item.icon,
+                                    contentDescription = label,
+                                    tint = contentColor,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(3.dp))
                             Text(
                                 text = label,
                                 color = contentColor,
                                 style = MaterialTheme.typography.labelSmall.copy(
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium
                                 ),
                                 fontSize = 10.sp
                             )

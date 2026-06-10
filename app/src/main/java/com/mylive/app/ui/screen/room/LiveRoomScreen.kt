@@ -27,6 +27,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import com.mylive.app.ui.theme.Icons
+import com.mylive.app.ui.theme.livePlatformOnAccentColor
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -2285,6 +2286,19 @@ fun RoomSettingsPanel(
         }
     }
 
+    // Settings accent follows the live room's platform brand color (Douyu/Huya/Bilibili).
+    val settingsAccentColor = resolveLiveRoomPlatformAccentColor(
+        siteId = siteId,
+        defaultAccentColor = MaterialTheme.colorScheme.primary
+    )
+    val settingsOnAccentColor = livePlatformOnAccentColor(siteId, MaterialTheme.colorScheme.onPrimary)
+
+    MaterialTheme(
+        colorScheme = MaterialTheme.colorScheme.copy(
+            primary = settingsAccentColor,
+            onPrimary = settingsOnAccentColor
+        )
+    ) {
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
@@ -2746,6 +2760,7 @@ fun RoomSettingsPanel(
                 }
             }
         }
+    }
     }
 }
 

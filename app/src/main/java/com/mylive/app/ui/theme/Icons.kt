@@ -86,6 +86,7 @@ object Icons {
         val ContentCopy: ImageVector = Lucide.Copy
         val Sun: ImageVector = Lucide.Sun
         val Star: ImageVector = Lucide.Star
+        val Inbox: ImageVector = Lucide.Inbox
     }
 
     object AutoMirrored {

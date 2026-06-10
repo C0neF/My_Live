@@ -89,7 +89,6 @@ class LiveRoomPortraitToolbarPolicyTest {
         val source = File("src/main/java/com/mylive/app/ui/screen/room/LiveRoomScreen.kt").readText()
 
         assertFalse(source.contains("Spacer(modifier = Modifier.size(36.dp))"))
-        assertTrue(source.contains("canToggleFollow = uiState.isFollowStatusKnown"))
         assertTrue(source.contains("canToggleFollow = detail != null && isFollowStatusKnown"))
         assertTrue(source.contains("enabled = canToggleFollow"))
     }

@@ -421,6 +421,9 @@ fun LiveRoomScreen(
     }
 
     if (showQuickAccess) {
+        MaterialTheme(
+            colorScheme = MaterialTheme.colorScheme.copy(primary = roomPlatformAccentColor)
+        ) {
         com.mylive.app.ui.screen.room.quickaccess.QuickAccessPanel(
             currentSiteId = viewModel.siteId,
             currentRoomId = viewModel.roomId,
@@ -440,6 +443,7 @@ fun LiveRoomScreen(
             },
             onDismiss = { showQuickAccess = false }
         )
+        }
     }
 
     Box(
@@ -599,6 +603,9 @@ private fun PortraitLayout(
     var activeAuxiliaryPanel by remember { mutableStateOf<PortraitLiveRoomPanel?>(null) }
 
     if (showQuickAccess) {
+        MaterialTheme(
+            colorScheme = MaterialTheme.colorScheme.copy(primary = roomPlatformAccentColor)
+        ) {
         com.mylive.app.ui.screen.room.quickaccess.QuickAccessPanel(
             currentSiteId = viewModel.siteId,
             currentRoomId = viewModel.roomId,
@@ -634,6 +641,7 @@ private fun PortraitLayout(
             },
             onDismiss = { showQuickAccess = false }
         )
+        }
     }
 
     activeAuxiliaryPanel?.let { panel ->

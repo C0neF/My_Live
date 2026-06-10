@@ -119,7 +119,8 @@ fun LiveRoomCard(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Title leads: full width, up to two lines — it's what people scan.
+        // Title leads: reserve two lines so every card's streamer row aligns,
+        // regardless of whether the title wraps to one line or two.
         Text(
             text = title,
             style = MaterialTheme.typography.bodyMedium.copy(
@@ -127,6 +128,7 @@ fun LiveRoomCard(
                 lineHeight = 19.sp
             ),
             fontSize = 15.sp,
+            minLines = 2,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
             color = MaterialTheme.colorScheme.onSurface,

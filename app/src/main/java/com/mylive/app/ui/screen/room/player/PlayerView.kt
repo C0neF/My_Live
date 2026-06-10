@@ -166,6 +166,11 @@ fun PlayerView(
     }
     val currentLineName = if (urls.isNotEmpty()) "线路 ${currentLineIndex + 1}" else "线路"
 
+    // Danmaku quick settings and inline controls read primary/primaryContainer from
+    // the theme, so wrap the entire player content once to propagate the platform accent.
+    MaterialTheme(
+        colorScheme = MaterialTheme.colorScheme.copy(primary = resolvedAccentColor)
+    ) {
     Box(modifier = modifier.background(Color.Black)) {
         // Video surface
         val player = playerController?.player
@@ -548,6 +553,7 @@ fun PlayerView(
             onChatBubbleStyleChange = { onChatBubbleStyleChange?.invoke(it) },
             onDismiss = { showDanmuSettingsSheet = false }
         )
+    }
     }
 }
 

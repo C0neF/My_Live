@@ -8,6 +8,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
@@ -18,6 +19,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -43,10 +45,12 @@ import com.mylive.app.R
 import com.mylive.app.core.model.LiveCategory
 import com.mylive.app.core.model.LiveSubCategory
 import com.mylive.app.ui.component.NetImage
+import com.mylive.app.ui.component.status.EmptyState
 import com.mylive.app.ui.component.status.ErrorState
 import com.mylive.app.ui.component.status.LoadingState
 import com.mylive.app.ui.motion.AppMotion
 import com.mylive.app.ui.theme.Icons
+import com.mylive.app.ui.theme.livePlatformAccentColor
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
@@ -66,6 +70,7 @@ fun CategoryScreen(
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     val pagerState = rememberPagerState(initialPage = 0, pageCount = { siteTabs.size })
     val coroutineScope = rememberCoroutineScope()
+    val platformScrollState = rememberScrollState()
 
     LaunchedEffect(refreshSignal) {
         if (refreshSignal > 0) {
@@ -121,22 +126,21 @@ fun CategoryScreen(
             )
         }
 
-        // Platform selector chips — same as HomeScreen
+        // Platform selector: scrollable tab row + brand underline (same as HomeScreen).
         if (siteTabs.isNotEmpty()) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
+                    .horizontalScroll(platformScrollState)
+                    .padding(horizontal = 12.dp)
                     .padding(bottom = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 siteTabs.forEachIndexed { siteIndex, site ->
-                    CategoryPlatformChip(
+                    CategoryPlatformTab(
+                        platformId = site.id,
                         name = categoryPlatformDisplayName(site.name),
                         isSelected = selectedTab == siteIndex,
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(36.dp),
                         onClick = {
                             coroutineScope.launch {
                                 val targetIndex = siteIndex.coerceIn(0, siteTabs.lastIndex)
@@ -195,17 +199,10 @@ fun CategoryScreen(
                             modifier = Modifier.align(Alignment.Center)
                         )
                         pageCategories.isEmpty() -> {
-                            Column(
-                                modifier = Modifier.fillMaxSize(),
-                                verticalArrangement = Arrangement.Center,
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
-                                Text(
-                                    text = stringResource(R.string.category_no_categories),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
+                            EmptyState(
+                                message = stringResource(R.string.category_no_categories),
+                                modifier = Modifier.align(Alignment.Center)
+                            )
                         }
                         else -> {
                             CategoryList(
@@ -231,58 +228,52 @@ fun CategoryScreen(
 }
 
 @Composable
-private fun CategoryPlatformChip(
+private fun CategoryPlatformTab(
+    platformId: String,
     name: String,
     isSelected: Boolean,
-    modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
-    val containerColor by animateColorAsState(
-        targetValue = if (isSelected) {
-            MaterialTheme.colorScheme.primary
-        } else {
-            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)
-        },
-        label = "containerColor"
-    )
+    val brandColor = livePlatformAccentColor(platformId) ?: MaterialTheme.colorScheme.primary
     val contentColor by animateColorAsState(
         targetValue = if (isSelected) {
-            MaterialTheme.colorScheme.onPrimary
+            MaterialTheme.colorScheme.onSurface
         } else {
-            MaterialTheme.colorScheme.onSurfaceVariant
+            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
         },
-        label = "contentColor"
+        label = "catTabContentColor"
+    )
+    val indicatorColor by animateColorAsState(
+        targetValue = if (isSelected) brandColor else Color.Transparent,
+        label = "catTabIndicatorColor"
     )
 
-    Box(
-        modifier = modifier
-            .background(containerColor, shape = RoundedCornerShape(20.dp))
-            .border(
-                width = 1.dp,
-                color = if (isSelected) {
-                    Color.Transparent
-                } else {
-                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
-                },
-                shape = RoundedCornerShape(20.dp)
-            )
+    Column(
+        modifier = Modifier
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
                 onClick = onClick
             )
-            .padding(horizontal = 4.dp),
-        contentAlignment = Alignment.Center
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(
             text = name,
             color = contentColor,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            style = MaterialTheme.typography.labelSmall.copy(
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 10.sp
-            )
+            style = MaterialTheme.typography.titleMedium.copy(
+                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+            ),
+            fontSize = 15.sp
+        )
+        Spacer(modifier = Modifier.height(5.dp))
+        Box(
+            modifier = Modifier
+                .height(2.dp)
+                .width(20.dp)
+                .background(indicatorColor, shape = RoundedCornerShape(1.dp))
         )
     }
 }
@@ -434,15 +425,16 @@ private fun CategoryCard(
     val isPressed by interactionSource.collectIsPressedAsState()
 
     val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.96f else 1.0f,
+        targetValue = if (isPressed) 0.97f else 1.0f,
         animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessLow
+            dampingRatio = Spring.DampingRatioNoBouncy,
+            stiffness = Spring.StiffnessMedium
         ),
         label = "scale"
     )
 
-    Card(
+    // Flat tile: a rounded icon badge + label on the bare background, no card chrome.
+    Column(
         modifier = modifier
             .fillMaxWidth()
             .graphicsLayer {
@@ -453,56 +445,45 @@ private fun CategoryCard(
                 interactionSource = interactionSource,
                 indication = null,
                 onClick = onClick
-            ),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)
-        ),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.15f))
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(8.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f), CircleShape)
-                    .padding(4.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                if (!imageUrl.isNullOrBlank()) {
-                    NetImage(
-                        url = imageUrl,
-                        contentDescription = name,
-                        size = 40.dp,
-                        isCircle = true
-                    )
-                } else {
-                    Icon(
-                        imageVector = categoryFallbackIcon(name),
-                        contentDescription = name,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
-            }
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(
-                text = name,
-                style = MaterialTheme.typography.labelSmall.copy(
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 11.sp
-                ),
-                textAlign = TextAlign.Center,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.fillMaxWidth()
             )
+            .padding(vertical = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(
+            modifier = Modifier
+                .size(52.dp)
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            if (!imageUrl.isNullOrBlank()) {
+                NetImage(
+                    url = imageUrl,
+                    contentDescription = name,
+                    size = 52.dp,
+                    isCircle = true
+                )
+            } else {
+                Icon(
+                    imageVector = categoryFallbackIcon(name),
+                    contentDescription = name,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
         }
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = name,
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontWeight = FontWeight.Medium,
+                fontSize = 11.sp
+            ),
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.fillMaxWidth()
+        )
     }
 }
 

@@ -835,23 +835,9 @@ private fun LandscapeLayout(
         countActiveSuperChats(superChats, System.currentTimeMillis())
     }
     val roomTabs = remember(viewModel.siteId, liveRoomTabSort) {
-        val defaultList = listOf("chat", "super_chat", "follow", "settings")
-        val sortedKeys = liveRoomTabSort.split(",").filter { it.isNotBlank() }
-        val orderedKeys = (sortedKeys + defaultList).distinct()
-        
         val list = mutableListOf<LiveRoomTabType>()
-        orderedKeys.forEach { key ->
-            when (key) {
-                "chat" -> list.add(LiveRoomTabType.CHAT)
-                "super_chat" -> {
-                    if (viewModel.siteId == "bilibili" || viewModel.siteId == "huya") {
-                        list.add(LiveRoomTabType.SUPER_CHAT)
-                    }
-                }
-                "follow" -> list.add(LiveRoomTabType.FOLLOW)
-                "settings" -> list.add(LiveRoomTabType.SETTINGS)
-            }
-        }
+        list.add(LiveRoomTabType.CHAT)
+        list.add(LiveRoomTabType.FOLLOW)
         list
     }
     val resolvedDanmuDelay = remember(danmuDelay, danmuDelayBySiteJson, viewModel.siteId) {
@@ -1002,71 +988,16 @@ private fun LandscapeLayout(
                         .requiredWidth(320.dp)
                         .fillMaxHeight()
                 ) {
-            // User info header in landscape side panel (beautifully refined)
-            uiState.detail?.let { detail ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(40.dp)
-                            .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f), CircleShape)
-                            .padding(1.dp)
-                    ) {
-                        AsyncImage(
-                            model = detail.userAvatar,
-                            contentDescription = detail.userName,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .clip(CircleShape),
-                            contentScale = ContentScale.Crop
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = detail.userName,
-                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        if (uiState.onlineCount > 0) {
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = "👁 ${uiState.onlineCount}",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                    val canToggleFollow = uiState.isFollowStatusKnown
-                    LiveRoomFollowButton(
-                        isFollowing = uiState.isFollowing,
-                        accentColor = roomPlatformAccentColor,
-                        enabled = canToggleFollow,
-                        onClick = { viewModel.toggleFollow() },
-                        modifier = Modifier.size(36.dp),
-                        iconSizeDp = 22
-                    )
-                }
-            }
-
-            HorizontalDivider()
-
             // Tab selection for Side Panel
             TabRow(
                 selectedTabIndex = selectedLandscapeTab,
                 containerColor = MaterialTheme.colorScheme.surface,
-                contentColor = MaterialTheme.colorScheme.primary,
+                contentColor = roomPlatformAccentColor,
                 indicator = { tabPositions ->
                     if (selectedLandscapeTab < tabPositions.size) {
                         TabRowDefaults.SecondaryIndicator(
                             modifier = Modifier.tabIndicatorOffset(tabPositions[selectedLandscapeTab]),
-                            color = MaterialTheme.colorScheme.primary
+                            color = roomPlatformAccentColor
                         )
                     }
                 }

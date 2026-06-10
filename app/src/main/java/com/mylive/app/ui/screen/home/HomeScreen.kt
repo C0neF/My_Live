@@ -4,7 +4,9 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -67,10 +69,6 @@ fun HomeScreen(
     val siteTabs by viewModel.siteTabs.collectAsStateWithLifecycle()
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     val activePlatformAccentColor = homePlatformAccentColor(siteTabs.getOrNull(selectedTab)?.id.orEmpty())
-    val titleColor by animateColorAsState(
-        targetValue = activePlatformAccentColor ?: MaterialTheme.colorScheme.primary,
-        label = "homeTitleColor"
-    )
 
     LaunchedEffect(activePlatformAccentColor) {
         onPlatformAccentColorChange(activePlatformAccentColor)
@@ -106,7 +104,7 @@ fun HomeScreen(
                     fontWeight = FontWeight.ExtraBold,
                     letterSpacing = 0.5.sp
                 ),
-                color = titleColor
+                color = MaterialTheme.colorScheme.onSurface
             )
 
             Spacer(modifier = Modifier.width(12.dp))
@@ -117,12 +115,7 @@ fun HomeScreen(
                     .weight(1f)
                     .height(36.dp)
                     .background(
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                        shape = RoundedCornerShape(18.dp)
-                    )
-                    .border(
-                        width = 1.dp,
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
                         shape = RoundedCornerShape(18.dp)
                     )
                     .clickable(
@@ -152,9 +145,7 @@ fun HomeScreen(
         // Platform selector: show all platforms and let the content pager handle swipes.
         val pagerState = rememberPagerState(initialPage = 0, pageCount = { siteTabs.size })
         val coroutineScope = rememberCoroutineScope()
-        val platformLayout = remember(siteTabs, selectedTab) {
-            homePlatformSelectorLayout(siteTabs = siteTabs, selectedIndex = selectedTab)
-        }
+        val platformScrollState = rememberScrollState()
 
         fun selectHomeSite(index: Int) {
             if (siteTabs.isEmpty()) return
@@ -184,18 +175,16 @@ fun HomeScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
+                    .horizontalScroll(platformScrollState)
+                    .padding(horizontal = 12.dp)
                     .padding(bottom = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                platformLayout.secondarySiteIndices.forEach { siteIndex ->
-                    HomePlatformChip(
-                        platformId = siteTabs[siteIndex].id,
-                        name = homePlatformDisplayName(siteTabs[siteIndex].name),
-                        isSelected = platformLayout.primarySiteIndex == siteIndex,
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(36.dp),
+                siteTabs.forEachIndexed { siteIndex, site ->
+                    HomePlatformTab(
+                        platformId = site.id,
+                        name = homePlatformDisplayName(site.name),
+                        isSelected = selectedTab == siteIndex,
                         onClick = {
                             coroutineScope.launch {
                                 val targetIndex = siteIndex.coerceIn(0, siteTabs.lastIndex)
@@ -392,63 +381,52 @@ private fun HomeRoomsPage(
 }
 
 @Composable
-private fun HomePlatformChip(
+private fun HomePlatformTab(
     platformId: String,
     name: String,
     isSelected: Boolean,
-    modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
-    val selectedContainerColor = MaterialTheme.colorScheme.primary
-    val unselectedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)
-    val containerColor by animateColorAsState(
-        targetValue = homePlatformChipContainerColor(
-            platformId = platformId,
-            selectedContainerColor = selectedContainerColor,
-            unselectedContainerColor = unselectedContainerColor,
-            isSelected = isSelected
-        ),
-        label = "containerColor"
-    )
+    val brandColor = homePlatformAccentColor(platformId) ?: MaterialTheme.colorScheme.primary
     val contentColor by animateColorAsState(
-        targetValue = homePlatformChipContentColor(
-            platformId = platformId,
-            selectedContentColor = MaterialTheme.colorScheme.onPrimary,
-            unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            isSelected = isSelected
-        ),
-        label = "contentColor"
+        targetValue = if (isSelected) {
+            MaterialTheme.colorScheme.onSurface
+        } else {
+            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+        },
+        label = "tabContentColor"
+    )
+    val indicatorColor by animateColorAsState(
+        targetValue = if (isSelected) brandColor else Color.Transparent,
+        label = "tabIndicatorColor"
     )
 
-    Box(
-        modifier = modifier
-            .background(containerColor, shape = RoundedCornerShape(20.dp))
-            .border(
-                width = 1.dp,
-                color = if (isSelected) {
-                    Color.Transparent
-                } else {
-                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
-                },
-                shape = RoundedCornerShape(20.dp)
-            )
+    Column(
+        modifier = Modifier
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
                 onClick = onClick
             )
-            .padding(horizontal = 4.dp),
-        contentAlignment = Alignment.Center
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(
             text = name,
             color = contentColor,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            style = MaterialTheme.typography.labelSmall.copy(
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 10.sp
-            )
+            style = MaterialTheme.typography.titleMedium.copy(
+                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+            ),
+            fontSize = 15.sp
+        )
+        Spacer(modifier = Modifier.height(5.dp))
+        Box(
+            modifier = Modifier
+                .height(2.dp)
+                .width(20.dp)
+                .background(indicatorColor, shape = RoundedCornerShape(1.dp))
         )
     }
 }

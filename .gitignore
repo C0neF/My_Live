@@ -37,3 +37,6 @@ PRODUCT.md
 **/.wrangler/
 **/*.log
 *.tsbuildinfo
+
+# Local tools (sync server, workers, etc.)
+/tools/

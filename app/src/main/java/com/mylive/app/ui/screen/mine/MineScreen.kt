@@ -1,29 +1,31 @@
 package com.mylive.app.ui.screen.mine
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import com.mylive.app.ui.theme.Icons
-import androidx.compose.material3.*
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.mylive.app.ui.navigation.Navigator
-import com.mylive.app.ui.navigation.Route
 import com.mylive.app.BuildConfig
 import com.mylive.app.R
+import com.mylive.app.ui.navigation.Navigator
+import com.mylive.app.ui.navigation.Route
+import com.mylive.app.ui.theme.Icons
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MineScreen(navigator: Navigator) {
     Column(
@@ -32,7 +34,6 @@ fun MineScreen(navigator: Navigator) {
             .background(MaterialTheme.colorScheme.background)
             .verticalScroll(rememberScrollState())
     ) {
-        // Compact Premium Header (No TopAppBar)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -49,86 +50,52 @@ fun MineScreen(navigator: Navigator) {
             )
         }
 
-        // User Profile Header Card (App Branding)
-        Card(
+        Spacer(modifier = Modifier.height(4.dp))
+
+        // One grouped list (a single container with hairline dividers), not a
+        // stack of per-row cards. There's no real account, so no profile hero.
+        Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f)
-            ),
-            shape = RoundedCornerShape(24.dp),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.15f))
+                .padding(horizontal = 16.dp),
+            shape = RoundedCornerShape(12.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(20.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Avatar with primary background and letter M
-                Surface(
-                    modifier = Modifier.size(64.dp),
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.primary
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text(
-                            text = "M",
-                            color = MaterialTheme.colorScheme.onPrimary,
-                            style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold)
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.width(16.dp))
-
-                Column {
-                    Text(
-                        text = "MyLive 用户",
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "极致、纯粹的直播体验",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
-                    )
-                }
+            Column {
+                MineRow(
+                    icon = Icons.Default.History,
+                    title = stringResource(R.string.mine_history),
+                    onClick = { navigator.navigate(Route.History) }
+                )
+                MineRowDivider()
+                MineRow(
+                    icon = Icons.Default.Person,
+                    title = stringResource(R.string.mine_account),
+                    onClick = { navigator.navigate(Route.SettingsAccount) }
+                )
+                MineRowDivider()
+                MineRow(
+                    icon = Icons.Default.Sync,
+                    title = stringResource(R.string.mine_sync),
+                    onClick = { navigator.navigate(Route.Sync) }
+                )
+                MineRowDivider()
+                MineRow(
+                    icon = Icons.Default.Link,
+                    title = stringResource(R.string.parse_title),
+                    onClick = { navigator.navigate(Route.Tools) }
+                )
+                MineRowDivider()
+                MineRow(
+                    icon = Icons.Default.Settings,
+                    title = stringResource(R.string.mine_settings),
+                    onClick = { navigator.navigate(Route.Settings) }
+                )
             }
         }
 
-        Spacer(modifier = Modifier.height(6.dp))
-
-        MineCard(
-            title = stringResource(R.string.mine_history),
-            onClick = { navigator.navigate(Route.History) }
-        )
-
-        MineCard(
-            title = stringResource(R.string.mine_account),
-            onClick = { navigator.navigate(Route.SettingsAccount) }
-        )
-
-        MineCard(
-            title = stringResource(R.string.mine_sync),
-            onClick = { navigator.navigate(Route.Sync) }
-        )
-
-        MineCard(
-            title = stringResource(R.string.parse_title),
-            onClick = { navigator.navigate(Route.Tools) }
-        )
-
-        MineCard(
-            title = stringResource(R.string.mine_settings),
-            onClick = { navigator.navigate(Route.Settings) }
-        )
-
         Spacer(modifier = Modifier.height(24.dp))
 
-        // App version at bottom
         Text(
             text = stringResource(R.string.mine_version, BuildConfig.VERSION_NAME),
             style = MaterialTheme.typography.bodySmall,
@@ -142,41 +109,44 @@ fun MineScreen(navigator: Navigator) {
 }
 
 @Composable
-private fun MineCard(
+private fun MineRow(
+    icon: ImageVector,
     title: String,
     onClick: () -> Unit
 ) {
-    Card(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp)
-            .clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)
-        ),
-        shape = RoundedCornerShape(16.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium.copy(
-                    fontWeight = FontWeight.Bold
-                ),
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.weight(1f)
-            )
-            Icon(
-                imageVector = Icons.Default.ChevronRight,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(24.dp)
-            )
-        }
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(22.dp)
+        )
+        Spacer(modifier = Modifier.width(16.dp))
+        Text(
+            text = title,
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f)
+        )
+        Icon(
+            imageVector = Icons.Default.ChevronRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+            modifier = Modifier.size(20.dp)
+        )
     }
+}
+
+@Composable
+private fun MineRowDivider() {
+    HorizontalDivider(
+        modifier = Modifier.padding(start = 54.dp),
+        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
+    )
 }

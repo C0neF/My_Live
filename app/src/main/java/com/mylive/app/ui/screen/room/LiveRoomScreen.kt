@@ -106,6 +106,12 @@ import kotlinx.coroutines.flow.first
 import kotlin.math.roundToInt
 import java.util.concurrent.atomic.AtomicLong
 
+/**
+ * CompositionLocal providing the current live platform accent color
+ * to room settings sub-components without explicit parameter passing.
+ */
+val LocalRoomAccentColor = compositionLocalOf { Color.Unspecified }
+
 
 enum class LiveRoomTabType {
     CHAT, SUPER_CHAT, FOLLOW, SETTINGS
@@ -420,25 +426,27 @@ fun LiveRoomScreen(
     }
 
     if (showQuickAccess) {
-        com.mylive.app.ui.screen.room.quickaccess.QuickAccessPanel(
-            currentSiteId = viewModel.siteId,
-            currentRoomId = viewModel.roomId,
-            currentCategoryId = uiState.detail?.categoryId,
-            onNavigateToRoom = { siteId, roomId, initialIsFollowing ->
-                showQuickAccess = false
-                navigator.navigate(
-                    Route.LiveRoomDetail(
-                        roomId = roomId,
-                        siteId = siteId,
-                        initialIsFollowing = initialIsFollowing
-                    ),
-                    singleTop = true,
-                    popUpToRoute = Route.Index::class.java,
-                    inclusive = false
-                )
-            },
-            onDismiss = { showQuickAccess = false }
-        )
+        CompositionLocalProvider(LocalRoomAccentColor provides roomPlatformAccentColor) {
+            com.mylive.app.ui.screen.room.quickaccess.QuickAccessPanel(
+                currentSiteId = viewModel.siteId,
+                currentRoomId = viewModel.roomId,
+                currentCategoryId = uiState.detail?.categoryId,
+                onNavigateToRoom = { siteId, roomId, initialIsFollowing ->
+                    showQuickAccess = false
+                    navigator.navigate(
+                        Route.LiveRoomDetail(
+                            roomId = roomId,
+                            siteId = siteId,
+                            initialIsFollowing = initialIsFollowing
+                        ),
+                        singleTop = true,
+                        popUpToRoute = Route.Index::class.java,
+                        inclusive = false
+                    )
+                },
+                onDismiss = { showQuickAccess = false }
+            )
+        }
     }
 
     Box(
@@ -598,41 +606,43 @@ private fun PortraitLayout(
     var activeAuxiliaryPanel by remember { mutableStateOf<PortraitLiveRoomPanel?>(null) }
 
     if (showQuickAccess) {
-        com.mylive.app.ui.screen.room.quickaccess.QuickAccessPanel(
-            currentSiteId = viewModel.siteId,
-            currentRoomId = viewModel.roomId,
-            currentCategoryId = uiState.detail?.categoryId,
-            extraTabs = portraitActions.mapNotNull { action ->
-                if (action.panel != PortraitLiveRoomPanel.SUPER_CHAT) return@mapNotNull null
-                QuickAccessExtraTab(
-                    key = "room_${action.panel.name.lowercase()}",
-                    label = action.label,
-                    badgeCount = action.badgeCount,
-                    icon = Icons.Default.Chat,
-                    content = {
-                        SuperChatPanel(
-                            viewModel = viewModel,
-                            superChatSortDesc = superChatSortDesc,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    }
-                )
-            },
-            onNavigateToRoom = { siteId, roomId, initialIsFollowing ->
-                showQuickAccess = false
-                navigator.navigate(
-                    Route.LiveRoomDetail(
-                        roomId = roomId,
-                        siteId = siteId,
-                        initialIsFollowing = initialIsFollowing
-                    ),
-                    singleTop = true,
-                    popUpToRoute = Route.Index::class.java,
-                    inclusive = false
-                )
-            },
-            onDismiss = { showQuickAccess = false }
-        )
+        CompositionLocalProvider(LocalRoomAccentColor provides roomPlatformAccentColor) {
+            com.mylive.app.ui.screen.room.quickaccess.QuickAccessPanel(
+                currentSiteId = viewModel.siteId,
+                currentRoomId = viewModel.roomId,
+                currentCategoryId = uiState.detail?.categoryId,
+                extraTabs = portraitActions.mapNotNull { action ->
+                    if (action.panel != PortraitLiveRoomPanel.SUPER_CHAT) return@mapNotNull null
+                    QuickAccessExtraTab(
+                        key = "room_${action.panel.name.lowercase()}",
+                        label = action.label,
+                        badgeCount = action.badgeCount,
+                        icon = Icons.Default.Chat,
+                        content = {
+                            SuperChatPanel(
+                                viewModel = viewModel,
+                                superChatSortDesc = superChatSortDesc,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                    )
+                },
+                onNavigateToRoom = { siteId, roomId, initialIsFollowing ->
+                    showQuickAccess = false
+                    navigator.navigate(
+                        Route.LiveRoomDetail(
+                            roomId = roomId,
+                            siteId = siteId,
+                            initialIsFollowing = initialIsFollowing
+                        ),
+                        singleTop = true,
+                        popUpToRoute = Route.Index::class.java,
+                        inclusive = false
+                    )
+                },
+                onDismiss = { showQuickAccess = false }
+            )
+        }
     }
 
     activeAuxiliaryPanel?.let { panel ->
@@ -643,7 +653,8 @@ private fun PortraitLayout(
             navigator = navigator,
             settingsViewModel = settingsViewModel,
             superChatSortDesc = superChatSortDesc,
-            onDismiss = { activeAuxiliaryPanel = null }
+            onDismiss = { activeAuxiliaryPanel = null },
+            accentColor = roomPlatformAccentColor
         )
     }
 
@@ -748,7 +759,8 @@ private fun LiveRoomTabPage(
     chatTextGap: Double,
     chatBubbleStyle: Boolean,
     superChatSortDesc: Boolean,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    accentColor: Color = MaterialTheme.colorScheme.primary
 ) {
     when (tabType) {
         LiveRoomTabType.CHAT -> {
@@ -777,13 +789,15 @@ private fun LiveRoomTabPage(
             )
         }
         LiveRoomTabType.SETTINGS -> {
-            RoomSettingsPanel(
-                viewModel = settingsViewModel,
-                isHuyaOrBilibili = viewModel.siteId == "huya" || viewModel.siteId == "bilibili",
-                siteId = viewModel.siteId,
-                onOpenShieldSettings = { navigator.navigate(Route.SettingsDanmuShield) },
-                modifier = modifier
-            )
+            CompositionLocalProvider(LocalRoomAccentColor provides accentColor) {
+                RoomSettingsPanel(
+                    viewModel = settingsViewModel,
+                    isHuyaOrBilibili = viewModel.siteId == "huya" || viewModel.siteId == "bilibili",
+                    siteId = viewModel.siteId,
+                    onOpenShieldSettings = { navigator.navigate(Route.SettingsDanmuShield) },
+                    modifier = modifier
+                )
+            }
         }
         null -> {}
     }
@@ -1045,7 +1059,8 @@ private fun LandscapeLayout(
                     chatTextGap = chatTextGap,
                     chatBubbleStyle = chatBubbleStyle,
                     superChatSortDesc = superChatSortDesc,
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxSize(),
+                    accentColor = roomPlatformAccentColor
                 )
             }
         }
@@ -1203,7 +1218,8 @@ private fun PortraitAuxiliaryPanelSheet(
     navigator: Navigator,
     settingsViewModel: SettingsViewModel,
     superChatSortDesc: Boolean,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    accentColor: Color = MaterialTheme.colorScheme.primary
 ) {
     val maxSheetHeight = (LocalConfiguration.current.screenHeightDp * 0.72f).dp
     ModalBottomSheet(
@@ -1264,13 +1280,15 @@ private fun PortraitAuxiliaryPanelSheet(
                         )
                     }
                     PortraitLiveRoomPanel.SETTINGS -> {
-                        RoomSettingsPanel(
-                            viewModel = settingsViewModel,
-                            isHuyaOrBilibili = viewModel.siteId == "huya" || viewModel.siteId == "bilibili",
-                            siteId = viewModel.siteId,
-                            onOpenShieldSettings = { navigator.navigate(Route.SettingsDanmuShield) },
-                            modifier = Modifier.fillMaxSize()
-                        )
+                        CompositionLocalProvider(LocalRoomAccentColor provides accentColor) {
+                            RoomSettingsPanel(
+                                viewModel = settingsViewModel,
+                                isHuyaOrBilibili = viewModel.siteId == "huya" || viewModel.siteId == "bilibili",
+                                siteId = viewModel.siteId,
+                                onOpenShieldSettings = { navigator.navigate(Route.SettingsDanmuShield) },
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
                     }
                 }
             }
@@ -2788,7 +2806,7 @@ private fun RoomSettingsCollapsibleSection(
                 Text(
                     text = title,
                     style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.primary
+                    color = LocalRoomAccentColor.current
                 )
                 Text(
                     text = subtitle,
@@ -2846,7 +2864,11 @@ private fun RoomSettingsSwitchRow(
         }
         Switch(
             checked = checked,
-            onCheckedChange = onCheckedChange
+            onCheckedChange = onCheckedChange,
+            colors = SwitchDefaults.colors(
+                checkedTrackColor = LocalRoomAccentColor.current,
+                checkedThumbColor = LocalRoomAccentColor.current
+            )
         )
     }
 }
@@ -2868,7 +2890,7 @@ private fun RoomSettingsSliderRow(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(text = title, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold))
-            Text(text = valueText, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+            Text(text = valueText, style = MaterialTheme.typography.bodyMedium, color = LocalRoomAccentColor.current)
         }
         RoomSettingsSlider(
             value = value,
@@ -2907,7 +2929,7 @@ private fun RoomSettingsSlider(
     steps: Int,
     modifier: Modifier = Modifier
 ) {
-    val activeColor = MaterialTheme.colorScheme.primary
+    val activeColor = LocalRoomAccentColor.current
     val inactiveColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.88f)
     val thumbRingColor = MaterialTheme.colorScheme.surface
     val valueStart = valueRange.start

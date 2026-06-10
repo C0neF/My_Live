@@ -1,5 +1,6 @@
 package com.mylive.app.ui.screen.room.quickaccess
 
+import com.mylive.app.ui.screen.room.LocalRoomAccentColor
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -277,14 +278,14 @@ private fun QuickAccessIslandTab(
 ) {
     val containerColor by animateColorAsState(
         targetValue = if (selected) {
-            MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
+            LocalRoomAccentColor.current.copy(alpha = 0.16f)
         } else {
             Color.Transparent
         }
     )
     val contentColor by animateColorAsState(
         targetValue = if (selected) {
-            MaterialTheme.colorScheme.primary
+            LocalRoomAccentColor.current
         } else {
             MaterialTheme.colorScheme.onSurfaceVariant
         }
@@ -402,7 +403,7 @@ private fun FollowQuickItem(user: FollowUserEntity, onClick: () -> Unit) {
             )
         }
         val statusColor = when (user.liveStatus) {
-            1 -> MaterialTheme.colorScheme.primary
+            1 -> LocalRoomAccentColor.current
             2 -> MaterialTheme.colorScheme.onSurfaceVariant
             else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
         }
@@ -610,7 +611,7 @@ private fun RecommendationQuickItem(room: LiveRoomItem, onClick: () -> Unit) {
                     Text(
                         text = "${room.online}人观看",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary
+                        color = LocalRoomAccentColor.current
                     )
                 }
             }

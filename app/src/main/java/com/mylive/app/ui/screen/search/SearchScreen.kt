@@ -288,7 +288,7 @@ fun SearchScreen(
                                         colors = CardDefaults.cardColors(
                                             containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)
                                         ),
-                                        shape = RoundedCornerShape(16.dp)
+                                        shape = RoundedCornerShape(12.dp)
                                     ) {
                                         Row(
                                             modifier = Modifier
@@ -403,15 +403,15 @@ private fun CompactSearchFilterPill(
 ) {
     val containerColor by animateColorAsState(
         targetValue = if (selected) {
-            MaterialTheme.colorScheme.primaryContainer
+            MaterialTheme.colorScheme.primary
         } else {
-            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
         },
         label = "searchFilterContainerColor"
     )
     val contentColor by animateColorAsState(
         targetValue = if (selected) {
-            MaterialTheme.colorScheme.onPrimaryContainer
+            MaterialTheme.colorScheme.onPrimary
         } else {
             MaterialTheme.colorScheme.onSurfaceVariant
         },
@@ -423,12 +423,7 @@ private fun CompactSearchFilterPill(
             .height(34.dp)
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(12.dp),
-        color = containerColor,
-        border = if (selected) {
-            null
-        } else {
-            BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f))
-        }
+        color = containerColor
     ) {
         Row(
             modifier = Modifier

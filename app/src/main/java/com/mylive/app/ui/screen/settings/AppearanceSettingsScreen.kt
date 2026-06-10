@@ -69,7 +69,6 @@ fun AppearanceSettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
-    val isDynamic by viewModel.isDynamic.collectAsStateWithLifecycle()
     val styleColor by viewModel.styleColor.collectAsStateWithLifecycle()
 
     val themeModeOptions = stringArrayResource(R.array.theme_mode_options)
@@ -117,14 +116,6 @@ fun AppearanceSettingsScreen(
                 subtitle = stringResource(R.string.theme_mode_subtitle),
                 value = themeModeOptions.getOrElse(themeModeValues.indexOf(themeMode)) { themeModeDefault },
                 onClick = { showThemeDialog = true }
-            )
-            HorizontalDivider()
-
-            SettingsSwitch(
-                title = stringResource(R.string.dynamic_color_title),
-                subtitle = stringResource(R.string.dynamic_color_subtitle),
-                checked = isDynamic,
-                onCheckedChange = { viewModel.setIsDynamic(it) }
             )
             HorizontalDivider()
 

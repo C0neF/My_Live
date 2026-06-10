@@ -1,69 +1,81 @@
 package com.mylive.app.ui.theme
 
-import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.luminance
 
-private val LightColorScheme = lightColorScheme(
-    primary = md_theme_light_primary,
-    onPrimary = md_theme_light_onPrimary,
-    primaryContainer = md_theme_light_primaryContainer,
-    onPrimaryContainer = md_theme_light_onPrimaryContainer,
-    secondary = md_theme_light_secondary,
-    onSecondary = md_theme_light_onSecondary,
-    background = md_theme_light_background,
-    onBackground = md_theme_light_onBackground,
-    surface = md_theme_light_surface,
-    onSurface = md_theme_light_onSurface,
-    error = md_theme_light_error,
-    onError = md_theme_light_onError,
+// Every neutral M3 role is set explicitly so the fixed palette fully replaces the
+// Material defaults (which would otherwise leak a tinted gray for surfaceVariant /
+// onSurfaceVariant / outlineVariant — roles the app reads in hundreds of places).
+private val DarkColorScheme = darkColorScheme(
+    primary = DarkAccent,
+    onPrimary = Color.Black,
+    primaryContainer = DarkElevated,
+    onPrimaryContainer = DarkInk,
+    secondary = DarkMuted,
+    onSecondary = DarkBg,
+    secondaryContainer = DarkElevated,
+    onSecondaryContainer = DarkInk,
+    tertiary = DarkAccent,
+    onTertiary = Color.Black,
+    tertiaryContainer = DarkElevated,
+    onTertiaryContainer = DarkInk,
+    background = DarkBg,
+    onBackground = DarkInk,
+    surface = DarkSurface,
+    onSurface = DarkInk,
+    surfaceVariant = DarkElevated,
+    onSurfaceVariant = DarkMuted,
+    outline = DarkHairlineStrong,
+    outlineVariant = DarkHairline,
+    error = DangerDark,
+    onError = OnDangerDark,
 )
 
-private val DarkColorScheme = darkColorScheme(
-    primary = md_theme_dark_primary,
-    onPrimary = md_theme_dark_onPrimary,
-    primaryContainer = md_theme_dark_primaryContainer,
-    onPrimaryContainer = md_theme_dark_onPrimaryContainer,
-    secondary = md_theme_dark_secondary,
-    onSecondary = md_theme_dark_onSecondary,
-    background = md_theme_dark_background,
-    onBackground = md_theme_dark_onBackground,
-    surface = md_theme_dark_surface,
-    onSurface = md_theme_dark_onSurface,
-    error = md_theme_dark_error,
-    onError = md_theme_dark_onError,
+private val LightColorScheme = lightColorScheme(
+    primary = LightAccent,
+    onPrimary = Color.White,
+    primaryContainer = LightSurface,
+    onPrimaryContainer = LightInk,
+    secondary = LightMuted,
+    onSecondary = Color.White,
+    secondaryContainer = LightSurface,
+    onSecondaryContainer = LightInk,
+    tertiary = LightAccent,
+    onTertiary = Color.White,
+    tertiaryContainer = LightSurface,
+    onTertiaryContainer = LightInk,
+    background = LightBg,
+    onBackground = LightInk,
+    surface = Color.White,
+    onSurface = LightInk,
+    surfaceVariant = LightSurface,
+    onSurfaceVariant = LightMuted,
+    outline = LightHairlineStrong,
+    outlineVariant = LightHairline,
+    error = DangerLight,
+    onError = OnDangerLight,
 )
 
 @Composable
 fun MyLiveTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    dynamicColor: Boolean = false,
-    seedColor: Color = md_theme_light_primary,
+    seedColor: Color = LightAccent,
     content: @Composable () -> Unit
 ) {
-    val colorScheme = when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            val context = LocalContext.current
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        }
-        darkTheme -> DarkColorScheme.copy(
-            primary = seedColor,
-            primaryContainer = seedColor.copy(alpha = 0.2f),
-            onPrimaryContainer = Color.White
-        )
-        else -> LightColorScheme.copy(
-            primary = seedColor,
-            primaryContainer = seedColor.copy(alpha = 0.1f),
-            onPrimaryContainer = seedColor
-        )
-    }
+    val base = if (darkTheme) DarkColorScheme else LightColorScheme
+    // The accent follows the user's seed; pick legible on-color from its luminance
+    // so button/label text stays readable for any chosen color.
+    val onSeed = if (seedColor.luminance() > 0.5f) Color.Black else Color.White
+    val colorScheme = base.copy(
+        primary = seedColor,
+        onPrimary = onSeed,
+        onPrimaryContainer = seedColor,
+    )
 
     MaterialTheme(
         colorScheme = colorScheme,

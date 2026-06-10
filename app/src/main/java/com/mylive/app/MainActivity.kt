@@ -89,7 +89,6 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val themeMode by settingsRepository.themeMode.collectAsState(initial = 0)
-            val isDynamic by settingsRepository.isDynamic.collectAsState(initial = false)
             val styleColor by settingsRepository.styleColor.collectAsState(initial = 0xff3498db.toInt())
 
             val darkTheme = when (themeMode) {
@@ -100,7 +99,6 @@ class MainActivity : ComponentActivity() {
 
             MyLiveTheme(
                 darkTheme = darkTheme,
-                dynamicColor = isDynamic,
                 seedColor = androidx.compose.ui.graphics.Color(styleColor)
             ) {
                 AppNavGraph(navigator = navigator, initialRoute = initialRoute)

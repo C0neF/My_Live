@@ -1,7 +1,7 @@
 package com.mylive.app.ui.screen.room
 
 import androidx.compose.ui.graphics.Color
-import com.mylive.app.ui.theme.md_theme_dark_onSurface
+import com.mylive.app.ui.theme.DarkInk
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -10,14 +10,14 @@ class LiveRoomHeaderColorPolicyTest {
     @Test
     fun refreshIconUsesDarkThemeForegroundColor() {
         assertEquals(
-            md_theme_dark_onSurface,
-            resolveLiveRoomRefreshIconTint(md_theme_dark_onSurface)
+            DarkInk,
+            resolveLiveRoomRefreshIconTint(DarkInk)
         )
     }
 
     @Test
     fun liveRoomPlatformAccentUsesCurrentSiteBrandColor() {
-        val fallback = md_theme_dark_onSurface
+        val fallback = DarkInk
 
         assertEquals(Color(0xFFFF5D23), resolveLiveRoomPlatformAccentColor("douyu", fallback))
         assertEquals(Color(0xFFFFD736), resolveLiveRoomPlatformAccentColor("huya", fallback))

@@ -1,7 +1,7 @@
 package com.mylive.app.ui.screen.room
 
 import com.mylive.app.ui.theme.Icons
-import com.mylive.app.ui.theme.md_theme_dark_onSurface
+import com.mylive.app.ui.theme.DarkInk
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotSame
@@ -14,8 +14,8 @@ class LiveRoomPortraitToolbarPolicyTest {
     @Test
     fun toolbarIconsUseForegroundTintInDarkMode() {
         assertEquals(
-            md_theme_dark_onSurface,
-            resolveLiveRoomToolbarIconTint(md_theme_dark_onSurface)
+            DarkInk,
+            resolveLiveRoomToolbarIconTint(DarkInk)
         )
     }
 

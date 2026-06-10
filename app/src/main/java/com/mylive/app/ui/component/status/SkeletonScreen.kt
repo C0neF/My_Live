@@ -6,7 +6,6 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,7 +13,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -25,8 +23,6 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -117,72 +113,54 @@ fun SkeletonRectangle(
 }
 
 /**
- * Skeleton screen that matches the LiveRoomCard layout.
- * Shows shimmer placeholders for: cover image, avatar, title, username.
+ * Skeleton placeholder that mirrors the flat LiveRoomCard: bare cover (no container),
+ * two reserved title lines, and a small avatar row — so loading→loaded doesn't reflow.
  */
 @Composable
 fun LiveRoomCardSkeleton(
     modifier: Modifier = Modifier
 ) {
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)
-        ),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
-    ) {
-        Column {
-            // Cover image skeleton (16:9 aspect ratio)
+    Column(modifier = modifier.fillMaxWidth()) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(1.777f)
+                .clip(RoundedCornerShape(12.dp))
+                .background(shimmerBrush())
+        ) {
+            // Viewer count badge placeholder (bottom-end).
             Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(1.777f)
-                    .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
-                    .background(shimmerBrush())
-            ) {
-                // Bottom gradient overlay placeholder
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .fillMaxHeight(0.5f)
-                        .align(Alignment.BottomCenter)
-                        .background(
-                            Brush.verticalGradient(
-                                colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.3f))
-                            )
-                        )
-                )
+                    .padding(8.dp)
+                    .align(Alignment.BottomEnd)
+                    .width(56.dp)
+                    .height(20.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color.Black.copy(alpha = 0.35f))
+            )
+        }
 
-                // Viewer count badge placeholder (bottom-end)
-                Box(
-                    modifier = Modifier
-                        .padding(8.dp)
-                        .align(Alignment.BottomEnd)
-                        .width(60.dp)
-                        .height(20.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(Color.Black.copy(alpha = 0.4f))
-                )
-            }
+        Spacer(modifier = Modifier.height(8.dp))
 
-            // Avatar + text skeleton
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Avatar circle
-                SkeletonCircle(size = 36)
-                Spacer(modifier = Modifier.width(10.dp))
-                // Title + username
-                Column(modifier = Modifier.weight(1f)) {
-                    SkeletonLine(height = 14)
-                    Spacer(modifier = Modifier.height(6.dp))
-                    SkeletonLine(widthFraction = 0.5f, height = 12)
-                }
-            }
+        // Two reserved title lines (mirrors minLines = 2 on the real card).
+        SkeletonLine(height = 14, modifier = Modifier.padding(horizontal = 2.dp))
+        Spacer(modifier = Modifier.height(9.dp))
+        SkeletonLine(
+            widthFraction = 0.65f,
+            height = 14,
+            modifier = Modifier.padding(horizontal = 2.dp)
+        )
+
+        Spacer(modifier = Modifier.height(5.dp))
+
+        // Streamer row: small avatar + name.
+        Row(
+            modifier = Modifier.padding(horizontal = 2.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            SkeletonCircle(size = 20)
+            Spacer(modifier = Modifier.width(6.dp))
+            SkeletonLine(widthFraction = 0.4f, height = 11)
         }
     }
 }

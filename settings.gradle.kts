@@ -24,4 +24,3 @@ dependencyResolutionManagement {
 
 rootProject.name = "My_Live"
 include(":app")
-include(":macrobenchmark")

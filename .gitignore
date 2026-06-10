@@ -40,3 +40,6 @@ PRODUCT.md
 
 # Local tools (sync server, workers, etc.)
 /tools/
+
+# Macrobenchmark module (local performance testing only)
+/macrobenchmark/

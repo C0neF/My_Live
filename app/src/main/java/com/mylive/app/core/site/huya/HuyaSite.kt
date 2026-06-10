@@ -553,7 +553,11 @@ class HuyaSite @Inject constructor(
 
         val convertUid = rotl64(presenterUid)
         val calcUid = if (isWap) presenterUid else convertUid
-        val fm = URLDecoder.decode(mapAnti["fm"]!!.first(), "UTF-8")
+        // `fm` is base64 that is percent-encoded TWICE in sFlvToken. parseQueryString
+        // already peeled the first (form) layer; decodeComponent peels the second
+        // (component) layer so Base64 sees valid characters. Matches Dart:
+        //   Uri.decodeComponent(queryParametersAll['fm'].first)
+        val fm = decodeComponent(mapAnti["fm"]!!.first())
         val secretPrefix = String(Base64.getDecoder().decode(fm)).split("_").first()
         val wsTime = mapAnti["wsTime"]!!.first()
         val secretStr = "${secretPrefix}_${calcUid}_${stream}_${secretHash}_$wsTime"
@@ -570,7 +574,7 @@ class HuyaSite @Inject constructor(
             "ctype" to ctype,
             "ver" to "1",
             "fs" to mapAnti["fs"]!!.first(),
-            "fm" to URLEncoder.encode(mapAnti["fm"]!!.first(), "UTF-8"),
+            "fm" to encodeComponent(mapAnti["fm"]!!.first()),
             "t" to platformId
         )
         if (isWap) {
@@ -842,15 +846,43 @@ class HuyaSite @Inject constructor(
         for (pair in query.split("&")) {
             val eqIdx = pair.indexOf('=')
             if (eqIdx < 0) {
-                result.getOrPut(pair) { mutableListOf() }
+                result.getOrPut(formDecode(pair)) { mutableListOf() }
             } else {
-                val key = pair.substring(0, eqIdx)
-                val value = pair.substring(eqIdx + 1)
+                val key = formDecode(pair.substring(0, eqIdx))
+                val value = formDecode(pair.substring(eqIdx + 1))
                 result.getOrPut(key) { mutableListOf() }.add(value)
             }
         }
         return result
     }
+
+    // ── Helper: URL component codecs (mirror Dart Uri semantics) ───────────
+
+    /**
+     * Form-decode a query component, matching Dart's `Uri.queryParametersAll`
+     * (resolves `%XX` and converts `+` to a space). This is the FIRST decode
+     * layer the Dart reference applies to every anti-code field. Falls back to
+     * the raw string if the input is not valid percent-encoding.
+     */
+    private fun formDecode(s: String): String =
+        try { URLDecoder.decode(s, "UTF-8") } catch (e: Exception) { s }
+
+    /**
+     * Decode a percent-encoded component WITHOUT turning `+` into a space,
+     * matching Dart's `Uri.decodeComponent`. Used as the SECOND decode layer
+     * for `fm` (the base64 anti-code seed): a literal `+` is a base64 character
+     * that must be preserved, so [URLDecoder] (which maps `+`→space) cannot be
+     * used directly here.
+     */
+    private fun decodeComponent(s: String): String =
+        try { URLDecoder.decode(s.replace("+", "%2B"), "UTF-8") } catch (e: Exception) { s }
+
+    /**
+     * Encode a component matching Dart's `Uri.encodeComponent` (space becomes
+     * `%20`, not `+`).
+     */
+    private fun encodeComponent(s: String): String =
+        URLEncoder.encode(s, "UTF-8").replace("+", "%20")
 
     // ── Helper: MD5 ────────────────────────────────────────────────────────
 

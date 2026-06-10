@@ -1235,7 +1235,7 @@ private fun PortraitAuxiliaryPanelSheet(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                    .padding(start = 16.dp, end = 16.dp, top = 0.dp, bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
@@ -2308,7 +2308,7 @@ fun RoomSettingsPanel(
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
-            .padding(16.dp),
+            .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
         contentPadding = PaddingValues(bottom = 24.dp)
     ) {
@@ -2866,7 +2866,7 @@ private fun RoomSettingsSwitchRow(
             checked = checked,
             onCheckedChange = onCheckedChange,
             colors = SwitchDefaults.colors(
-                checkedTrackColor = LocalRoomAccentColor.current,
+                checkedTrackColor = LocalRoomAccentColor.current.copy(alpha = 0.4f),
                 checkedThumbColor = LocalRoomAccentColor.current
             )
         )

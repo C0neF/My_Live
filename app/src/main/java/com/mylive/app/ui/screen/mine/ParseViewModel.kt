@@ -20,6 +20,24 @@ import okhttp3.Request
 import timber.log.Timber
 import javax.inject.Inject
 
+/**
+ * Browser-like User-Agent for short-link redirect resolution. Douyin's `v.douyin.com`
+ * (and similar) treat a non-browser UA such as okhttp's default as a bot and bounce
+ * the request to `https://www.douyin.com` instead of 302-ing to the real room, which
+ * then fails to parse. The Dart reference happens to pass because Dio's default UA is
+ * accepted; we set an explicit browser UA to be safe.
+ */
+private const val PARSE_USER_AGENT =
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+
+/**
+ * Douyin short-link matcher. The short code may contain '_' (e.g. `6yEygkv2_Fo`),
+ * so the charset MUST include underscore. A charset of only `[a-zA-Z0-9]` truncates
+ * the code at the underscore, and the truncated link is bounced to `www.douyin.com`
+ * (unparseable). Mirrors the Dart reference's `[\d\w]+` (where `\w` includes `_`).
+ */
+internal val V_DOUYIN_SHORTLINK_REGEX = Regex("""https?://v\.douyin\.com/[A-Za-z0-9_]+""")
+
 sealed class ParseEvent {
     data class NavigateToRoom(val roomId: String, val siteId: String) : ParseEvent()
     data class ShowToast(val message: String) : ParseEvent()
@@ -154,8 +172,11 @@ class ParseViewModel @Inject constructor(
         }
 
         if (trimmedUrl.contains("v.douyin.com")) {
-            val regExp = Regex("""https?://v\.douyin\.com/[a-zA-Z0-9]+""")
-            val u = regExp.find(trimmedUrl)?.value ?: ""
+            // Douyin short links 302 to the real room only for browser-like requests
+            // (see PARSE_USER_AGENT) and are requested WITH a trailing slash, matching
+            // the Dart reference's captured short URL. The code may contain '_'.
+            var u = V_DOUYIN_SHORTLINK_REGEX.find(trimmedUrl)?.value ?: ""
+            if (u.isNotEmpty() && !u.endsWith("/")) u += "/"
             val location = getLocation(u)
             return if (location.isNotEmpty()) parseUrl(location) else null
         }
@@ -169,12 +190,18 @@ class ParseViewModel @Inject constructor(
             .followRedirects(false)
             .followSslRedirects(false)
             .build()
-        val request = Request.Builder().url(url).build()
+        val request = Request.Builder()
+            .url(url)
+            .header("User-Agent", PARSE_USER_AGENT)
+            .build()
         try {
             noRedirectClient.newCall(request).execute().use { response ->
-                if (response.code == 302 || response.code == 301) {
-                    return@withContext response.header("Location") ?: ""
+                if (response.isRedirect) {
+                    val location = response.header("Location") ?: ""
+                    Timber.d("getLocation %s -> [%d] %s", url, response.code, location)
+                    return@withContext location
                 }
+                Timber.w("getLocation %s returned non-redirect %d", url, response.code)
             }
         } catch (e: Exception) {
             Timber.e(e, "getLocation redirect failed for $url")

@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -184,6 +185,66 @@ fun LiveRoomGridSkeleton(
     ) {
         items(itemCount) {
             LiveRoomCardSkeleton()
+        }
+    }
+}
+
+/**
+ * Skeleton for the two-pane Category tab: left parent rail + right grid of flat tiles.
+ * Mirrors CategoryList so loading -> loaded doesn't reflow.
+ */
+@Composable
+fun CategoryListSkeleton(
+    modifier: Modifier = Modifier
+) {
+    Row(modifier = modifier.fillMaxSize()) {
+        // Left parent rail placeholders.
+        Column(
+            modifier = Modifier
+                .width(104.dp)
+                .fillMaxHeight()
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.12f))
+        ) {
+            repeat(8) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp)
+                        .padding(start = 12.dp),
+                    contentAlignment = Alignment.CenterStart
+                ) {
+                    SkeletonLine(widthFraction = 0.6f, height = 12)
+                }
+            }
+        }
+        // Right grid of tile placeholders (badge + label), 3 per row.
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight()
+                .padding(horizontal = 12.dp, vertical = 8.dp)
+        ) {
+            repeat(4) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    repeat(3) {
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(vertical = 8.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            SkeletonCircle(size = 52)
+                            Spacer(modifier = Modifier.height(6.dp))
+                            SkeletonLine(widthFraction = 0.7f, height = 11)
+                        }
+                    }
+                }
+            }
         }
     }
 }

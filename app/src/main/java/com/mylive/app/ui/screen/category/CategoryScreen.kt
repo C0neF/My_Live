@@ -45,9 +45,9 @@ import com.mylive.app.R
 import com.mylive.app.core.model.LiveCategory
 import com.mylive.app.core.model.LiveSubCategory
 import com.mylive.app.ui.component.NetImage
+import com.mylive.app.ui.component.status.CategoryListSkeleton
 import com.mylive.app.ui.component.status.EmptyState
 import com.mylive.app.ui.component.status.ErrorState
-import com.mylive.app.ui.component.status.LoadingState
 import com.mylive.app.ui.motion.AppMotion
 import com.mylive.app.ui.theme.Icons
 import com.mylive.app.ui.theme.livePlatformAccentColor
@@ -192,7 +192,7 @@ fun CategoryScreen(
 
                 Box(modifier = Modifier.fillMaxSize()) {
                     when {
-                        pageLoading -> LoadingState(modifier = Modifier.align(Alignment.Center))
+                        pageLoading -> CategoryListSkeleton(modifier = Modifier.fillMaxSize())
                         pageError != null -> ErrorState(
                             message = pageError ?: "加载失败",
                             onRetry = { viewModel.retry() },

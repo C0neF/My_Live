@@ -43,3 +43,6 @@ PRODUCT.md
 
 # Macrobenchmark module (local performance testing only)
 /macrobenchmark/
+
+# Documentation (local only)
+/docs/

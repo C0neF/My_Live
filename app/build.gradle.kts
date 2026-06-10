@@ -111,7 +111,6 @@ dependencies {
     implementation(libs.compose.ui)
     implementation(libs.compose.ui.tooling.preview)
     implementation(libs.compose.material3)
-    implementation(libs.compose.material.icons.extended)
     debugImplementation(libs.compose.ui.tooling)
 
     // Navigation
@@ -162,7 +161,8 @@ dependencies {
     implementation(libs.nanohttpd)
     implementation(libs.core.splashscreen)
     implementation(libs.androidx.profileinstaller)
-    implementation("br.com.devsrsouza.compose.icons:tabler-icons:1.1.1")
+    implementation("com.composables:icons-lucide-cmp:2.2.1")
+    implementation("com.adamglin:phosphor-icon:1.0.0")
 
     // Testing
     testImplementation(libs.junit)

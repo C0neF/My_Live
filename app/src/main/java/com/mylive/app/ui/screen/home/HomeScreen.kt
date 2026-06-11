@@ -19,7 +19,6 @@ import com.mylive.app.ui.theme.Icons
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -67,7 +66,7 @@ fun HomeScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val siteTabs by viewModel.siteTabs.collectAsStateWithLifecycle()
-    var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+    val selectedTab = homeSelectedPlatformIndex(siteTabs = siteTabs, siteId = uiState.siteId)
     val activePlatformAccentColor = homePlatformAccentColor(siteTabs.getOrNull(selectedTab)?.id.orEmpty())
 
     LaunchedEffect(activePlatformAccentColor) {
@@ -143,16 +142,22 @@ fun HomeScreen(
         }
 
         // Platform selector: show all platforms and let the content pager handle swipes.
-        val pagerState = rememberPagerState(initialPage = 0, pageCount = { siteTabs.size })
+        val pagerState = rememberPagerState(initialPage = selectedTab, pageCount = { siteTabs.size })
         val coroutineScope = rememberCoroutineScope()
         val platformScrollState = rememberScrollState()
 
         fun selectHomeSite(index: Int) {
             if (siteTabs.isEmpty()) return
             val boundedIndex = index.coerceIn(0, siteTabs.lastIndex)
-            if (selectedTab == boundedIndex) return
-            selectedTab = boundedIndex
+            if (selectedTab == boundedIndex && uiState.siteId == siteTabs[boundedIndex].id) return
             viewModel.selectSite(boundedIndex)
+        }
+
+        LaunchedEffect(siteTabs, uiState.siteId) {
+            val restoredTab = homeSelectedPlatformIndex(siteTabs = siteTabs, siteId = uiState.siteId)
+            if (siteTabs.isNotEmpty() && pagerState.currentPage != restoredTab) {
+                pagerState.scrollToPage(restoredTab)
+            }
         }
 
         LaunchedEffect(pagerState, siteTabs.size) {
@@ -462,6 +467,17 @@ internal fun homePlatformSelectorLayout(
 
 internal fun homePlatformPreJumpPageForTarget(currentPage: Int, targetPage: Int): Int? {
     return AppMotion.preJumpPageForTarget(currentPage = currentPage, targetPage = targetPage)
+}
+
+internal fun homeSelectedPlatformIndex(
+    siteTabs: List<com.mylive.app.core.site.LiveSite>,
+    siteId: String
+): Int {
+    if (siteTabs.isEmpty()) {
+        return 0
+    }
+    val selectedIndex = siteTabs.indexOfFirst { it.id == siteId }
+    return selectedIndex.takeIf { it >= 0 } ?: 0
 }
 
 internal fun homePlatformDisplayName(siteName: String): String {

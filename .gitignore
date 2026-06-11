@@ -37,3 +37,15 @@ PRODUCT.md
 **/.wrangler/
 **/*.log
 *.tsbuildinfo
+
+# Local tools (sync server, workers, etc.)
+/tools/
+
+# Macrobenchmark module (local performance testing only)
+/macrobenchmark/
+
+# Documentation (local only)
+/docs/
+
+# Room schema exports (auto-generated, local only)
+/app/schemas/

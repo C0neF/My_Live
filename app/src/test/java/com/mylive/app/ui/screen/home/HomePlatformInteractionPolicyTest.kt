@@ -13,7 +13,10 @@ import com.mylive.app.core.model.LiveSuperChatMessage
 import com.mylive.app.core.site.LiveDanmaku
 import com.mylive.app.core.site.LiveSite
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 
 class HomePlatformInteractionPolicyTest {
 
@@ -45,6 +48,29 @@ class HomePlatformInteractionPolicyTest {
 
         assertEquals(1, layout.primarySiteIndex)
         assertEquals(listOf(0, 1), layout.secondarySiteIndices)
+    }
+
+    @Test
+    fun platformSelectionRestoresFromLoadedStateSiteIdAfterBottomTabReturn() {
+        val siteTabs = listOf(
+            FakeLiveSite("bilibili"),
+            FakeLiveSite("douyu"),
+            FakeLiveSite("huya")
+        )
+
+        assertEquals(1, homeSelectedPlatformIndex(siteTabs = siteTabs, siteId = "douyu"))
+        assertEquals(0, homeSelectedPlatformIndex(siteTabs = siteTabs, siteId = ""))
+        assertEquals(0, homeSelectedPlatformIndex(siteTabs = siteTabs, siteId = "missing"))
+        assertEquals(0, homeSelectedPlatformIndex(siteTabs = emptyList(), siteId = "douyu"))
+    }
+
+    @Test
+    fun homeScreenUsesUiStateSiteIdAsPlatformSelectionSource() {
+        val source = File("src/main/java/com/mylive/app/ui/screen/home/HomeScreen.kt").readText()
+
+        assertTrue(source.contains("homeSelectedPlatformIndex(siteTabs = siteTabs, siteId = uiState.siteId)"))
+        assertTrue(source.contains("pagerState.scrollToPage(restoredTab)"))
+        assertFalse(source.contains("var selectedTab by rememberSaveable { mutableIntStateOf(0) }"))
     }
 
     @Test

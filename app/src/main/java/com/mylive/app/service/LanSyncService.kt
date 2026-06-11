@@ -8,7 +8,6 @@ import android.os.IBinder
 import androidx.compose.runtime.mutableStateListOf
 import com.mylive.app.core.common.CoreLog
 import com.mylive.app.data.local.entity.FollowUserEntity
-import com.mylive.app.data.local.entity.FollowUserTagEntity
 import com.mylive.app.data.local.entity.HistoryEntity
 import com.mylive.app.data.local.entity.ShieldEntity
 import com.mylive.app.data.repository.FollowRepository
@@ -17,6 +16,7 @@ import com.mylive.app.data.repository.ProfileBackupManager
 import com.mylive.app.data.repository.SettingsRepository
 import com.mylive.app.data.repository.ShieldRepository
 import com.mylive.app.ui.screen.sync.decodeLanSyncShieldKeywords
+import com.mylive.app.ui.screen.sync.decodeFollowTagsForLanSync
 import dagger.hilt.android.AndroidEntryPoint
 import fi.iki.elonen.NanoHTTPD
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -144,7 +144,7 @@ class LanSyncService : Service() {
         if (syncToken.isEmpty()) {
             syncToken = UUID.randomUUID().toString().replace("-", "").substring(0, 8)
         }
-        CoreLog.d("LanSyncService: pair token = $syncToken")
+        CoreLog.d("LanSyncService: pair token generated")
         ipAddress = getLocalIpAddress()
         startHttpServer()
         startUdpListener()
@@ -324,15 +324,10 @@ class LanSyncService : Service() {
                             newJsonResponse(true, "success")
                         }
                         "/sync/tag" -> {
-                            val arr = JSONArray(body)
+                            val tags = decodeFollowTagsForLanSync(body)
                             serviceScope.launch {
-                                for (i in 0 until arr.length()) {
-                                    val item = arr.getJSONObject(i)
-                                    val id = item.getString("id")
-                                    val name = item.getString("name")
-                                    followRepository.addTag(
-                                        FollowUserTagEntity(id = id, tag = name, userIds = emptyList())
-                                    )
+                                for (tag in tags) {
+                                    followRepository.addTag(tag)
                                 }
                             }
                             newJsonResponse(true, "success")

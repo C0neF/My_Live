@@ -1,6 +1,7 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.hilt)
@@ -27,8 +28,8 @@ android {
         applicationId = "com.mylive.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 6
-        versionName = "1.0.6"
+        versionCode = 7
+        versionName = "1.0.7"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -52,7 +53,7 @@ android {
 
     sourceSets {
         // Make the exported Room schemas available to MigrationTestHelper in instrumented tests.
-        getByName("androidTest").assets.srcDir("$projectDir/schemas")
+        getByName("androidTest").assets.directories.add("$projectDir/schemas")
     }
 
     buildTypes {
@@ -61,6 +62,7 @@ android {
                 signingConfig = signingConfigs.getByName("release")
             }
             isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -72,18 +74,22 @@ android {
             matchingFallbacks += listOf("release")
             isDebuggable = false
             isMinifyEnabled = false
+            isShrinkResources = false
         }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions {
-        jvmTarget = "17"
-    }
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_17)
     }
 }
 
@@ -140,7 +146,7 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     // Gson — used by Room Converters. Previously present only transitively via retrofit-gson;
     // declared directly now that Retrofit has been removed.
-    implementation("com.google.code.gson:gson:2.11.0")
+    implementation(libs.gson)
 
     // Media3 ExoPlayer
     implementation(libs.media3.exoplayer)
@@ -162,7 +168,7 @@ dependencies {
     implementation(libs.nanohttpd)
     implementation(libs.core.splashscreen)
     implementation(libs.androidx.profileinstaller)
-    implementation("br.com.devsrsouza.compose.icons:tabler-icons:1.1.1")
+    implementation(libs.tabler.icons)
 
     // Testing
     testImplementation(libs.junit)
@@ -179,7 +185,7 @@ dependencies {
     androidTestImplementation(libs.compose.ui.test.junit4)
     androidTestImplementation(libs.hilt.android.testing)
     kspAndroidTest(libs.hilt.compiler)
-    androidTestImplementation("androidx.test:rules:1.6.1")
-    androidTestImplementation("androidx.room:room-testing:2.8.4")
+    androidTestImplementation(libs.androidx.test.rules)
+    androidTestImplementation(libs.room.testing)
     debugImplementation(libs.compose.ui.test.manifest)
 }

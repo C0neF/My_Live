@@ -15,6 +15,7 @@ import com.mylive.app.R
 import com.mylive.app.core.site.LiveSite
 import com.mylive.app.data.local.entity.FollowUserEntity
 import com.mylive.app.data.repository.FollowRepository
+import com.mylive.app.data.repository.SettingsRepository
 import com.mylive.app.ui.navigation.Route
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
@@ -32,14 +33,16 @@ class FollowUpdateWorker @AssistedInject constructor(
     @Assisted context: Context,
     @Assisted params: WorkerParameters,
     private val followRepository: FollowRepository,
+    private val settingsRepository: SettingsRepository,
     private val sites: Set<@JvmSuppressWildcards LiveSite>
 ) : CoroutineWorker(context, params) {
-
-    private val updateSemaphore = Semaphore(permits = 4)
 
     override suspend fun doWork(): Result = coroutineScope {
         try {
             val follows = followRepository.getAllFollows().first()
+            val updateSemaphore = Semaphore(
+                permits = resolveFollowUpdateConcurrency(settingsRepository.updateFollowThreadCount.first())
+            )
             follows.map { follow ->
                 async(Dispatchers.IO) {
                     updateSemaphore.withPermit {

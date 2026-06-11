@@ -46,6 +46,3 @@ PRODUCT.md
 
 # Documentation (local only)
 /docs/
-
-# Room schema exports (auto-generated, local only)
-/app/schemas/

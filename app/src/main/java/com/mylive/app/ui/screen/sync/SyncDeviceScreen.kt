@@ -103,15 +103,7 @@ class SyncDeviceViewModel @Inject constructor(
 
                 // Also sync tags
                 val tags = followRepository.getAllTags().first()
-                val tagsJson = org.json.JSONArray()
-                tags.forEach { t ->
-                    tagsJson.put(JSONObject().apply {
-                        put("id", t.id)
-                        put("tag", t.tag)
-                        put("userId", org.json.JSONArray(t.userIds))
-                    })
-                }
-                postJson(buildUrl(address, port, "/sync/tag", overlay), tagsJson.toString(), token)
+                postJson(buildUrl(address, port, "/sync/tag", overlay), encodeFollowTagsForLanSync(tags), token)
 
                 _syncResults.value = _syncResults.value + ("follow" to "✅ 关注列表同步成功")
             } catch (e: Exception) {
@@ -207,8 +199,7 @@ class SyncDeviceViewModel @Inject constructor(
             if (token.isNotEmpty()) builder.addHeader("X-Sync-Token", token)
             val request = builder.build()
             client.newCall(request).execute().use { response ->
-                if (response.code == 401) throw Exception("未配对或配对码错误，请扫描对方二维码或填写配对码")
-                if (!response.isSuccessful) throw Exception("HTTP ${response.code}")
+                validateLanSyncResponse(response.code, response.isSuccessful, response.body?.string())
             }
         }
     }

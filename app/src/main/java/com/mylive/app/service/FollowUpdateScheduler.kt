@@ -17,8 +17,7 @@ object FollowUpdateScheduler {
             return
         }
 
-        // Clamp duration to minimum 15 mins supported by WorkManager
-        val duration = intervalMinutes.coerceAtLeast(15).toLong()
+        val duration = coerceFollowUpdateIntervalMinutes(intervalMinutes).toLong()
         val request = PeriodicWorkRequestBuilder<FollowUpdateWorker>(
             duration, TimeUnit.MINUTES
         ).build()

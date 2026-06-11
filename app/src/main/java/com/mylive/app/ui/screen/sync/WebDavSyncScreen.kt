@@ -60,6 +60,7 @@ sealed class WebDavMessage {
     object RestoreOk : WebDavMessage()
     data class RestoreFailed(val reason: String) : WebDavMessage()
     object ConfigRequired : WebDavMessage()
+    data class ConfigInvalid(val reason: String) : WebDavMessage()
 }
 
 @HiltViewModel
@@ -121,8 +122,13 @@ class WebDavViewModel @Inject constructor(
 
     fun saveConfig() {
         viewModelScope.launch {
-            persistConfig(_uiState.value)
-            _message.emit(WebDavMessage.Saved)
+            try {
+                buildWebDavBackupUrl(_uiState.value.serverUrl)
+                persistConfig(_uiState.value)
+                _message.emit(WebDavMessage.Saved)
+            } catch (e: IllegalArgumentException) {
+                _message.emit(WebDavMessage.ConfigInvalid(e.message ?: "Invalid WebDAV URL"))
+            }
         }
     }
 
@@ -135,12 +141,13 @@ class WebDavViewModel @Inject constructor(
             }
             _uiState.value = state.copy(isLoading = true)
             try {
+                val backupUrl = buildWebDavBackupUrl(state.serverUrl)
                 persistConfig(state)
                 val uploadTime = withContext(Dispatchers.IO) {
                     val body = profileBackupManager.exportProfileJson()
                         .toRequestBody(JSON_MEDIA_TYPE)
                     val request = Request.Builder()
-                        .url(buildBackupUrl(state.serverUrl))
+                        .url(backupUrl)
                         .put(body)
                         .applyAuth(state.username, state.password)
                         .build()
@@ -170,9 +177,10 @@ class WebDavViewModel @Inject constructor(
             }
             _uiState.value = state.copy(isLoading = true)
             try {
+                val backupUrl = buildWebDavBackupUrl(state.serverUrl)
                 val recoverTime = withContext(Dispatchers.IO) {
                     val request = Request.Builder()
-                        .url(buildBackupUrl(state.serverUrl))
+                        .url(backupUrl)
                         .get()
                         .applyAuth(state.username, state.password)
                         .build()
@@ -204,12 +212,6 @@ class WebDavViewModel @Inject constructor(
         settingsDataStore.setValue(SettingsDataStore.kWebDAVPassword, state.password)
     }
 
-    private fun buildBackupUrl(serverUrl: String): String {
-        val trimmed = serverUrl.trim()
-        if (trimmed.endsWith(".json", ignoreCase = true)) return trimmed
-        return "${trimmed.trimEnd('/')}/$BACKUP_FILE_NAME"
-    }
-
     private fun Request.Builder.applyAuth(username: String, password: String): Request.Builder {
         if (username.isNotBlank()) {
             header("Authorization", Credentials.basic(username, password))
@@ -226,7 +228,6 @@ class WebDavViewModel @Inject constructor(
     }
 
     companion object {
-        private const val BACKUP_FILE_NAME = "mylive_profile_backup.json"
         private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
     }
 }
@@ -262,6 +263,7 @@ fun WebDavSyncScreen(
                 WebDavMessage.RestoreOk -> context.getString(R.string.webdav_restore_ok)
                 is WebDavMessage.RestoreFailed -> context.getString(R.string.webdav_restore_failed, msg.reason)
                 WebDavMessage.ConfigRequired -> context.getString(R.string.webdav_config_required)
+                is WebDavMessage.ConfigInvalid -> context.getString(R.string.webdav_config_invalid, msg.reason)
             }
             snackbarHostState.showSnackbar(text)
         }

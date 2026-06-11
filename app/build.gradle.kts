@@ -27,8 +27,8 @@ android {
         applicationId = "com.mylive.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 5
-        versionName = "1.0.5"
+        versionCode = 6
+        versionName = "1.0.6"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -183,4 +183,3 @@ dependencies {
     androidTestImplementation("androidx.room:room-testing:2.8.4")
     debugImplementation(libs.compose.ui.test.manifest)
 }
-

@@ -23,7 +23,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -44,9 +43,12 @@ import com.mylive.app.core.model.LiveCategory
 import com.mylive.app.core.model.LiveSubCategory
 import com.mylive.app.ui.component.NetImage
 import com.mylive.app.ui.component.status.ErrorState
-import com.mylive.app.ui.component.status.LoadingState
+import com.mylive.app.ui.component.status.SkeletonCircle
+import com.mylive.app.ui.component.status.SkeletonLine
 import com.mylive.app.ui.motion.AppMotion
 import com.mylive.app.ui.theme.Icons
+import com.mylive.app.ui.theme.livePlatformAccentColor
+import com.mylive.app.ui.theme.livePlatformOnAccentColor
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
@@ -63,9 +65,17 @@ fun CategoryScreen(
     val loading by viewModel.loading.collectAsState()
     val error by viewModel.error.collectAsState()
 
-    var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+    val selectedTab = selectedSiteIndex.coerceIn(0, siteTabs.lastIndex.coerceAtLeast(0))
+    val activePlatformAccentColor = categoryPlatformAccentColor(
+        siteTabs.getOrNull(selectedTab)?.id.orEmpty()
+    ) ?: MaterialTheme.colorScheme.primary
+    val titleColor by animateColorAsState(
+        targetValue = activePlatformAccentColor,
+        label = "categoryTitleColor"
+    )
     val pagerState = rememberPagerState(initialPage = 0, pageCount = { siteTabs.size })
     val coroutineScope = rememberCoroutineScope()
+    var isPullRefreshing by remember { mutableStateOf(false) }
 
     LaunchedEffect(refreshSignal) {
         if (refreshSignal > 0) {
@@ -73,12 +83,23 @@ fun CategoryScreen(
         }
     }
 
+    LaunchedEffect(loading) {
+        if (!loading) {
+            isPullRefreshing = false
+        }
+    }
+
     fun selectCategorySite(index: Int) {
         if (siteTabs.isEmpty()) return
         val boundedIndex = index.coerceIn(0, siteTabs.lastIndex)
         if (selectedTab == boundedIndex) return
-        selectedTab = boundedIndex
         viewModel.selectSite(boundedIndex)
+    }
+
+    LaunchedEffect(selectedTab, siteTabs.size) {
+        if (siteTabs.isNotEmpty() && pagerState.currentPage != selectedTab) {
+            pagerState.scrollToPage(selectedTab)
+        }
     }
 
     // Sync pager swipes -> selectedTab
@@ -117,11 +138,11 @@ fun CategoryScreen(
                     fontWeight = FontWeight.ExtraBold,
                     letterSpacing = 0.5.sp
                 ),
-                color = MaterialTheme.colorScheme.onSurface
+                color = titleColor
             )
         }
 
-        // Platform selector chips — same as HomeScreen
+        // Platform selector chips
         if (siteTabs.isNotEmpty()) {
             Row(
                 modifier = Modifier
@@ -132,6 +153,7 @@ fun CategoryScreen(
             ) {
                 siteTabs.forEachIndexed { siteIndex, site ->
                     CategoryPlatformChip(
+                        platformId = site.id,
                         name = categoryPlatformDisplayName(site.name),
                         isSelected = selectedTab == siteIndex,
                         modifier = Modifier
@@ -163,17 +185,26 @@ fun CategoryScreen(
         }
 
         PullToRefreshBox(
-            isRefreshing = loading,
-            onRefresh = { viewModel.refresh() },
+            isRefreshing = categoryPullRefreshIndicatorVisible(
+                isLoading = loading,
+                isPullRefreshing = isPullRefreshing
+            ),
+            onRefresh = {
+                isPullRefreshing = true
+                viewModel.refresh()
+            },
             modifier = Modifier.weight(1f)
         ) {
-            // HorizontalPager — same pattern as HomeScreen
+            // HorizontalPager
             HorizontalPager(
                 state = pagerState,
                 modifier = Modifier.fillMaxSize(),
                 userScrollEnabled = siteTabs.size > 1
             ) { page ->
                 val selectedSite = siteTabs.getOrNull(page)
+                val pageAccentColor = categoryPlatformAccentColor(
+                    selectedSite?.id.orEmpty()
+                ) ?: MaterialTheme.colorScheme.primary
 
                 // Use cached state for non-current pages (same as HomeScreen's HomeStateCache)
                 val pageState = if (page == selectedTab) {
@@ -188,7 +219,7 @@ fun CategoryScreen(
 
                 Box(modifier = Modifier.fillMaxSize()) {
                     when {
-                        pageLoading -> LoadingState(modifier = Modifier.align(Alignment.Center))
+                        pageLoading -> CategorySkeleton()
                         pageError != null -> ErrorState(
                             message = pageError ?: "加载失败",
                             onRetry = { viewModel.retry() },
@@ -210,6 +241,7 @@ fun CategoryScreen(
                         else -> {
                             CategoryList(
                                 categories = pageCategories,
+                                accentColor = pageAccentColor,
                                 onSubCategoryClick = { subCategory ->
                                     if (selectedSite != null) {
                                         navigator.navigate(
@@ -231,26 +263,106 @@ fun CategoryScreen(
 }
 
 @Composable
+private fun CategorySkeleton() {
+    Row(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .width(104.dp)
+                .fillMaxHeight()
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.12f))
+                .padding(top = 12.dp)
+        ) {
+            repeat(10) { index ->
+                Box(
+                    modifier = Modifier
+                        .height(56.dp)
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp),
+                    contentAlignment = Alignment.CenterStart
+                ) {
+                    SkeletonLine(
+                        widthFraction = if (index % 3 == 0) 0.56f else 0.72f,
+                        height = 13
+                    )
+                }
+            }
+        }
+
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(3),
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight(),
+            contentPadding = PaddingValues(
+                start = 12.dp,
+                top = 8.dp,
+                end = 12.dp,
+                bottom = 96.dp
+            ),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(
+                count = 12,
+                key = { "category-skeleton-$it" }
+            ) {
+                CategoryCardSkeleton()
+            }
+        }
+    }
+}
+
+@Composable
+private fun CategoryCardSkeleton(
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)
+        ),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.15f))
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            SkeletonCircle(size = 48)
+            Spacer(modifier = Modifier.height(6.dp))
+            SkeletonLine(widthFraction = 0.68f, height = 11)
+        }
+    }
+}
+
+@Composable
 private fun CategoryPlatformChip(
+    platformId: String,
     name: String,
     isSelected: Boolean,
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
+    val selectedContainerColor = MaterialTheme.colorScheme.primary
+    val unselectedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)
     val containerColor by animateColorAsState(
-        targetValue = if (isSelected) {
-            MaterialTheme.colorScheme.primary
-        } else {
-            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)
-        },
+        targetValue = categoryPlatformChipContainerColor(
+            platformId = platformId,
+            selectedContainerColor = selectedContainerColor,
+            unselectedContainerColor = unselectedContainerColor,
+            isSelected = isSelected
+        ),
         label = "containerColor"
     )
     val contentColor by animateColorAsState(
-        targetValue = if (isSelected) {
-            MaterialTheme.colorScheme.onPrimary
-        } else {
-            MaterialTheme.colorScheme.onSurfaceVariant
-        },
+        targetValue = categoryPlatformChipContentColor(
+            platformId = platformId,
+            selectedContentColor = MaterialTheme.colorScheme.onPrimary,
+            unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            isSelected = isSelected
+        ),
         label = "contentColor"
     )
 
@@ -290,6 +402,7 @@ private fun CategoryPlatformChip(
 @Composable
 private fun CategoryList(
     categories: List<LiveCategory>,
+    accentColor: Color,
     onSubCategoryClick: (LiveSubCategory) -> Unit
 ) {
     var selectedParentIndex by remember(categories) { mutableIntStateOf(0) }
@@ -307,7 +420,7 @@ private fun CategoryList(
 
                 val textColor by animateColorAsState(
                     targetValue = if (isSelected) {
-                        MaterialTheme.colorScheme.primary
+                        accentColor
                     } else {
                         MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
                     },
@@ -337,7 +450,7 @@ private fun CategoryList(
                                 .width(4.dp)
                                 .height(20.dp)
                                 .background(
-                                    color = MaterialTheme.colorScheme.primary,
+                                    color = accentColor,
                                     shape = RoundedCornerShape(topEnd = 2.dp, bottomEnd = 2.dp)
                                 )
                         )
@@ -384,6 +497,7 @@ private fun CategoryList(
                     CategoryCard(
                         name = currentCategory.name,
                         imageUrl = null,
+                        accentColor = accentColor,
                         onClick = {
                             onSubCategoryClick(
                                 LiveSubCategory(
@@ -415,6 +529,7 @@ private fun CategoryList(
                     CategoryCard(
                         name = subCategory.name,
                         imageUrl = subCategory.pic,
+                        accentColor = accentColor,
                         onClick = { onSubCategoryClick(subCategory) }
                     )
                 }
@@ -427,6 +542,7 @@ private fun CategoryList(
 private fun CategoryCard(
     name: String,
     imageUrl: String?,
+    accentColor: Color,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -484,7 +600,7 @@ private fun CategoryCard(
                     Icon(
                         imageVector = categoryFallbackIcon(name),
                         contentDescription = name,
-                        tint = MaterialTheme.colorScheme.primary,
+                        tint = accentColor,
                         modifier = Modifier.size(24.dp)
                     )
                 }
@@ -511,6 +627,41 @@ internal fun categoryPlatformDisplayName(siteName: String): String {
         return "哔哩哔哩"
     }
     return siteName
+}
+
+internal fun categoryPullRefreshIndicatorVisible(
+    isLoading: Boolean,
+    isPullRefreshing: Boolean
+): Boolean {
+    return isLoading && isPullRefreshing
+}
+
+internal fun categoryPlatformAccentColor(platformId: String): Color? {
+    return livePlatformAccentColor(platformId)
+}
+
+internal fun categoryPlatformChipContainerColor(
+    platformId: String,
+    selectedContainerColor: Color,
+    unselectedContainerColor: Color,
+    isSelected: Boolean
+): Color {
+    if (!isSelected) {
+        return unselectedContainerColor
+    }
+    return categoryPlatformAccentColor(platformId) ?: selectedContainerColor
+}
+
+internal fun categoryPlatformChipContentColor(
+    platformId: String,
+    selectedContentColor: Color,
+    unselectedContentColor: Color,
+    isSelected: Boolean
+): Color {
+    if (!isSelected) {
+        return unselectedContentColor
+    }
+    return livePlatformOnAccentColor(platformId, selectedContentColor)
 }
 
 internal fun categoryFallbackIconKey(name: String): String {

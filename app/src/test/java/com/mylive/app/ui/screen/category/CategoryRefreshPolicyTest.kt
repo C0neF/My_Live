@@ -19,9 +19,42 @@ class CategoryRefreshPolicyTest {
         val source = File("src/main/java/com/mylive/app/ui/screen/category/CategoryScreen.kt").readText()
 
         assertTrue(source.contains("PullToRefreshBox("))
-        assertTrue(source.contains("isRefreshing = loading"))
-        assertTrue(source.contains("onRefresh = { viewModel.refresh() }"))
+        assertTrue(source.contains("isRefreshing = categoryPullRefreshIndicatorVisible("))
+        assertTrue(source.contains("isPullRefreshing = true"))
+        assertTrue(source.contains("viewModel.refresh()"))
+        assertFalse(source.contains("isRefreshing = loading"))
         assertFalse(source.contains("contentDescription = \"刷新分类\""))
+    }
+
+    @Test
+    fun categoryPullRefreshIndicatorShowsOnlyForPullRefreshLoading() {
+        assertTrue(
+            categoryPullRefreshIndicatorVisible(
+                isLoading = true,
+                isPullRefreshing = true
+            )
+        )
+        assertFalse(
+            categoryPullRefreshIndicatorVisible(
+                isLoading = true,
+                isPullRefreshing = false
+            )
+        )
+        assertFalse(
+            categoryPullRefreshIndicatorVisible(
+                isLoading = false,
+                isPullRefreshing = true
+            )
+        )
+    }
+
+    @Test
+    fun categoryInitialLoadingUsesSkeletonInsteadOfCircularLoading() {
+        val source = File("src/main/java/com/mylive/app/ui/screen/category/CategoryScreen.kt").readText()
+
+        assertTrue(source.contains("pageLoading -> CategorySkeleton("))
+        assertTrue(source.contains("SkeletonLine("))
+        assertFalse(source.contains("pageLoading -> LoadingState("))
     }
 
     @Test

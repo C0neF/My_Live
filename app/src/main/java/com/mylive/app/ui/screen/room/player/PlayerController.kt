@@ -16,6 +16,7 @@ import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import timber.log.Timber
+import kotlin.math.roundToInt
 
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
@@ -34,7 +35,8 @@ data class PlayerState(
 class PlayerController(
     private val context: Context,
     private val hardwareDecodeEnabled: Boolean = true,
-    private var forceHttps: Boolean = false
+    private var forceHttps: Boolean = false,
+    private val onPlaybackSourceExhausted: (() -> Unit)? = null
 ) {
 
     private val _state = MutableStateFlow(PlayerState())
@@ -48,14 +50,17 @@ class PlayerController(
     private var headers: Map<String, String>? = null
     private var usingSoftwareDecoderOnly = !hardwareDecodeEnabled
     private var softwareDecoderFallbackAttempted = false
+    private var sourceRefreshAttempted = false
 
     private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-    private val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+    private val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+    private var lastNonZeroVolume = 1f
 
     private val playerListener = object : Player.Listener {
         override fun onPlaybackStateChanged(playbackState: Int) {
             when (playbackState) {
                 Player.STATE_READY -> {
+                    sourceRefreshAttempted = false
                     _state.value = _state.value.copy(isLoading = false, error = null)
                 }
                 Player.STATE_BUFFERING -> {
@@ -80,6 +85,10 @@ class PlayerController(
                 playCurrentUrl()
             } else if (shouldRetryWithSoftwareDecoder(errorText)) {
                 retryCurrentUrlWithSoftwareDecoder()
+            } else if (!sourceRefreshAttempted && onPlaybackSourceExhausted != null) {
+                sourceRefreshAttempted = true
+                _state.value = _state.value.copy(isLoading = true, error = null)
+                onPlaybackSourceExhausted.invoke()
             } else {
                 _state.value = _state.value.copy(
                     isLoading = false,
@@ -117,16 +126,28 @@ class PlayerController(
             .also { it.addListener(playerListener) }
 
         // Init volume state
-        val currentVol = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat() / maxVolume
+        player?.volume = 1f
+        val currentVol = currentSystemMediaVolume()
+        if (currentVol > 0f) {
+            lastNonZeroVolume = currentVol
+        }
         _state.value = _state.value.copy(volume = currentVol)
     }
 
-    fun play(urls: List<String>, headers: Map<String, String>? = null, startIndex: Int = 0) {
+    fun play(
+        urls: List<String>,
+        headers: Map<String, String>? = null,
+        startIndex: Int = 0,
+        resetSourceRefreshAttempt: Boolean = true
+    ) {
         val processedUrls = buildPlaybackUrlCandidates(urls, forceHttps)
         this.urls = processedUrls
         this.headers = headers
         this.currentUrlIndex = startIndex
         this.softwareDecoderFallbackAttempted = false
+        if (resetSourceRefreshAttempt) {
+            this.sourceRefreshAttempted = false
+        }
 
         playCurrentUrl()
     }
@@ -230,17 +251,40 @@ class PlayerController(
     }
 
     fun setVolumeDirect(volume: Float) {
-        player?.volume = volume
-        _state.value = _state.value.copy(volume = volume)
+        val targetVolume = volume.coerceIn(0f, 1f)
+        audioManager.setStreamVolume(
+            AudioManager.STREAM_MUSIC,
+            streamVolumeIndexFor(targetVolume),
+            0
+        )
+        player?.volume = 1f
+        val appliedVolume = currentSystemMediaVolume()
+        if (appliedVolume > 0f) {
+            lastNonZeroVolume = appliedVolume
+        }
+        _state.value = _state.value.copy(volume = appliedVolume)
     }
 
     fun toggleMute() {
         val current = _state.value.volume
         if (current > 0f) {
+            lastNonZeroVolume = current
             setVolumeDirect(0f)
         } else {
-            setVolumeDirect(1f)
+            setVolumeDirect(lastNonZeroVolume.coerceIn(0.01f, 1f))
         }
+    }
+
+    private fun currentSystemMediaVolume(): Float {
+        val current = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+            .coerceIn(0, maxVolume)
+        return current.toFloat() / maxVolume
+    }
+
+    private fun streamVolumeIndexFor(volume: Float): Int {
+        val clamped = volume.coerceIn(0f, 1f)
+        if (clamped <= 0f) return 0
+        return (clamped * maxVolume).roundToInt().coerceIn(1, maxVolume)
     }
 
     fun setBrightness(activity: android.app.Activity, delta: Float) {

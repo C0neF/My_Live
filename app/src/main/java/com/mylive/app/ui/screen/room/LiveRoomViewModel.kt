@@ -522,13 +522,22 @@ class LiveRoomViewModel @Inject constructor(
         }
     }
 
-    private suspend fun playWithQuality(detail: LiveRoomDetail, quality: LivePlayQuality, route: Pair<String, String>) {
+    private suspend fun playWithQuality(
+        detail: LiveRoomDetail,
+        quality: LivePlayQuality,
+        route: Pair<String, String>,
+        resetSourceRefreshAttempt: Boolean = true
+    ) {
         if (!isActiveRoute(route)) return
         val site = currentSite ?: return
         try {
             val playUrl = site.getPlayUrls(detail, quality)
             if (!isActiveRoute(route)) return
-            playerController?.play(playUrl.urls, playUrl.headers)
+            playerController?.play(
+                urls = playUrl.urls,
+                headers = playUrl.headers,
+                resetSourceRefreshAttempt = resetSourceRefreshAttempt
+            )
         } catch (e: Throwable) {
             if (e is CancellationException) throw e
             if (!isActiveRoute(route)) return
@@ -557,6 +566,26 @@ class LiveRoomViewModel @Inject constructor(
             viewModelScope.launch {
                 playWithQuality(detail, quality, route)
             }
+        }
+    }
+
+    fun recoverPlaybackAfterSourceFailure() {
+        val detail = _uiState.value.detail
+        val qualities = _uiState.value.playQualities
+        val route = activeRoute
+        if (detail == null || route == null || qualities.isEmpty()) {
+            playerController?.showError("播放失败，请刷新重试")
+            return
+        }
+
+        val quality = qualities.getOrNull(_uiState.value.currentQualityIndex) ?: qualities[0]
+        viewModelScope.launch {
+            playWithQuality(
+                detail = detail,
+                quality = quality,
+                route = route,
+                resetSourceRefreshAttempt = false
+            )
         }
     }
 

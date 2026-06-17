@@ -36,6 +36,22 @@ class LiveRoomRoutePolicyTest {
     }
 
     @Test
+    fun liveRoomRecoversPlaybackByRequestingFreshSourceFromViewModel() {
+        val screenSource = File(
+            "src/main/java/com/mylive/app/ui/screen/room/LiveRoomScreen.kt"
+        ).readText()
+        val viewModelSource = File(
+            "src/main/java/com/mylive/app/ui/screen/room/LiveRoomViewModel.kt"
+        ).readText()
+
+        assertTrue(screenSource.contains("onPlaybackSourceExhausted = {"))
+        assertTrue(screenSource.contains("viewModel.recoverPlaybackAfterSourceFailure()"))
+        assertTrue(screenSource.contains("viewModel.playerController = null"))
+        assertTrue(viewModelSource.contains("fun recoverPlaybackAfterSourceFailure()"))
+        assertTrue(viewModelSource.contains("resetSourceRefreshAttempt = false"))
+    }
+
+    @Test
     fun liveRoomViewModelIgnoresStaleRouteCallbacks() {
         val source = File(
             "src/main/java/com/mylive/app/ui/screen/room/LiveRoomViewModel.kt"
@@ -51,7 +67,8 @@ class LiveRoomRoutePolicyTest {
         )
         assertTrue(
             "play URL loading must ignore callbacks from a previous route",
-            source.contains("private suspend fun playWithQuality(detail: LiveRoomDetail, quality: LivePlayQuality, route:")
+            source.contains("private suspend fun playWithQuality(") &&
+                source.contains("route: Pair<String, String>")
         )
         assertTrue(
             "danmaku startup must ignore callbacks from a previous route",

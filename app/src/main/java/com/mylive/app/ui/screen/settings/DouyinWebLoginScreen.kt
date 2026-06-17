@@ -184,6 +184,13 @@ fun DouyinWebLoginScreen(
                         loadUrl("https://www.douyin.com/")
                     }
                 },
+                onRelease = { view ->
+                    if (webViewInstance === view) {
+                        webViewInstance = null
+                    }
+                    view.stopLoading()
+                    view.destroy()
+                },
                 modifier = Modifier.fillMaxSize()
             )
         }

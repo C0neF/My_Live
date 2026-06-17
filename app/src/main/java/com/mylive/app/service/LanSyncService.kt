@@ -6,6 +6,7 @@ import android.content.Intent
 import android.os.Build
 import android.os.IBinder
 import androidx.compose.runtime.mutableStateListOf
+import com.mylive.app.BuildConfig
 import com.mylive.app.core.common.CoreLog
 import com.mylive.app.data.local.entity.FollowUserEntity
 import com.mylive.app.data.local.entity.HistoryEntity
@@ -265,7 +266,7 @@ class LanSyncService : Service() {
                         put("id", syncDeviceId)
                         put("type", "android")
                         put("name", Build.MODEL)
-                        put("version", "1.0")
+                        put("version", BuildConfig.VERSION_NAME)
                         put("address", ipAddress)
                         put("port", HTTP_PORT)
                     }
@@ -413,5 +414,4 @@ class LanSyncService : Service() {
 }
 
 data class SyncClient(val id: String, val name: String, val address: String, val port: Int, val type: String)
-
 

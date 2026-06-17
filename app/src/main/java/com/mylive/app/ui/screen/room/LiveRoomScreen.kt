@@ -156,6 +156,26 @@ internal fun defaultExpandedRoomSettingsSections(): Set<RoomSettingsSectionKey> 
 
 private fun currentEpochMillis(): Long = System.currentTimeMillis()
 
+private fun applyLiveRoomFullscreen(activity: Activity, fullscreen: Boolean) {
+    if (fullscreen) {
+        activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        WindowCompat.setDecorFitsSystemWindows(activity.window, false)
+        val controller = WindowCompat.getInsetsController(activity.window, activity.window.decorView)
+        controller.hide(WindowInsetsCompat.Type.systemBars())
+        controller.systemBarsBehavior =
+            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+    } else {
+        restoreLiveRoomSystemUi(activity)
+    }
+}
+
+private fun restoreLiveRoomSystemUi(activity: Activity) {
+    activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+    WindowCompat.setDecorFitsSystemWindows(activity.window, true)
+    WindowCompat.getInsetsController(activity.window, activity.window.decorView)
+        .show(WindowInsetsCompat.Type.systemBars())
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LiveRoomScreen(
@@ -269,7 +289,14 @@ fun LiveRoomScreen(
         kotlinx.coroutines.delay(AppMotion.LiveRoomPlayerStartupDelayMillis.toLong())
         val hardwareDecodeEnabled = viewModel.settingsRepository.hardwareDecode.first()
         val forceHttps = viewModel.settingsRepository.playerForceHttps.first()
-        val pc = PlayerController(context, hardwareDecodeEnabled, forceHttps)
+        val pc = PlayerController(
+            context = context,
+            hardwareDecodeEnabled = hardwareDecodeEnabled,
+            forceHttps = forceHttps,
+            onPlaybackSourceExhausted = {
+                viewModel.recoverPlaybackAfterSourceFailure()
+            }
+        )
         playerController = pc
         viewModel.playerController = pc
         viewModel.onPlayerControllerReady()
@@ -279,6 +306,9 @@ fun LiveRoomScreen(
         val pc = playerController
         onDispose {
             pc?.release()
+            if (viewModel.playerController === pc) {
+                viewModel.playerController = null
+            }
         }
     }
 
@@ -348,37 +378,24 @@ fun LiveRoomScreen(
     // Handle fullscreen: change orientation + hide/show system bars
     LaunchedEffect(isFullscreen) {
         val act = activity ?: return@LaunchedEffect
-        if (isFullscreen) {
-            act.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-            WindowCompat.setDecorFitsSystemWindows(act.window, false)
-            val controller = WindowCompat.getInsetsController(act.window, act.window.decorView)
-            controller.hide(WindowInsetsCompat.Type.systemBars())
-            controller.systemBarsBehavior =
-                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        } else {
-            act.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-            WindowCompat.setDecorFitsSystemWindows(act.window, true)
-            WindowCompat.getInsetsController(act.window, act.window.decorView)
-                .show(WindowInsetsCompat.Type.systemBars())
-        }
+        applyLiveRoomFullscreen(act, isFullscreen)
     }
 
-
+    DisposableEffect(activity) {
+        val act = activity
+        onDispose {
+            if (act != null) {
+                restoreLiveRoomSystemUi(act)
+            }
+        }
+    }
 
     // Shared back handler: stop playback, restore orientation, then navigate
     val handleBack: () -> Unit = remember(navigator, playerController) {
         {
             if (!isExiting) {
                 isExiting = true
-                // Restore portrait orientation and show system bars only if currently in landscape
-                if (activity?.resources?.configuration?.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE) {
-                    activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-                    activity.window?.let { window ->
-                        WindowCompat.setDecorFitsSystemWindows(window, true)
-                        WindowCompat.getInsetsController(window, window.decorView)
-                            .show(WindowInsetsCompat.Type.systemBars())
-                    }
-                }
+                activity?.let { restoreLiveRoomSystemUi(it) }
                 if (!navigator.goBack()) {
                     playerController?.pause()
                 }

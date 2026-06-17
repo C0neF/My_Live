@@ -147,6 +147,10 @@ fun LoginWebViewScreen(
                         loadUrl("https://passport.bilibili.com/login")
                     }
                 },
+                onRelease = { view ->
+                    view.stopLoading()
+                    view.destroy()
+                },
                 modifier = Modifier.fillMaxSize()
             )
         }

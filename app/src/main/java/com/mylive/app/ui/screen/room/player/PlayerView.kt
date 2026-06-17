@@ -3,7 +3,6 @@ package com.mylive.app.ui.screen.room.player
 import android.app.Activity
 import android.view.LayoutInflater
 import com.mylive.app.R
-import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import androidx.activity.compose.BackHandler
 import androidx.annotation.OptIn as AndroidXOptIn
@@ -43,9 +42,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.core.view.WindowCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.WindowInsetsControllerCompat
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.PlayerView as Media3PlayerView
 import com.mylive.app.core.model.LivePlayQuality
@@ -118,22 +114,7 @@ fun PlayerView(
     val isPortrait = configuration.orientation == Configuration.ORIENTATION_PORTRAIT
     val resolvedAccentColor = accentColor ?: MaterialTheme.colorScheme.primary
 
-    // Fullscreen behavior handler
     val isFullscreen = state.isFullscreen
-    LaunchedEffect(isFullscreen) {
-        if (activity != null) {
-            val window = activity.window
-            val windowInsetsController = WindowCompat.getInsetsController(window, window.decorView)
-            if (isFullscreen) {
-                activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-                windowInsetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-                windowInsetsController.hide(WindowInsetsCompat.Type.systemBars())
-            } else {
-                activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-                windowInsetsController.show(WindowInsetsCompat.Type.systemBars())
-            }
-        }
-    }
 
     // Intercept back key when in fullscreen to exit fullscreen first
     BackHandler(enabled = isFullscreen) {
@@ -360,7 +341,7 @@ fun PlayerView(
                 IndicatorOverlay(
                     icon = if (volumeValue > 0f) Icons.AutoMirrored.Filled.VolumeUp else Icons.AutoMirrored.Filled.VolumeOff,
                     value = "${(volumeValue * 100).toInt()}%",
-                    modifier = Modifier.align(Alignment.CenterEnd)
+                    modifier = Modifier.align(Alignment.Center)
                 )
             }
 
@@ -369,7 +350,7 @@ fun PlayerView(
                 IndicatorOverlay(
                     icon = Icons.Default.Sun,
                     value = "${(brightnessValue * 100).toInt()}%",
-                    modifier = Modifier.align(Alignment.CenterStart)
+                    modifier = Modifier.align(Alignment.Center)
                 )
             }
         }

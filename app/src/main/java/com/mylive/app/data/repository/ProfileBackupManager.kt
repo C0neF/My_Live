@@ -30,10 +30,13 @@ class ProfileBackupManager @Inject constructor(
     private val excludedKeys = setOf(
         SettingsDataStore.BilibiliCookie.name,
         SettingsDataStore.DouyinCookie.name,
+        SettingsDataStore.EncryptedBilibiliCookie.name,
+        SettingsDataStore.EncryptedDouyinCookie.name,
         SettingsDataStore.BilibiliLoginTip.name,
         SettingsDataStore.WebDAVUri.name,
         SettingsDataStore.WebDAVUser.name,
         SettingsDataStore.kWebDAVPassword.name,
+        SettingsDataStore.EncryptedWebDAVPassword.name,
         SettingsDataStore.kWebDAVLastUploadTime.name,
         SettingsDataStore.kWebDAVLastRecoverTime.name,
         SettingsDataStore.LastLiveRoom.name,

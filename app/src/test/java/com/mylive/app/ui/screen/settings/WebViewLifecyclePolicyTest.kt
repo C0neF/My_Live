@@ -1,6 +1,7 @@
 package com.mylive.app.ui.screen.settings
 
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertFalse
 import org.junit.Test
 import java.io.File
 
@@ -24,5 +25,14 @@ class WebViewLifecyclePolicyTest {
         assertTrue(source.contains("webViewInstance = null"))
         assertTrue(source.contains("view.stopLoading()"))
         assertTrue(source.contains("view.destroy()"))
+    }
+
+    @Test
+    fun douyinCookieParsingPreservesEqualsInsideCookieValues() {
+        val source = File("src/main/java/com/mylive/app/ui/screen/settings/DouyinWebLoginScreen.kt").readText()
+
+        assertTrue(source.contains("parseCookiePairPreservingEquals(pair)"))
+        assertTrue(source.contains("pair.indexOf('=')"))
+        assertFalse(source.contains("pair.split(\"=\")"))
     }
 }

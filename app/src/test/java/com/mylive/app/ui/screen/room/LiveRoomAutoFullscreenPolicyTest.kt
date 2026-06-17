@@ -40,6 +40,21 @@ class LiveRoomAutoFullscreenPolicyTest {
     }
 
     @Test
+    fun playerViewFullscreenButtonCanBeOwnedByParentLayout() {
+        val source = File("src/main/java/com/mylive/app/ui/screen/room/player/PlayerView.kt").readText()
+        val signature = source.substringAfter("fun PlayerView(")
+            .substringBefore(") {")
+        val controlsCall = source.substringAfter("// Normal controls overlay")
+            .substringAfter("PlayerBottomBar(")
+            .substringBefore("onRefreshClick = onRefreshClick")
+
+        assertTrue(signature.contains("isFullscreenOverride: Boolean? = null"))
+        assertTrue(signature.contains("onFullscreenClick: (() -> Unit)? = null"))
+        assertTrue(controlsCall.contains("isFullscreen = isFullscreenOverride ?: state.isFullscreen"))
+        assertTrue(controlsCall.contains("onFullscreenClick = { onFullscreenClick?.invoke() ?: playerController?.toggleFullscreen() }"))
+    }
+
+    @Test
     fun pictureInPictureDanmakuHonorsHideSetting() {
         val source = File("src/main/java/com/mylive/app/ui/screen/room/LiveRoomScreen.kt").readText()
         val pipBranch = source.substringAfter("if (isInPip) {")

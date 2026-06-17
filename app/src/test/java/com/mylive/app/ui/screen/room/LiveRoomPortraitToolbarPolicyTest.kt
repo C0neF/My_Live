@@ -22,10 +22,12 @@ class LiveRoomPortraitToolbarPolicyTest {
     @Test
     fun portraitHeaderPlacesSettingsBetweenRefreshAndQuickAccess() {
         val source = File("src/main/java/com/mylive/app/ui/screen/room/LiveRoomScreen.kt").readText()
+        val headerSource = source.substringAfter("private fun CompactPortraitRoomHeader(")
+            .substringBefore("@OptIn(ExperimentalMaterial3Api::class)")
 
-        val refreshIndex = source.indexOf("imageVector = Icons.Default.Refresh")
-        val settingsIndex = source.indexOf("imageVector = Icons.Default.Settings")
-        val quickAccessIndex = source.indexOf("imageVector = Icons.Default.PlaylistAdd")
+        val refreshIndex = headerSource.indexOf("imageVector = Icons.Default.Refresh")
+        val settingsIndex = headerSource.indexOf("imageVector = Icons.Default.Settings")
+        val quickAccessIndex = headerSource.indexOf("imageVector = Icons.Default.PlaylistAdd")
 
         assertTrue(refreshIndex >= 0)
         assertTrue(settingsIndex > refreshIndex)
@@ -107,5 +109,109 @@ class LiveRoomPortraitToolbarPolicyTest {
         assertTrue(source.contains("accentSiteId = accentSiteId"))
         assertTrue(source.contains("siteId = accentSiteId"))
         assertFalse(source.contains("val roomPlatformAccentColor = resolveLiveRoomPlatformAccentColor(\n        siteId = viewModel.siteId"))
+    }
+
+    @Test
+    fun landscapeSidePanelShowsOnlyIdentityAndChat() {
+        val source = File("src/main/java/com/mylive/app/ui/screen/room/LiveRoomScreen.kt").readText()
+        val landscapeSource = source.substringAfter("private fun LandscapeLayout(")
+            .substringBefore("// ── Room Info Bar")
+
+        val headerIndex = landscapeSource.indexOf("LandscapeRoomSidePanelHeader(")
+        val chatPanelIndex = landscapeSource.indexOf("ChatPanel(")
+
+        assertEquals(listOf(LiveRoomTabType.CHAT), resolveLandscapeLiveRoomTabs())
+        assertTrue(headerIndex >= 0)
+        assertTrue(chatPanelIndex > headerIndex)
+        assertTrue(landscapeSource.contains("val roomTabs = remember { resolveLandscapeLiveRoomTabs() }"))
+        assertFalse(landscapeSource.contains("TabRow("))
+        assertFalse(landscapeSource.contains("HorizontalPager("))
+        assertFalse(landscapeSource.contains("LiveRoomTabType.FOLLOW"))
+        assertFalse(landscapeSource.contains("LiveRoomTabType.SETTINGS"))
+    }
+
+    @Test
+    fun landscapeRoomActionHeaderShowsOnlyHostIdentity() {
+        val source = File("src/main/java/com/mylive/app/ui/screen/room/LiveRoomScreen.kt").readText()
+        val headerStart = source.indexOf("private fun LandscapeRoomSidePanelHeader(")
+
+        assertTrue(headerStart >= 0)
+        val headerSource = source.substring(headerStart)
+            .substringBefore("@Composable\nprivate fun CompactPortraitRoomHeader")
+        assertTrue(headerSource.contains("AsyncImage("))
+        assertTrue(headerSource.contains("model = detail.userAvatar"))
+        assertTrue(headerSource.contains("text = detail.userName"))
+        assertFalse(headerSource.contains("LiveRoomFollowButton("))
+        assertFalse(headerSource.contains("imageVector = Icons.Default.Settings"))
+        assertFalse(headerSource.contains("imageVector = Icons.Default.PlaylistAdd"))
+        assertFalse(headerSource.contains("canToggleFollow = detail != null && isFollowStatusKnown"))
+        assertFalse(headerSource.contains("imageVector = Icons.Default.Refresh"))
+        assertFalse(headerSource.contains("onRefreshClick"))
+        assertFalse(headerSource.contains("detail.title"))
+    }
+
+    @Test
+    fun landscapePlayerOwnsFollowAndQuickAccessActions() {
+        val source = File("src/main/java/com/mylive/app/ui/screen/room/LiveRoomScreen.kt").readText()
+        val landscapeSource = source.substringAfter("private fun LandscapeLayout(")
+            .substringBefore("// ── Room Info Bar")
+
+        assertTrue(landscapeSource.contains("extraTabs = landscapeQuickAccessExtraTabs("))
+        assertTrue(landscapeSource.contains("quickAccessInitialTabKey = \"follow\""))
+        assertTrue(landscapeSource.contains("onQuickAccessClick = {"))
+        assertTrue(landscapeSource.contains("onFollowClick = { viewModel.toggleFollow() }"))
+        assertTrue(landscapeSource.contains("isFollowing = uiState.isFollowing"))
+        assertFalse(landscapeSource.contains("quickAccessInitialTabKey = \"room_settings\""))
+        assertFalse(landscapeSource.contains("onRoomSettingsClick = {"))
+    }
+
+    @Test
+    fun landscapeSidePanelStartsHiddenAndRightToLeftSwipeOpens() {
+        val source = File("src/main/java/com/mylive/app/ui/screen/room/LiveRoomScreen.kt").readText()
+        val landscapeSource = source.substringAfter("private fun LandscapeLayout(")
+            .substringBefore("// ── Room Info Bar")
+
+        assertTrue(source.contains("internal fun liveRoomInitialSidePanelOffsetPx(panelWidthPx: Float): Float"))
+        assertTrue(source.contains("internal fun liveRoomSidePanelOffsetAfterDrag("))
+        assertTrue(landscapeSource.contains("Animatable(liveRoomInitialSidePanelOffsetPx(panelWidthPx))"))
+        assertTrue(landscapeSource.contains("val showSidePanel = panelOffset.value < panelWidthPx"))
+        assertTrue(landscapeSource.contains("BackHandler(enabled = showSidePanel)"))
+        assertTrue(landscapeSource.contains("liveRoomSidePanelOffsetAfterDrag("))
+        assertFalse(source.contains("liveRoomUsePersistentSidePanel"))
+        assertFalse(landscapeSource.contains("usePersistentSidePanel"))
+    }
+
+    @Test
+    fun rightToLeftSwipeOpensSidePanelAndLeftToRightSwipeClosesIt() {
+        val panelWidthPx = 320f
+
+        assertEquals(panelWidthPx, liveRoomInitialSidePanelOffsetPx(panelWidthPx))
+        assertEquals(
+            200f,
+            liveRoomSidePanelOffsetAfterDrag(
+                currentOffsetPx = panelWidthPx,
+                deltaX = -120f,
+                panelWidthPx = panelWidthPx
+            )
+        )
+        assertEquals(
+            panelWidthPx,
+            liveRoomSidePanelOffsetAfterDrag(
+                currentOffsetPx = 120f,
+                deltaX = 240f,
+                panelWidthPx = panelWidthPx
+            )
+        )
+    }
+
+    @Test
+    fun landscapePlayerDoesNotExposeFullscreenButton() {
+        val source = File("src/main/java/com/mylive/app/ui/screen/room/LiveRoomScreen.kt").readText()
+        val landscapeSource = source.substringAfter("private fun LandscapeLayout(")
+            .substringBefore("// ── Room Info Bar")
+
+        assertFalse(landscapeSource.contains("isFullscreenOverride = liveRoomControlsFullscreen(showSidePanel)"))
+        assertFalse(landscapeSource.contains("onFullscreenClick = {"))
+        assertFalse(landscapeSource.contains("liveRoomSidePanelTargetOffsetForFullscreenClick("))
     }
 }

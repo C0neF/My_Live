@@ -685,21 +685,26 @@ class LiveRoomViewModel @Inject constructor(
     }
 
     fun toggleFollow() {
+        val route = activeRoute ?: return
         val detail = _uiState.value.detail ?: return
         val site = currentSite ?: return
+        val routeRoomId = route.second
+        val wasFollowing = _uiState.value.isFollowing
         viewModelScope.launch {
             try {
-                val wasFollowing = _uiState.value.isFollowing
+                if (!isActiveRoute(route)) return@launch
                 if (wasFollowing) {
-                    val follow = followRepository.getFollow(site.id, roomId)
+                    val follow = followRepository.getFollow(site.id, routeRoomId)
+                    if (!isActiveRoute(route)) return@launch
                     if (follow != null) {
                         followRepository.removeFollow(follow.id)
                     }
                 } else {
+                    if (!isActiveRoute(route)) return@launch
                     followRepository.addFollow(
                         FollowUserEntity(
-                            id = "${site.id}_$roomId",
-                            roomId = roomId,
+                            id = "${site.id}_$routeRoomId",
+                            roomId = routeRoomId,
                             siteId = site.id,
                             userName = detail.userName,
                             face = detail.userAvatar,
@@ -712,6 +717,7 @@ class LiveRoomViewModel @Inject constructor(
                         )
                     )
                 }
+                if (!isActiveRoute(route)) return@launch
                 _uiState.value = _uiState.value.copy(
                     isFollowing = !wasFollowing,
                     isFollowStatusKnown = true

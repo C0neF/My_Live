@@ -41,6 +41,10 @@ enum class SyncType {
     FOLLOW, HISTORY, SHIELD
 }
 
+enum class AccountSyncType {
+    BILIBILI, DOUYIN
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RemoteSyncRoomScreen(
@@ -68,6 +72,7 @@ fun RemoteSyncRoomScreen(
     val loadingState by viewModel.loadingState.collectAsState()
 
     var showOverlayDialog by remember { mutableStateOf<SyncType?>(null) }
+    var showAccountDialog by remember { mutableStateOf<AccountSyncType?>(null) }
     var showQrDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
@@ -236,13 +241,13 @@ fun RemoteSyncRoomScreen(
                             SettingsMenu(
                                 title = "发送哔哩哔哩账号",
                                 subtitle = "同步哔哩哔哩登录 Cookies",
-                                onClick = { viewModel.syncBiliAccount() }
+                                onClick = { showAccountDialog = AccountSyncType.BILIBILI }
                             )
                             HorizontalDivider()
                             SettingsMenu(
                                 title = "发送抖音账号",
                                 subtitle = "同步抖音登录 Cookies",
-                                onClick = { viewModel.syncDouyinAccount() }
+                                onClick = { showAccountDialog = AccountSyncType.DOUYIN }
                             )
                         }
                     }
@@ -344,6 +349,35 @@ fun RemoteSyncRoomScreen(
                     }
                 }) {
                     Text("不覆盖")
+                }
+            }
+        )
+    }
+
+    if (showAccountDialog != null) {
+        val type = showAccountDialog!!
+        val accountName = when (type) {
+            AccountSyncType.BILIBILI -> "哔哩哔哩账号"
+            AccountSyncType.DOUYIN -> "抖音账号"
+        }
+        AlertDialog(
+            onDismissRequest = { showAccountDialog = null },
+            title = { Text("发送账号") },
+            text = { Text("确定要发送${accountName}登录 Cookies 到当前房间内的设备吗？") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showAccountDialog = null
+                    when (type) {
+                        AccountSyncType.BILIBILI -> viewModel.syncBiliAccount()
+                        AccountSyncType.DOUYIN -> viewModel.syncDouyinAccount()
+                    }
+                }) {
+                    Text("发送")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAccountDialog = null }) {
+                    Text("取消")
                 }
             }
         )

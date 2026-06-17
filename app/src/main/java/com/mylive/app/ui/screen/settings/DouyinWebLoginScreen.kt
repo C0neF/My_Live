@@ -25,6 +25,15 @@ import com.mylive.app.ui.navigation.Navigator
 import com.mylive.app.ui.navigation.Route
 import com.mylive.app.R
 
+internal fun parseCookiePairPreservingEquals(pair: String): Pair<String, String>? {
+    val separatorIndex = pair.indexOf('=')
+    if (separatorIndex <= 0) return null
+    val key = pair.substring(0, separatorIndex).trim()
+    val value = pair.substring(separatorIndex + 1).trim()
+    if (key.isEmpty() || value.isEmpty()) return null
+    return key to value
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
@@ -60,13 +69,10 @@ fun DouyinWebLoginScreen(
         for (domain in domains) {
             val cookieStr = cookieManager.getCookie(domain) ?: ""
             cookieStr.split(";").forEach { pair ->
-                val parts = pair.split("=")
-                if (parts.size >= 2) {
-                    val key = parts[0].trim()
-                    val value = parts[1].trim()
-                    if (key.isNotEmpty() && value.isNotEmpty()) {
-                        cookieMap[key] = value
-                    }
+                val parsedPair = parseCookiePairPreservingEquals(pair)
+                if (parsedPair != null) {
+                    val (key, value) = parsedPair
+                    cookieMap[key] = value
                 }
             }
         }

@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mylive.app.ui.navigation.Navigator
@@ -25,7 +26,10 @@ import com.mylive.app.R
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MineScreen(navigator: Navigator) {
+fun MineScreen(
+    navigator: Navigator,
+    contentBottomPadding: Dp = 96.dp
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -136,7 +140,7 @@ fun MineScreen(navigator: Navigator) {
             textAlign = TextAlign.Center,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 96.dp)
+                .padding(bottom = contentBottomPadding)
         )
     }
 }

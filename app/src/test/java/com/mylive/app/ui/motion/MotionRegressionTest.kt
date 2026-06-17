@@ -104,13 +104,26 @@ class MotionRegressionTest {
         val source = readMainSource("com/mylive/app/ui/screen/IndexScreen.kt")
 
         assertTrue(source.contains("AnimatedContent("))
-        assertTrue(source.contains("horizontalContentTransform(direction)"))
+        assertTrue(source.contains("adaptiveNavigationContentTransform("))
+        assertTrue(source.contains("useSideNavigation = useSideNavigation"))
         assertTrue(source.contains("label = \"bottomNavContent\""))
         assertFalse(source.contains("HorizontalPager("))
         assertFalse(source.contains("animateScrollToPage("))
         assertFalse(source.contains("alpha = (1f - kotlin.math.abs(pageOffset))"))
         assertFalse(source.contains("translationX = pageOffset * size.width * 0.1f"))
         assertFalse(source.contains("beyondViewportPageCount = bottomNavItems.lastIndex"))
+    }
+
+    @Test
+    fun mainSideNavigationUsesVerticalPageTransition() {
+        val motionSource = readMainSource("com/mylive/app/ui/motion/AppMotion.kt")
+
+        assertTrue(motionSource.contains("fun <S> AnimatedContentTransitionScope<S>.adaptiveNavigationContentTransform("))
+        assertTrue(motionSource.contains("if (useSideNavigation)"))
+        assertTrue(motionSource.contains("verticalContentTransform(direction)"))
+        assertTrue(motionSource.contains("horizontalContentTransform(direction)"))
+        assertTrue(motionSource.contains("AnimatedContentTransitionScope.SlideDirection.Up"))
+        assertTrue(motionSource.contains("AnimatedContentTransitionScope.SlideDirection.Down"))
     }
 
     @Test

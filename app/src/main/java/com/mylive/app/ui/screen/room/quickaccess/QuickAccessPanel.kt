@@ -123,6 +123,7 @@ fun QuickAccessPanel(
     currentRoomId: String,
     currentCategoryId: String?,
     extraTabs: List<QuickAccessExtraTab> = emptyList(),
+    initialSelectedKey: String? = null,
     onNavigateToRoom: (siteId: String, roomId: String, initialIsFollowing: Boolean?) -> Unit,
     onDismiss: () -> Unit,
     viewModel: QuickAccessViewModel = hiltViewModel()
@@ -153,12 +154,20 @@ fun QuickAccessPanel(
         "recommendation" to "推荐"
     )
 
-    val pagerState = rememberPagerState(initialPage = 0, pageCount = { orderedKeys.size })
+    val initialPage = remember(orderedKeys, initialSelectedKey) {
+        orderedKeys.indexOf(initialSelectedKey).takeIf { it >= 0 } ?: 0
+    }
+    val pagerState = rememberPagerState(initialPage = initialPage, pageCount = { orderedKeys.size })
     val coroutineScope = rememberCoroutineScope()
 
     LaunchedEffect(orderedKeys.size) {
         if (pagerState.currentPage > orderedKeys.lastIndex) {
             pagerState.scrollToPage(orderedKeys.lastIndex.coerceAtLeast(0))
+        }
+    }
+    LaunchedEffect(initialPage, orderedKeys) {
+        if (orderedKeys.isNotEmpty() && pagerState.currentPage != initialPage) {
+            pagerState.scrollToPage(initialPage)
         }
     }
 

@@ -20,6 +20,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -28,9 +29,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mylive.app.ui.navigation.Navigator
 import com.mylive.app.R
-import com.mylive.app.ui.motion.horizontalContentTransform
+import com.mylive.app.ui.motion.adaptiveNavigationContentTransform
 import com.mylive.app.ui.screen.category.CategoryScreen
 import com.mylive.app.ui.screen.follow.FollowScreen
+import com.mylive.app.ui.screen.follow.followCardGridColumns
 import com.mylive.app.ui.screen.home.HomeScreen
 import com.mylive.app.ui.screen.mine.MineScreen
 import com.mylive.app.ui.motion.AppMotion
@@ -93,6 +95,11 @@ fun IndexScreen(
         homePlatformAccentColor = homePlatformAccentColor,
         defaultActiveColor = MaterialTheme.colorScheme.primary
     )
+    val configuration = LocalConfiguration.current
+    val useSideNavigation = indexUseSideNavigation(configuration.screenWidthDp)
+    val contentBottomPadding = indexTopLevelContentBottomPaddingDp(useSideNavigation).dp
+    val homeLiveRoomGridColumns = indexHomeLiveRoomGridColumns(useSideNavigation)
+    val followCardColumns = followCardGridColumns(useSideNavigation)
     val topRoute = navigator.backStack.lastOrNull()
     var sawLiveRoomOnTop by remember { mutableStateOf(false) }
     var suppressHomeInitialLoadingEffect by remember { mutableStateOf(false) }
@@ -131,88 +138,50 @@ fun IndexScreen(
         }
     }
 
+    fun handleMainTabClick(item: BottomNavItem) {
+        val repeatAction = bottomTabRepeatAction(
+            currentKey = selectedPageKey,
+            clickedKey = item.key,
+            isCurrentPageAtTop = true
+        )
+        selectedPageKey = item.key
+        when (repeatAction) {
+            BottomTabRepeatAction.Refresh -> when (item.key) {
+                "recommend" -> homeRefreshSignal += 1
+                "follow" -> followRefreshSignal += 1
+                "category" -> categoryRefreshSignal += 1
+            }
+            BottomTabRepeatAction.None -> Unit
+        }
+    }
+
     Scaffold(
-        modifier = Modifier.nestedScroll(nestedScrollConnection),
+        modifier = if (useSideNavigation) Modifier else Modifier.nestedScroll(nestedScrollConnection),
         bottomBar = {
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp, vertical = 12.dp)
-                    .offset { IntOffset(x = 0, y = bottomBarOffsetPx.toInt()) },
-                shape = RoundedCornerShape(24.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f),
-                tonalElevation = 8.dp
-            ) {
-                Row(
+            if (!useSideNavigation) {
+                Surface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 8.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceAround,
-                    verticalAlignment = Alignment.CenterVertically
+                        .padding(horizontal = 24.dp, vertical = 12.dp)
+                        .offset { IntOffset(x = 0, y = bottomBarOffsetPx.toInt()) },
+                    shape = RoundedCornerShape(24.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f),
+                    tonalElevation = 8.dp
                 ) {
-                    bottomNavItems.forEachIndexed { index, item ->
-                        val label = stringResource(item.labelRes)
-                        val isSelected = selectedIndex == index
-
-                        val contentColor by animateColorAsState(
-                            targetValue = if (isSelected) {
-                                bottomNavActiveColor
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                            },
-                            label = "navColor"
-                        )
-                        val scale by animateFloatAsState(
-                            targetValue = if (isSelected) 1.1f else 1.0f,
-                            animationSpec = AppMotion.contentSpec(),
-                            label = "navScale"
-                        )
-
-                        Column(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clickable(
-                                    interactionSource = remember { MutableInteractionSource() },
-                                    indication = null,
-                                    onClick = {
-                                        val repeatAction = bottomTabRepeatAction(
-                                            currentKey = selectedPageKey,
-                                            clickedKey = item.key,
-                                            isCurrentPageAtTop = true
-                                        )
-                                        selectedPageKey = item.key
-                                        when (repeatAction) {
-                                            BottomTabRepeatAction.Refresh -> when (item.key) {
-                                                "recommend" -> homeRefreshSignal += 1
-                                                "follow" -> followRefreshSignal += 1
-                                                "category" -> categoryRefreshSignal += 1
-                                            }
-                                            BottomTabRepeatAction.None -> Unit
-                                        }
-                                    }
-                                )
-                                .padding(vertical = 8.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Icon(
-                                imageVector = item.icon,
-                                contentDescription = label,
-                                tint = contentColor,
-                                modifier = Modifier
-                                    .size(24.dp)
-                                    .graphicsLayer {
-                                        scaleX = scale
-                                        scaleY = scale
-                                    }
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = label,
-                                color = contentColor,
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
-                                ),
-                                fontSize = 10.sp
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceAround,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        bottomNavItems.forEachIndexed { index, item ->
+                            IndexBottomNavigationItem(
+                                item = item,
+                                selected = selectedIndex == index,
+                                activeColor = bottomNavActiveColor,
+                                onClick = { handleMainTabClick(item) },
+                                modifier = Modifier.weight(1f)
                             )
                         }
                     }
@@ -220,48 +189,75 @@ fun IndexScreen(
             }
         }
     ) { paddingValues ->
-        AnimatedContent(
-            targetState = selectedContent,
-            transitionSpec = {
-                val direction = AppMotion.indexDirection(
-                    fromIndex = initialState.index,
-                    toIndex = targetState.index
+        Row(modifier = Modifier.fillMaxSize()) {
+            if (useSideNavigation) {
+                IndexSideNavigationRail(
+                    items = bottomNavItems,
+                    selectedIndex = selectedIndex,
+                    activeColor = bottomNavActiveColor,
+                    onItemClick = { handleMainTabClick(it) }
                 )
-                horizontalContentTransform(direction)
-            },
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(top = paddingValues.calculateTopPadding()),
-            label = "bottomNavContent"
-        ) { selection ->
-            Box(modifier = Modifier.fillMaxSize()) {
-                when (selection.key) {
-                    "recommend" -> HomeScreen(
-                        navigator = navigator,
-                        suppressInitialLoadingEffect = suppressHomeInitialLoadingEffect,
-                        refreshSignal = homeRefreshSignal,
-                        onInitialLoadingEffectSettled = {
-                            suppressHomeInitialLoadingEffect = false
-                        },
-                        onPlatformAccentColorChange = {
-                            homePlatformAccentColor = it
-                        },
-                        onRevealBottomBar = {
-                            bottomBarOffsetPx = indexBottomBarOffsetAfterRevealRequest(bottomBarOffsetPx)
-                        }
+            }
+
+            AnimatedContent(
+                targetState = selectedContent,
+                transitionSpec = {
+                    val direction = AppMotion.indexDirection(
+                        fromIndex = initialState.index,
+                        toIndex = targetState.index
                     )
-                    "follow" -> FollowScreen(
-                        navigator = navigator,
-                        refreshSignal = followRefreshSignal,
-                        onRevealBottomBar = {
-                            bottomBarOffsetPx = indexBottomBarOffsetAfterRevealRequest(bottomBarOffsetPx)
-                        }
+                    adaptiveNavigationContentTransform(
+                        direction = direction,
+                        useSideNavigation = useSideNavigation
                     )
-                    "category" -> CategoryScreen(
-                        navigator = navigator,
-                        refreshSignal = categoryRefreshSignal
-                    )
-                    "user" -> MineScreen(navigator = navigator)
+                },
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .padding(top = paddingValues.calculateTopPadding()),
+                label = "bottomNavContent"
+            ) { selection ->
+                val revealBottomBar = if (useSideNavigation) {
+                    {}
+                } else {
+                    {
+                        bottomBarOffsetPx = indexBottomBarOffsetAfterRevealRequest(bottomBarOffsetPx)
+                    }
+                }
+
+                Box(modifier = Modifier.fillMaxSize()) {
+                    when (selection.key) {
+                        "recommend" -> HomeScreen(
+                            navigator = navigator,
+                            suppressInitialLoadingEffect = suppressHomeInitialLoadingEffect,
+                            refreshSignal = homeRefreshSignal,
+                            onInitialLoadingEffectSettled = {
+                                suppressHomeInitialLoadingEffect = false
+                            },
+                            onPlatformAccentColorChange = {
+                                homePlatformAccentColor = it
+                            },
+                            onRevealBottomBar = revealBottomBar,
+                            contentBottomPadding = contentBottomPadding,
+                            homeLiveRoomGridColumns = homeLiveRoomGridColumns
+                        )
+                        "follow" -> FollowScreen(
+                            navigator = navigator,
+                            refreshSignal = followRefreshSignal,
+                            onRevealBottomBar = revealBottomBar,
+                            contentBottomPadding = contentBottomPadding,
+                            followCardColumns = followCardColumns
+                        )
+                        "category" -> CategoryScreen(
+                            navigator = navigator,
+                            refreshSignal = categoryRefreshSignal,
+                            contentBottomPadding = contentBottomPadding
+                        )
+                        "user" -> MineScreen(
+                            navigator = navigator,
+                            contentBottomPadding = contentBottomPadding
+                        )
+                    }
                 }
             }
         }
@@ -277,4 +273,116 @@ internal fun indexBottomNavActiveColor(
 
 internal fun indexBottomBarOffsetAfterRevealRequest(currentOffsetPx: Float): Float {
     return 0f
+}
+
+internal fun indexUseSideNavigation(screenWidthDp: Int): Boolean {
+    return screenWidthDp >= 600
+}
+
+internal fun indexTopLevelContentBottomPaddingDp(useSideNavigation: Boolean): Int {
+    return if (useSideNavigation) 24 else 96
+}
+
+internal fun indexHomeLiveRoomGridColumns(useSideNavigation: Boolean): Int? {
+    return if (useSideNavigation) 5 else null
+}
+
+internal fun indexSideNavigationItemWeight(itemCount: Int): Float {
+    return if (itemCount > 0) 1f else 1f
+}
+
+@Composable
+private fun IndexBottomNavigationItem(
+    item: BottomNavItem,
+    selected: Boolean,
+    activeColor: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val label = stringResource(item.labelRes)
+    val contentColor by animateColorAsState(
+        targetValue = if (selected) {
+            activeColor
+        } else {
+            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+        },
+        label = "navColor"
+    )
+    val scale by animateFloatAsState(
+        targetValue = if (selected) 1.1f else 1.0f,
+        animationSpec = AppMotion.contentSpec(),
+        label = "navScale"
+    )
+
+    Column(
+        modifier = modifier
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick
+            )
+            .padding(vertical = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Icon(
+            imageVector = item.icon,
+            contentDescription = label,
+            tint = contentColor,
+            modifier = Modifier
+                .size(24.dp)
+                .graphicsLayer {
+                    scaleX = scale
+                    scaleY = scale
+                }
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = label,
+            color = contentColor,
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
+            ),
+            fontSize = 10.sp
+        )
+    }
+}
+
+@Composable
+private fun IndexSideNavigationRail(
+    items: List<BottomNavItem>,
+    selectedIndex: Int,
+    activeColor: Color,
+    onItemClick: (BottomNavItem) -> Unit
+) {
+    NavigationRail(
+        modifier = Modifier.fillMaxHeight(),
+        containerColor = MaterialTheme.colorScheme.surface,
+        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+    ) {
+        items.forEachIndexed { index, item ->
+            val label = stringResource(item.labelRes)
+            NavigationRailItem(
+                selected = selectedIndex == index,
+                onClick = { onItemClick(item) },
+                icon = {
+                    Icon(
+                        imageVector = item.icon,
+                        contentDescription = label
+                    )
+                },
+                label = {
+                    Text(
+                        text = label,
+                        maxLines = 1
+                    )
+                },
+                modifier = Modifier.weight(indexSideNavigationItemWeight(items.size)),
+                colors = NavigationRailItemDefaults.colors(
+                    selectedIconColor = activeColor,
+                    selectedTextColor = activeColor,
+                    indicatorColor = activeColor.copy(alpha = 0.14f)
+                )
+            )
+        }
+    }
 }

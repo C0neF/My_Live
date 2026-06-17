@@ -32,6 +32,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -57,6 +58,7 @@ import kotlinx.coroutines.launch
 fun CategoryScreen(
     navigator: Navigator,
     refreshSignal: Int = 0,
+    contentBottomPadding: Dp = 96.dp,
     viewModel: CategoryViewModel = hiltViewModel()
 ) {
     val siteTabs by viewModel.siteList.collectAsStateWithLifecycle()
@@ -219,7 +221,7 @@ fun CategoryScreen(
 
                 Box(modifier = Modifier.fillMaxSize()) {
                     when {
-                        pageLoading -> CategorySkeleton()
+                        pageLoading -> CategorySkeleton(contentBottomPadding = contentBottomPadding)
                         pageError != null -> ErrorState(
                             message = pageError ?: "加载失败",
                             onRetry = { viewModel.retry() },
@@ -242,6 +244,7 @@ fun CategoryScreen(
                             CategoryList(
                                 categories = pageCategories,
                                 accentColor = pageAccentColor,
+                                contentBottomPadding = contentBottomPadding,
                                 onSubCategoryClick = { subCategory ->
                                     if (selectedSite != null) {
                                         navigator.navigate(
@@ -263,7 +266,7 @@ fun CategoryScreen(
 }
 
 @Composable
-private fun CategorySkeleton() {
+private fun CategorySkeleton(contentBottomPadding: Dp = 96.dp) {
     Row(modifier = Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
@@ -289,7 +292,7 @@ private fun CategorySkeleton() {
         }
 
         LazyVerticalGrid(
-            columns = GridCells.Fixed(3),
+            columns = GridCells.Adaptive(120.dp),
             modifier = Modifier
                 .weight(1f)
                 .fillMaxHeight(),
@@ -297,7 +300,7 @@ private fun CategorySkeleton() {
                 start = 12.dp,
                 top = 8.dp,
                 end = 12.dp,
-                bottom = 96.dp
+                bottom = contentBottomPadding
             ),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -403,6 +406,7 @@ private fun CategoryPlatformChip(
 private fun CategoryList(
     categories: List<LiveCategory>,
     accentColor: Color,
+    contentBottomPadding: Dp = 96.dp,
     onSubCategoryClick: (LiveSubCategory) -> Unit
 ) {
     var selectedParentIndex by remember(categories) { mutableIntStateOf(0) }
@@ -480,7 +484,7 @@ private fun CategoryList(
 
         if (subCategories.isEmpty() && currentCategory != null) {
             LazyVerticalGrid(
-                columns = GridCells.Fixed(3),
+                columns = GridCells.Adaptive(120.dp),
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight(),
@@ -488,7 +492,7 @@ private fun CategoryList(
                     start = 12.dp,
                     top = 8.dp,
                     end = 12.dp,
-                    bottom = 96.dp
+                    bottom = contentBottomPadding
                 ),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -512,7 +516,7 @@ private fun CategoryList(
             }
         } else {
             LazyVerticalGrid(
-                columns = GridCells.Fixed(3),
+                columns = GridCells.Adaptive(120.dp),
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight(),
@@ -520,7 +524,7 @@ private fun CategoryList(
                     start = 12.dp,
                     top = 8.dp,
                     end = 12.dp,
-                    bottom = 96.dp
+                    bottom = contentBottomPadding
                 ),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)

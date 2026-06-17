@@ -21,7 +21,6 @@ import androidx.lifecycle.viewModelScope
 import com.mylive.app.ui.navigation.Navigator
 import com.mylive.app.ui.navigation.Route
 import com.mylive.app.R
-import com.mylive.app.data.repository.AccountRepository
 import com.mylive.app.data.repository.FollowRepository
 import com.mylive.app.data.repository.HistoryRepository
 import com.mylive.app.data.repository.ProfileBackupManager
@@ -29,6 +28,7 @@ import com.mylive.app.data.repository.ShieldRepository
 import com.mylive.app.ui.component.settings.SettingsMenu
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -49,7 +49,6 @@ class SyncDeviceViewModel @Inject constructor(
     private val followRepository: FollowRepository,
     private val historyRepository: HistoryRepository,
     private val shieldRepository: ShieldRepository,
-    private val accountRepository: AccountRepository,
     private val profileBackupManager: ProfileBackupManager
 ) : ViewModel() {
 
@@ -60,6 +59,11 @@ class SyncDeviceViewModel @Inject constructor(
     val syncingKey: StateFlow<String?> = _syncingKey.asStateFlow()
 
     private val client = OkHttpClient()
+
+    private companion object {
+        const val LAN_SYNC_JOB_TIMEOUT_MS = 30_000L
+        const val LAN_SYNC_JOB_POLL_INTERVAL_MS = 300L
+    }
 
     private fun buildUrl(address: String, port: Int, endpoint: String, overlay: Boolean = false): String {
         val overlayParam = if (overlay) "?overlay=1" else ""
@@ -156,42 +160,6 @@ class SyncDeviceViewModel @Inject constructor(
         }
     }
 
-    fun syncBiliBiliAccount(address: String, port: Int, token: String) {
-        viewModelScope.launch {
-            _syncingKey.value = "bilibili"
-            try {
-                val cookie = accountRepository.bilibiliCookie.first()
-                val json = JSONObject().apply {
-                    put("cookie", cookie)
-                }
-                postJson(buildUrl(address, port, "/sync/account/bilibili"), json.toString(), token)
-                _syncResults.value = _syncResults.value + ("bilibili" to "✅ B站账号同步成功")
-            } catch (e: Exception) {
-                _syncResults.value = _syncResults.value + ("bilibili" to "❌ B站账号同步失败: ${e.message}")
-            } finally {
-                _syncingKey.value = null
-            }
-        }
-    }
-
-    fun syncDouyinAccount(address: String, port: Int, token: String) {
-        viewModelScope.launch {
-            _syncingKey.value = "douyin"
-            try {
-                val cookie = accountRepository.douyinCookie.first()
-                val json = JSONObject().apply {
-                    put("cookie", cookie)
-                }
-                postJson(buildUrl(address, port, "/sync/account/douyin"), json.toString(), token)
-                _syncResults.value = _syncResults.value + ("douyin" to "✅ 抖音账号同步成功")
-            } catch (e: Exception) {
-                _syncResults.value = _syncResults.value + ("douyin" to "❌ 抖音账号同步失败: ${e.message}")
-            } finally {
-                _syncingKey.value = null
-            }
-        }
-    }
-
     private suspend fun postJson(url: String, json: String, token: String) {
         withContext(Dispatchers.IO) {
             val body = json.toRequestBody("application/json".toMediaType())
@@ -199,8 +167,51 @@ class SyncDeviceViewModel @Inject constructor(
             if (token.isNotEmpty()) builder.addHeader("X-Sync-Token", token)
             val request = builder.build()
             client.newCall(request).execute().use { response ->
-                validateLanSyncResponse(response.code, response.isSuccessful, response.body?.string())
+                val acceptedJob = validateLanSyncResponse(
+                    response.code,
+                    response.isSuccessful,
+                    response.body?.string()
+                )
+                if (acceptedJob != null) {
+                    val jobUrl = response.request.url.resolve(acceptedJob.jobUrl)?.toString()
+                        ?: throw Exception("invalid sync job url")
+                    pollLanSyncJob(jobUrl, token)
+                }
             }
+        }
+    }
+
+    private suspend fun pollLanSyncJob(jobUrl: String, token: String) {
+        val deadline = System.currentTimeMillis() + LAN_SYNC_JOB_TIMEOUT_MS
+        while (true) {
+            val builder = Request.Builder().url(jobUrl).get()
+            if (token.isNotEmpty()) builder.addHeader("X-Sync-Token", token)
+            val request = builder.build()
+
+            client.newCall(request).execute().use { response ->
+                if (response.code == 401) {
+                    throw Exception("未配对或配对码错误，请扫描对方二维码或填写配对码")
+                }
+                if (!response.isSuccessful) {
+                    throw Exception("HTTP ${response.code}")
+                }
+
+                val payload = JSONObject(response.body?.string().orEmpty())
+                if (payload.has("status") && !payload.optBoolean("status", true)) {
+                    throw Exception(payload.optString("message", "sync failed"))
+                }
+                when (payload.optString("state")) {
+                    "succeeded" -> return
+                    "queued", "running" -> Unit
+                    "failed" -> throw Exception(payload.optString("message", "sync failed"))
+                    else -> throw Exception("未知同步状态")
+                }
+            }
+
+            if (System.currentTimeMillis() >= deadline) {
+                throw Exception("等待对方导入完成超时")
+            }
+            delay(LAN_SYNC_JOB_POLL_INTERVAL_MS)
         }
     }
 }
@@ -314,9 +325,7 @@ fun SyncDeviceScreen(
                 "profile" to "完整配置包" to { showConfirmDialog = "profile" },
                 "follow" to "关注列表 + 标签" to { showConfirmDialog = "follow" },
                 "history" to "观看历史" to { showConfirmDialog = "history" },
-                "shield" to "弹幕屏蔽词" to { showConfirmDialog = "shield" },
-                "bilibili" to "B站账号" to { showConfirmDialog = "bilibili" },
-                "douyin" to "抖音账号" to { showConfirmDialog = "douyin" }
+                "shield" to "弹幕屏蔽词" to { showConfirmDialog = "shield" }
             )
 
             operations.forEachIndexed { index, (pair, action) ->
@@ -340,7 +349,7 @@ fun SyncDeviceScreen(
             Spacer(modifier = Modifier.height(24.dp))
 
             Text(
-                text = "提示：同步操作会将数据推送到目标设备。部分操作前会询问是否覆盖对方已有数据。",
+                text = "提示：同步操作会将数据推送到目标设备。账号 Cookie 不通过局域网 HTTP 同步。",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 16.dp)
@@ -365,8 +374,6 @@ fun SyncDeviceScreen(
                         "follow" -> viewModel.syncFollow(address, port, token)
                         "history" -> viewModel.syncHistory(address, port, token)
                         "shield" -> viewModel.syncShield(address, port, token)
-                        "bilibili" -> viewModel.syncBiliBiliAccount(address, port, token)
-                        "douyin" -> viewModel.syncDouyinAccount(address, port, token)
                     }
                 }) { Text("同步") }
             },

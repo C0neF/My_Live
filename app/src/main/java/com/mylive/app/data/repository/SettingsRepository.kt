@@ -1,6 +1,7 @@
 package com.mylive.app.data.repository
 
 import com.mylive.app.data.local.datastore.SettingsDataStore
+import com.mylive.app.data.local.secure.SensitiveCredentialStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
@@ -8,7 +9,8 @@ import javax.inject.Singleton
 
 @Singleton
 class SettingsRepository @Inject constructor(
-    private val settingsDataStore: SettingsDataStore
+    private val settingsDataStore: SettingsDataStore,
+    private val sensitiveCredentialStore: SensitiveCredentialStore
 ) {
     // Theme
     val themeMode: Flow<Int> = settingsDataStore.getFlow(SettingsDataStore.ThemeMode, 0)
@@ -157,11 +159,11 @@ class SettingsRepository @Inject constructor(
     suspend fun setAutoFullScreen(value: Boolean) = settingsDataStore.setValue(SettingsDataStore.AutoFullScreen, value)
 
     // Account cookies
-    val bilibiliCookie: Flow<String> = settingsDataStore.getFlow(SettingsDataStore.BilibiliCookie, "")
-    suspend fun setBilibiliCookie(value: String) = settingsDataStore.setValue(SettingsDataStore.BilibiliCookie, value)
+    val bilibiliCookie: Flow<String> = sensitiveCredentialStore.bilibiliCookie
+    suspend fun setBilibiliCookie(value: String) = sensitiveCredentialStore.setBilibiliCookie(value)
 
-    val douyinCookie: Flow<String> = settingsDataStore.getFlow(SettingsDataStore.DouyinCookie, "")
-    suspend fun setDouyinCookie(value: String) = settingsDataStore.setValue(SettingsDataStore.DouyinCookie, value)
+    val douyinCookie: Flow<String> = sensitiveCredentialStore.douyinCookie
+    suspend fun setDouyinCookie(value: String) = sensitiveCredentialStore.setDouyinCookie(value)
 
     // Follow settings
     val autoUpdateFollowEnable: Flow<Boolean> = settingsDataStore.getFlow(SettingsDataStore.AutoUpdateFollowEnable, true)

@@ -21,6 +21,7 @@ import com.mylive.app.ui.navigation.Navigator
 import com.mylive.app.ui.navigation.Route
 import com.mylive.app.R
 import com.mylive.app.data.local.datastore.SettingsDataStore
+import com.mylive.app.data.local.secure.SensitiveCredentialStore
 import com.mylive.app.data.repository.ProfileBackupManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
@@ -66,6 +67,7 @@ sealed class WebDavMessage {
 @HiltViewModel
 class WebDavViewModel @Inject constructor(
     private val settingsDataStore: SettingsDataStore,
+    private val sensitiveCredentialStore: SensitiveCredentialStore,
     private val profileBackupManager: ProfileBackupManager,
     private val okHttpClient: OkHttpClient
 ) : ViewModel() {
@@ -88,7 +90,7 @@ class WebDavViewModel @Inject constructor(
             }
         }
         viewModelScope.launch {
-            settingsDataStore.getFlow(SettingsDataStore.kWebDAVPassword, "").collect { pass ->
+            sensitiveCredentialStore.webDavPassword.collect { pass ->
                 _uiState.value = _uiState.value.copy(password = pass)
             }
         }
@@ -209,7 +211,7 @@ class WebDavViewModel @Inject constructor(
     private suspend fun persistConfig(state: WebDavUiState) {
         settingsDataStore.setValue(SettingsDataStore.WebDAVUri, state.serverUrl.trim())
         settingsDataStore.setValue(SettingsDataStore.WebDAVUser, state.username)
-        settingsDataStore.setValue(SettingsDataStore.kWebDAVPassword, state.password)
+        sensitiveCredentialStore.setWebDavPassword(state.password)
     }
 
     private fun Request.Builder.applyAuth(username: String, password: String): Request.Builder {

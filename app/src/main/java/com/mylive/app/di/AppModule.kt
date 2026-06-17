@@ -2,6 +2,8 @@ package com.mylive.app.di
 
 import android.content.Context
 import com.mylive.app.data.local.datastore.SettingsDataStore
+import com.mylive.app.data.local.secure.AndroidKeystoreCredentialCipher
+import com.mylive.app.data.local.secure.CredentialCipher
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -19,5 +21,11 @@ object AppModule {
         @ApplicationContext context: Context
     ): SettingsDataStore {
         return SettingsDataStore(context)
+    }
+
+    @Provides
+    @Singleton
+    fun provideCredentialCipher(): CredentialCipher {
+        return AndroidKeystoreCredentialCipher()
     }
 }

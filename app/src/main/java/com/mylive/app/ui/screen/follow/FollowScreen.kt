@@ -13,10 +13,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -35,6 +38,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -60,6 +64,8 @@ fun FollowScreen(
     navigator: Navigator,
     refreshSignal: Int = 0,
     onRevealBottomBar: () -> Unit = {},
+    contentBottomPadding: Dp = 96.dp,
+    followCardColumns: Int = 1,
     viewModel: FollowViewModel = hiltViewModel()
 ) {
     val filteredFollows by viewModel.filteredFollows.collectAsState()
@@ -71,7 +77,8 @@ fun FollowScreen(
     val updatingStatus by viewModel.updatingStatus.collectAsState()
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
-    val listState = rememberLazyListState()
+    val gridState = rememberLazyGridState()
+    val cardColumns = followCardColumns.coerceAtLeast(1)
     var isAtTop by remember { mutableStateOf(true) }
     var showMenu by remember { mutableStateOf(false) }
     var showGroupModeMenu by remember { mutableStateOf(false) }
@@ -105,12 +112,12 @@ fun FollowScreen(
         }
     }
 
-    LaunchedEffect(listState, filteredFollows.isNotEmpty()) {
+    LaunchedEffect(gridState, filteredFollows.isNotEmpty()) {
         if (filteredFollows.isNotEmpty()) {
             snapshotFlow {
                 isScrollableContentAtTop(
-                    firstVisibleItemIndex = listState.firstVisibleItemIndex,
-                    firstVisibleItemScrollOffset = listState.firstVisibleItemScrollOffset
+                    firstVisibleItemIndex = gridState.firstVisibleItemIndex,
+                    firstVisibleItemScrollOffset = gridState.firstVisibleItemScrollOffset
                 )
             }
                 .distinctUntilChanged()
@@ -308,14 +315,21 @@ fun FollowScreen(
                 val unknownList = filteredFollows.filter { it.liveStatus == 0 }
                 val offlineList = filteredFollows.filter { it.liveStatus == 2 }
 
-                LazyColumn(
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(cardColumns),
                     modifier = Modifier.fillMaxSize(),
-                    state = listState,
-                    contentPadding = PaddingValues(bottom = 96.dp)
+                    state = gridState,
+                    contentPadding = PaddingValues(
+                        start = 16.dp,
+                        end = 16.dp,
+                        bottom = contentBottomPadding
+                    ),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     // 直播中
                     if (liveList.isNotEmpty()) {
-                        item {
+                        item(span = { GridItemSpan(maxLineSpan) }) {
                             FollowGroupHeader(
                                 title = stringResource(R.string.follow_group_live),
                                 count = liveList.size,
@@ -335,7 +349,7 @@ fun FollowScreen(
 
                     // 未知
                     if (unknownList.isNotEmpty()) {
-                        item {
+                        item(span = { GridItemSpan(maxLineSpan) }) {
                             FollowGroupHeader(
                                 title = stringResource(R.string.follow_group_unknown),
                                 count = unknownList.size
@@ -354,7 +368,7 @@ fun FollowScreen(
 
                     // 未开播
                     if (offlineList.isNotEmpty()) {
-                        item {
+                        item(span = { GridItemSpan(maxLineSpan) }) {
                             FollowGroupHeader(
                                 title = stringResource(R.string.follow_group_offline),
                                 count = offlineList.size
@@ -379,7 +393,7 @@ fun FollowScreen(
                     onClick = {
                         onRevealBottomBar()
                         scope.launch {
-                            listState.animateScrollToItem(0)
+                            gridState.animateScrollToItem(0)
                         }
                     },
                     modifier = Modifier
@@ -965,6 +979,10 @@ internal fun followCompactCardMetrics(): FollowCompactCardMetrics {
         horizontalGapDp = 8,
         cardVerticalPaddingDp = 3
     )
+}
+
+internal fun followCardGridColumns(useSideNavigation: Boolean): Int {
+    return if (useSideNavigation) 2 else 1
 }
 
 internal fun followCompactGroupModeLabel(mode: FollowGroupMode): String {

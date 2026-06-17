@@ -93,6 +93,13 @@ fun PlayerView(
     onDanmakuControllerCreated: ((DanmakuController) -> Unit)? = null,
     onHorizontalDragDelta: ((Float) -> Unit)? = null,
     onHorizontalDragEnd: (() -> Unit)? = null,
+    isFullscreenOverride: Boolean? = null,
+    onFullscreenClick: (() -> Unit)? = null,
+    onRoomSettingsClick: (() -> Unit)? = null,
+    onQuickAccessClick: (() -> Unit)? = null,
+    onFollowClick: (() -> Unit)? = null,
+    isFollowing: Boolean = false,
+    followEnabled: Boolean = true,
     rightPadding: Dp = 0.dp,
     isExiting: Boolean = false
 ) {
@@ -434,8 +441,13 @@ fun PlayerView(
                             onLineClick = { showLineSheet = true },
                             isMuted = state.volume == 0f,
                             onMuteToggle = { playerController?.toggleMute() },
-                            isFullscreen = state.isFullscreen,
-                            onFullscreenClick = { playerController?.toggleFullscreen() },
+                            isFullscreen = isFullscreenOverride ?: state.isFullscreen,
+                            onFullscreenClick = { onFullscreenClick?.invoke() ?: playerController?.toggleFullscreen() },
+                            onRoomSettingsClick = onRoomSettingsClick,
+                            onQuickAccessClick = onQuickAccessClick,
+                            onFollowClick = onFollowClick,
+                            isFollowing = isFollowing,
+                            followEnabled = followEnabled,
                             onRefreshClick = onRefreshClick,
                             isPortrait = isPortrait
                         )
@@ -633,6 +645,11 @@ private fun PlayerBottomBar(
     onMuteToggle: () -> Unit,
     isFullscreen: Boolean,
     onFullscreenClick: () -> Unit,
+    onRoomSettingsClick: (() -> Unit)? = null,
+    onQuickAccessClick: (() -> Unit)? = null,
+    onFollowClick: (() -> Unit)? = null,
+    isFollowing: Boolean = false,
+    followEnabled: Boolean = true,
     onRefreshClick: (() -> Unit)? = null,
     isPortrait: Boolean = true
 ) {
@@ -645,37 +662,87 @@ private fun PlayerBottomBar(
             )
         )
     }
-    Row(
+
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()
             .background(bottomGradient)
-            .padding(start = 16.dp, end = 16.dp, top = 24.dp, bottom = 12.dp),
+    ) {
+        val compact = shouldUseCompactPlayerBottomBar(
+            availableWidthDp = maxWidth.value.toInt(),
+            isPortrait = isPortrait
+        )
+        val buttonSize = if (compact) 40.dp else 48.dp
+        val iconSize = if (compact) 22.dp else 24.dp
+        val itemGap = if (compact) 4.dp else 8.dp
+        val horizontalPadding = if (compact) 8.dp else 16.dp
+        var showOverflowMenu by remember { mutableStateOf(false) }
+        val placeFollowActionOnRight = shouldPlacePlayerFollowActionOnRight(isPortrait)
+        val showQualityAction = (!isPortrait || isFullscreen) && onQualityClick != null
+        val showLineAction = !isPortrait || isFullscreen
+        val showRoomSettingsAction = shouldShowPlayerRoomSettingsAction(isPortrait)
+        val showFullscreenAction = shouldShowPlayerFullscreenAction(isPortrait)
+        val hasOverflowActions = compact && (
+            onRefreshClick != null ||
+                showQualityAction ||
+                showLineAction ||
+                (showRoomSettingsAction && onRoomSettingsClick != null) ||
+                onQuickAccessClick != null
+            )
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(
+                    start = horizontalPadding,
+                    end = horizontalPadding,
+                    top = if (compact) 18.dp else 24.dp,
+                    bottom = 10.dp
+                ),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Left side: Refresh + Play/Pause + Danmaku switch + Danmaku settings
-        if (onRefreshClick != null) {
-            IconButton(onClick = onRefreshClick) {
+        // Left side: portrait follow action + playback controls
+        if (!placeFollowActionOnRight && onFollowClick != null) {
+            PlayerFollowActionButton(
+                isFollowing = isFollowing,
+                followEnabled = followEnabled,
+                accentColor = accentColor,
+                buttonSize = buttonSize,
+                iconSize = iconSize,
+                onFollowClick = onFollowClick
+            )
+            Spacer(modifier = Modifier.width(itemGap))
+        }
+
+        if (!compact && onRefreshClick != null) {
+            IconButton(
+                onClick = onRefreshClick,
+                modifier = Modifier.size(buttonSize)
+            ) {
                 Icon(
                     Icons.Default.Refresh,
                     contentDescription = "刷新",
                     tint = Color.White,
-                    modifier = Modifier.size(24.dp)
+                    modifier = Modifier.size(iconSize)
                 )
             }
-            Spacer(modifier = Modifier.width(8.dp))
+            Spacer(modifier = Modifier.width(itemGap))
         }
 
-        IconButton(onClick = onPlayPauseClick) {
+        IconButton(
+            onClick = onPlayPauseClick,
+            modifier = Modifier.size(buttonSize)
+        ) {
             Icon(
                 if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                 contentDescription = if (isPlaying) "暂停" else "播放",
                 tint = Color.White,
-                modifier = Modifier.size(24.dp)
+                modifier = Modifier.size(iconSize)
             )
         }
-        Spacer(modifier = Modifier.width(8.dp))
+        Spacer(modifier = Modifier.width(itemGap))
 
-        IconButton(onClick = onDanmuToggle) {
+        IconButton(onClick = onDanmuToggle, modifier = Modifier.size(buttonSize)) {
             Icon(
                 if (danmuEnable) Icons.Default.Subtitles else Icons.Default.SubtitlesOff,
                 contentDescription = "弹幕开关",
@@ -683,62 +750,230 @@ private fun PlayerBottomBar(
                     danmuEnable = danmuEnable,
                     accentColor = accentColor
                 ),
-                modifier = Modifier.size(24.dp)
+                modifier = Modifier.size(iconSize)
             )
         }
-        Spacer(modifier = Modifier.width(8.dp))
+        Spacer(modifier = Modifier.width(itemGap))
 
-        IconButton(onClick = onDanmuSettingsClick) {
-            Icon(
-                Icons.Default.Tune,
-                contentDescription = "弹幕设置",
-                tint = Color.White,
-                modifier = Modifier.size(24.dp)
-            )
+        if (shouldShowPlayerDanmuSettingsButton(isPortrait)) {
+            IconButton(
+                onClick = onDanmuSettingsClick,
+                modifier = Modifier.size(buttonSize)
+            ) {
+                Icon(
+                    Icons.Default.Tune,
+                    contentDescription = "弹幕设置",
+                    tint = Color.White,
+                    modifier = Modifier.size(iconSize)
+                )
+            }
         }
 
         Spacer(modifier = Modifier.weight(1f))
 
-        // Right side: Quality + Line + Mute + Fullscreen
-        if ((!isPortrait || isFullscreen) && onQualityClick != null) {
+        // Right side: Quality + Line + Mute + room actions + optional Fullscreen
+        if (!compact && showQualityAction) {
             TextButton(
-                onClick = onQualityClick,
+                onClick = onQualityClick!!,
                 colors = ButtonDefaults.textButtonColors(contentColor = Color.White)
             ) {
                 Text(currentQualityName, style = MaterialTheme.typography.labelMedium)
             }
-            Spacer(modifier = Modifier.width(8.dp))
+            Spacer(modifier = Modifier.width(itemGap))
         }
 
-        if (!isPortrait || isFullscreen) {
+        if (!compact && showLineAction) {
             TextButton(
                 onClick = onLineClick,
                 colors = ButtonDefaults.textButtonColors(contentColor = Color.White)
             ) {
                 Text(currentLineName, style = MaterialTheme.typography.labelMedium)
             }
-            Spacer(modifier = Modifier.width(8.dp))
+            Spacer(modifier = Modifier.width(itemGap))
         }
 
-        IconButton(onClick = onMuteToggle) {
+        IconButton(
+            onClick = onMuteToggle,
+            modifier = Modifier.size(buttonSize)
+        ) {
             Icon(
                 if (isMuted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
                 contentDescription = "静音",
                 tint = Color.White,
-                modifier = Modifier.size(24.dp)
+                modifier = Modifier.size(iconSize)
             )
         }
-        Spacer(modifier = Modifier.width(8.dp))
+        Spacer(modifier = Modifier.width(itemGap))
 
-        IconButton(onClick = onFullscreenClick) {
-            Icon(
-                if (isFullscreen) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
-                contentDescription = "全屏",
-                tint = Color.White,
-                modifier = Modifier.size(24.dp)
+        if (!compact && showRoomSettingsAction && onRoomSettingsClick != null) {
+            IconButton(
+                onClick = onRoomSettingsClick,
+                modifier = Modifier.size(buttonSize)
+            ) {
+                Icon(
+                    Icons.Default.Settings,
+                    contentDescription = "设置",
+                    tint = Color.White,
+                    modifier = Modifier.size(iconSize)
+                )
+            }
+            Spacer(modifier = Modifier.width(itemGap))
+        }
+
+        if (!compact && onQuickAccessClick != null) {
+            IconButton(
+                onClick = onQuickAccessClick,
+                modifier = Modifier.size(buttonSize)
+            ) {
+                Icon(
+                    Icons.Default.PlaylistAdd,
+                    contentDescription = "快速入口",
+                    tint = Color.White,
+                    modifier = Modifier.size(iconSize)
+                )
+            }
+            Spacer(modifier = Modifier.width(itemGap))
+        }
+
+        if (placeFollowActionOnRight && onFollowClick != null) {
+            PlayerFollowActionButton(
+                isFollowing = isFollowing,
+                followEnabled = followEnabled,
+                accentColor = accentColor,
+                buttonSize = buttonSize,
+                iconSize = iconSize,
+                onFollowClick = onFollowClick
             )
+            Spacer(modifier = Modifier.width(itemGap))
+        }
+
+        if (hasOverflowActions) {
+            Box {
+                IconButton(
+                    onClick = { showOverflowMenu = true },
+                    modifier = Modifier.size(buttonSize)
+                ) {
+                    Icon(
+                        Icons.Default.MoreVert,
+                        contentDescription = "更多",
+                        tint = Color.White,
+                        modifier = Modifier.size(iconSize)
+                    )
+                }
+                DropdownMenu(
+                    expanded = showOverflowMenu,
+                    onDismissRequest = { showOverflowMenu = false }
+                ) {
+                    if (onRefreshClick != null) {
+                        DropdownMenuItem(
+                            text = { Text("刷新") },
+                            leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null) },
+                            onClick = {
+                                showOverflowMenu = false
+                                onRefreshClick()
+                            }
+                        )
+                    }
+                    if (showQualityAction) {
+                        DropdownMenuItem(
+                            text = { Text("画质：$currentQualityName") },
+                            onClick = {
+                                showOverflowMenu = false
+                                onQualityClick?.invoke()
+                            }
+                        )
+                    }
+                    if (showLineAction) {
+                        DropdownMenuItem(
+                            text = { Text("线路：$currentLineName") },
+                            onClick = {
+                                showOverflowMenu = false
+                                onLineClick()
+                            }
+                        )
+                    }
+                    if (showRoomSettingsAction && onRoomSettingsClick != null) {
+                        DropdownMenuItem(
+                            text = { Text("设置") },
+                            leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null) },
+                            onClick = {
+                                showOverflowMenu = false
+                                onRoomSettingsClick()
+                            }
+                        )
+                    }
+                    if (onQuickAccessClick != null) {
+                        DropdownMenuItem(
+                            text = { Text("快速入口") },
+                            leadingIcon = { Icon(Icons.Default.PlaylistAdd, contentDescription = null) },
+                            onClick = {
+                                showOverflowMenu = false
+                                onQuickAccessClick()
+                            }
+                        )
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.width(itemGap))
+        }
+
+        if (showFullscreenAction) {
+            IconButton(
+                onClick = onFullscreenClick,
+                modifier = Modifier.size(buttonSize)
+            ) {
+                Icon(
+                    if (isFullscreen) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
+                    contentDescription = "全屏",
+                    tint = Color.White,
+                    modifier = Modifier.size(iconSize)
+                )
+            }
         }
     }
+    }
+}
+
+@Composable
+private fun PlayerFollowActionButton(
+    isFollowing: Boolean,
+    followEnabled: Boolean,
+    accentColor: Color,
+    buttonSize: Dp,
+    iconSize: Dp,
+    onFollowClick: () -> Unit
+) {
+    IconButton(
+        onClick = { if (followEnabled) onFollowClick() },
+        modifier = Modifier.size(buttonSize)
+    ) {
+        Icon(
+            if (isFollowing) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+            contentDescription = if (isFollowing) "已关注" else "关注",
+            tint = accentColor,
+            modifier = Modifier.size(iconSize)
+        )
+    }
+}
+
+internal fun shouldUseCompactPlayerBottomBar(availableWidthDp: Int, isPortrait: Boolean): Boolean {
+    return !isPortrait && availableWidthDp < 480
+}
+
+internal fun shouldPlacePlayerFollowActionOnRight(isPortrait: Boolean): Boolean {
+    return !isPortrait
+}
+
+internal fun shouldShowPlayerRoomSettingsAction(isPortrait: Boolean): Boolean {
+    return isPortrait
+}
+
+internal fun shouldShowPlayerFullscreenAction(isPortrait: Boolean): Boolean {
+    return isPortrait
+}
+
+internal fun shouldShowPlayerDanmuSettingsButton(isPortrait: Boolean): Boolean {
+    return isPortrait
 }
 
 internal fun resolvePlayerDanmuButtonTint(

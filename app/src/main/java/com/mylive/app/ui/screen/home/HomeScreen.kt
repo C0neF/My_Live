@@ -23,6 +23,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -60,6 +61,8 @@ fun HomeScreen(
     onInitialLoadingEffectSettled: () -> Unit = {},
     onPlatformAccentColorChange: (Color?) -> Unit = {},
     onRevealBottomBar: () -> Unit = {},
+    contentBottomPadding: Dp = 96.dp,
+    homeLiveRoomGridColumns: Int? = null,
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -257,6 +260,8 @@ fun HomeScreen(
                         viewModel.loadMore()
                     }
                 },
+                contentBottomPadding = contentBottomPadding,
+                homeLiveRoomGridColumns = homeLiveRoomGridColumns,
                 onRoomClick = { roomId ->
                     navigator.navigate(
                         homeLiveRoomRoute(
@@ -280,11 +285,17 @@ private fun HomeRoomsPage(
     onRefresh: () -> Unit,
     onRetry: () -> Unit,
     onLoadMore: () -> Unit,
+    contentBottomPadding: Dp,
+    homeLiveRoomGridColumns: Int?,
     onRoomClick: (String) -> Unit
 ) {
     val gridState = rememberLazyGridState()
     val coroutineScope = rememberCoroutineScope()
     var isAtTop by remember { mutableStateOf(true) }
+    val liveRoomGridColumns = homeLiveRoomGridColumns?.let { GridCells.Fixed(it) }
+        ?: GridCells.Adaptive(LiveRoomGridMinCellWidth)
+    val initialSkeletonColumns = homeLiveRoomGridColumns ?: 2
+    val initialSkeletonItemCount = homeLiveRoomGridColumns?.let { it * 3 } ?: 8
 
     LaunchedEffect(uiState.rooms.isEmpty()) {
         if (uiState.rooms.isEmpty()) {
@@ -317,8 +328,8 @@ private fun HomeRoomsPage(
         when {
             shouldShowHomeInitialLoading(uiState, suppressInitialLoadingEffect) -> {
                 LiveRoomGridSkeleton(
-                    columns = 2,
-                    itemCount = 8,
+                    columns = initialSkeletonColumns,
+                    itemCount = initialSkeletonItemCount,
                     modifier = Modifier.align(Alignment.Center)
                 )
             }
@@ -337,13 +348,13 @@ private fun HomeRoomsPage(
             }
             else -> {
                 LazyVerticalGrid(
-                    columns = GridCells.Adaptive(LiveRoomGridMinCellWidth),
+                    columns = liveRoomGridColumns,
                     state = gridState,
                     contentPadding = PaddingValues(
                         start = 16.dp,
                         top = 8.dp,
                         end = 16.dp,
-                        bottom = 96.dp
+                        bottom = contentBottomPadding
                     ),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)

@@ -35,4 +35,20 @@ class RemoteSyncFavoritePolicyTest {
         assertTrue(sendBlock.contains("encodeShieldKeywordsForLanSync(shields)"))
         assertFalse(sendBlock.contains("put(sh.value)"))
     }
+
+    @Test
+    fun remoteAccountCookieSyncRequiresExplicitConfirmationDialog() {
+        val source = File(
+            "src/main/java/com/mylive/app/ui/screen/sync/RemoteSyncRoomScreen.kt"
+        ).readText()
+
+        assertTrue(source.contains("var showAccountDialog by remember { mutableStateOf<AccountSyncType?>(null) }"))
+        assertTrue(source.contains("onClick = { showAccountDialog = AccountSyncType.BILIBILI }"))
+        assertTrue(source.contains("onClick = { showAccountDialog = AccountSyncType.DOUYIN }"))
+        assertTrue(source.contains("确定要发送"))
+        assertTrue(source.contains("AccountSyncType.BILIBILI -> viewModel.syncBiliAccount()"))
+        assertTrue(source.contains("AccountSyncType.DOUYIN -> viewModel.syncDouyinAccount()"))
+        assertFalse(source.contains("onClick = { viewModel.syncBiliAccount() }"))
+        assertFalse(source.contains("onClick = { viewModel.syncDouyinAccount() }"))
+    }
 }

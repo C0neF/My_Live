@@ -2,6 +2,7 @@ package com.mylive.app.ui.screen.room.player
 
 import androidx.compose.ui.graphics.Color
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -57,7 +58,83 @@ class PlayerDanmakuSettingsPolicyTest {
         assertTrue(source.contains("val resolvedAccentColor = accentColor ?: MaterialTheme.colorScheme.primary"))
         assertTrue(source.contains("accentColor = resolvedAccentColor"))
         assertTrue(source.contains("resolvePlayerDanmuButtonTint("))
-        assertTrue(source.contains("IconButton(onClick = onDanmuToggle)"))
+        assertTrue(source.contains("IconButton(onClick = onDanmuToggle"))
         assertTrue(!source.contains("resolvePlayerDanmuButtonContainerColor("))
+    }
+
+    @Test
+    fun danmuQuickSettingsButtonOnlyShowsInPortraitPlayer() {
+        val source = File("src/main/java/com/mylive/app/ui/screen/room/player/PlayerView.kt").readText()
+
+        assertTrue(shouldShowPlayerDanmuSettingsButton(isPortrait = true))
+        assertFalse(shouldShowPlayerDanmuSettingsButton(isPortrait = false))
+        assertTrue(source.contains("if (shouldShowPlayerDanmuSettingsButton(isPortrait))"))
+    }
+
+    @Test
+    fun playerBottomBarAcceptsRoomActionsForOverlay() {
+        val source = File("src/main/java/com/mylive/app/ui/screen/room/player/PlayerView.kt").readText()
+        val bottomBarSource = source.substringAfter("private fun PlayerBottomBar(")
+            .substringBefore("internal fun resolvePlayerDanmuButtonTint(")
+
+        assertTrue(source.contains("onRoomSettingsClick: (() -> Unit)? = null"))
+        assertTrue(source.contains("onQuickAccessClick: (() -> Unit)? = null"))
+        assertTrue(source.contains("onFollowClick: (() -> Unit)? = null"))
+        assertTrue(source.contains("isFollowing: Boolean = false"))
+        assertTrue(bottomBarSource.contains("contentDescription = \"快速入口\""))
+        assertTrue(bottomBarSource.contains("contentDescription = if (isFollowing) \"已关注\" else \"关注\""))
+    }
+
+    @Test
+    fun playerBottomBarHidesSettingsAndFullscreenActionsOutsidePortrait() {
+        val source = File("src/main/java/com/mylive/app/ui/screen/room/player/PlayerView.kt").readText()
+        val bottomBarSource = source.substringAfter("private fun PlayerBottomBar(")
+            .substringBefore("internal fun shouldUseCompactPlayerBottomBar(")
+
+        assertTrue(source.contains("internal fun shouldShowPlayerRoomSettingsAction(isPortrait: Boolean): Boolean"))
+        assertTrue(source.contains("internal fun shouldShowPlayerFullscreenAction(isPortrait: Boolean): Boolean"))
+        val roomSettingsPolicySource = source.substringAfter("internal fun shouldShowPlayerRoomSettingsAction(")
+            .substringBefore("internal fun shouldShowPlayerFullscreenAction(")
+        val fullscreenPolicySource = source.substringAfter("internal fun shouldShowPlayerFullscreenAction(")
+            .substringBefore("internal fun shouldShowPlayerDanmuSettingsButton(")
+        assertTrue(roomSettingsPolicySource.contains("return isPortrait"))
+        assertTrue(fullscreenPolicySource.contains("return isPortrait"))
+        assertTrue(bottomBarSource.contains("val showRoomSettingsAction = shouldShowPlayerRoomSettingsAction(isPortrait)"))
+        assertTrue(bottomBarSource.contains("val showFullscreenAction = shouldShowPlayerFullscreenAction(isPortrait)"))
+        assertTrue(bottomBarSource.contains("if (!compact && showRoomSettingsAction && onRoomSettingsClick != null)"))
+        assertTrue(bottomBarSource.contains("if (showFullscreenAction)"))
+    }
+
+    @Test
+    fun playerBottomBarMovesFollowActionToRightOutsidePortrait() {
+        val source = File("src/main/java/com/mylive/app/ui/screen/room/player/PlayerView.kt").readText()
+        val bottomBarSource = source.substringAfter("private fun PlayerBottomBar(")
+            .substringBefore("internal fun shouldUseCompactPlayerBottomBar(")
+
+        assertTrue(source.contains("internal fun shouldPlacePlayerFollowActionOnRight(isPortrait: Boolean): Boolean"))
+        assertTrue(source.contains("return !isPortrait"))
+        assertTrue(bottomBarSource.contains("val placeFollowActionOnRight = shouldPlacePlayerFollowActionOnRight(isPortrait)"))
+
+        val leftFollowIndex = bottomBarSource.indexOf("if (!placeFollowActionOnRight && onFollowClick != null)")
+        val spacerIndex = bottomBarSource.indexOf("Spacer(modifier = Modifier.weight(1f))")
+        val rightFollowIndex = bottomBarSource.indexOf("if (placeFollowActionOnRight && onFollowClick != null)")
+
+        assertTrue(leftFollowIndex >= 0)
+        assertTrue(spacerIndex > leftFollowIndex)
+        assertTrue(rightFollowIndex > spacerIndex)
+    }
+
+    @Test
+    fun playerBottomBarUsesCompactOverflowMenuOnNarrowLandscapeWidths() {
+        val source = File("src/main/java/com/mylive/app/ui/screen/room/player/PlayerView.kt").readText()
+        val bottomBarSource = source.substringAfter("private fun PlayerBottomBar(")
+            .substringBefore("internal fun shouldUseCompactPlayerBottomBar(")
+
+        assertTrue(source.contains("internal fun shouldUseCompactPlayerBottomBar("))
+        assertTrue(source.contains("availableWidthDp < 480"))
+        assertTrue(source.contains("!isPortrait"))
+        assertTrue(bottomBarSource.contains("BoxWithConstraints"))
+        assertTrue(bottomBarSource.contains("DropdownMenu"))
+        assertTrue(bottomBarSource.contains("shouldUseCompactPlayerBottomBar("))
     }
 }

@@ -43,4 +43,10 @@ class FollowCompactLayoutPolicyTest {
         assertEquals(8, metrics.horizontalGapDp)
         assertEquals(3, metrics.cardVerticalPaddingDp)
     }
+
+    @Test
+    fun tabletFollowCardsUseTwoBalancedColumns() {
+        assertEquals(1, followCardGridColumns(useSideNavigation = false))
+        assertEquals(2, followCardGridColumns(useSideNavigation = true))
+    }
 }

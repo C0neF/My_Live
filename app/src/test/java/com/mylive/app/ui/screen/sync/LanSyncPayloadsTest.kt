@@ -98,4 +98,15 @@ class LanSyncPayloadsTest {
             )
         }
     }
+
+    @Test
+    fun validateLanSyncResponseReturnsAcceptedJobForAsyncImport() {
+        val acceptedJob = validateLanSyncResponse(
+            statusCode = 202,
+            isSuccessful = true,
+            body = """{"status":true,"jobUrl":"/sync/job/job-1"}"""
+        )
+
+        assertEquals(LanSyncAcceptedJob(jobUrl = "/sync/job/job-1"), acceptedJob)
+    }
 }

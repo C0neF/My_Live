@@ -52,6 +52,7 @@ private val DOUYU_COVER_KEYS = listOf(
 )
 
 internal const val DOUYU_SIGN_ARGS_TTL_MS = 60_000L
+private const val DOUYU_SEARCH_PAGE_SIZE = 20
 
 internal data class DouyuSignArgsCacheEntry(
     val value: String,
@@ -73,6 +74,10 @@ internal fun resolveDouyuRoomFaceUrl(item: JSONObject): String {
 
 internal fun resolveDouyuRoomCoverUrl(item: JSONObject): String {
     return firstJsonImageUrlByKeys(item, DOUYU_COVER_KEYS).orEmpty()
+}
+
+private fun douyuSearchHasMore(itemCount: Int): Boolean {
+    return itemCount >= DOUYU_SEARCH_PAGE_SIZE
 }
 
 private fun firstJsonImageUrlByKeys(item: JSONObject, keys: List<String>): String? {
@@ -423,7 +428,7 @@ class DouyuSite @Inject constructor(
             queryParameters = mapOf(
                 "kw" to keyword,
                 "page" to page.toString(),
-                "pageSize" to "20"
+                "pageSize" to DOUYU_SEARCH_PAGE_SIZE.toString()
             ),
             header = mapOf(
                 "User-Agent" to SEARCH_USER_AGENT,
@@ -454,7 +459,7 @@ class DouyuSite @Inject constructor(
             )
         }
 
-        val hasMore = relateShow.length() > 0
+        val hasMore = douyuSearchHasMore(relateShow.length())
         return LiveSearchRoomResult(hasMore = hasMore, items = items)
     }
 
@@ -467,7 +472,7 @@ class DouyuSite @Inject constructor(
             queryParameters = mapOf(
                 "kw" to keyword,
                 "page" to page.toString(),
-                "pageSize" to "20",
+                "pageSize" to DOUYU_SEARCH_PAGE_SIZE.toString(),
                 "filterType" to "1"
             ),
             header = mapOf(
@@ -499,7 +504,7 @@ class DouyuSite @Inject constructor(
             )
         }
 
-        val hasMore = relateUser.length() > 0
+        val hasMore = douyuSearchHasMore(relateUser.length())
         return LiveSearchAnchorResult(hasMore = hasMore, items = items)
     }
 

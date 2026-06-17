@@ -5,6 +5,8 @@ import com.mylive.app.data.local.entity.ShieldEntity
 import org.json.JSONArray
 import org.json.JSONObject
 
+internal data class LanSyncAcceptedJob(val jobUrl: String)
+
 internal fun encodeShieldKeywordsForLanSync(shields: List<ShieldEntity>): String {
     val arr = JSONArray()
     shields.asSequence()
@@ -75,7 +77,7 @@ internal fun decodeFollowTagsForLanSync(body: String): List<FollowUserTagEntity>
     return tags
 }
 
-internal fun validateLanSyncResponse(statusCode: Int, isSuccessful: Boolean, body: String?) {
+internal fun validateLanSyncResponse(statusCode: Int, isSuccessful: Boolean, body: String?): LanSyncAcceptedJob? {
     if (statusCode == 401) {
         throw Exception("未配对或配对码错误，请扫描对方二维码或填写配对码")
     }
@@ -89,5 +91,17 @@ internal fun validateLanSyncResponse(statusCode: Int, isSuccessful: Boolean, bod
         if (payload.has("status") && !payload.optBoolean("status", true)) {
             throw Exception(payload.optString("message", "sync failed"))
         }
+        if (statusCode == 202) {
+            val jobUrl = payload.optString("jobUrl").trim()
+            if (jobUrl.isEmpty()) {
+                throw Exception("sync accepted without job url")
+            }
+            return LanSyncAcceptedJob(jobUrl = jobUrl)
+        }
     }
+
+    if (statusCode == 202) {
+        throw Exception("sync accepted without job url")
+    }
+    return null
 }

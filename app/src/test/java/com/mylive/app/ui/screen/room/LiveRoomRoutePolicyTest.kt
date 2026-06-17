@@ -197,6 +197,23 @@ class LiveRoomRoutePolicyTest {
     }
 
     @Test
+    fun liveRoomToggleFollowIsBoundToTheRouteThatStartedTheRequest() {
+        val source = File(
+            "src/main/java/com/mylive/app/ui/screen/room/LiveRoomViewModel.kt"
+        ).readText()
+        val toggleBlock = source.substringAfter("fun toggleFollow()")
+            .substringBefore("override fun onCleared()")
+
+        assertTrue(toggleBlock.contains("val route = activeRoute ?: return"))
+        assertTrue(toggleBlock.contains("val routeRoomId = route.second"))
+        assertTrue(toggleBlock.contains("followRepository.getFollow(site.id, routeRoomId)"))
+        assertTrue(toggleBlock.contains("roomId = routeRoomId"))
+        assertTrue(toggleBlock.contains("if (!isActiveRoute(route)) return@launch"))
+        assertFalse(toggleBlock.contains("followRepository.getFollow(site.id, roomId)"))
+        assertFalse(toggleBlock.contains("roomId = roomId"))
+    }
+
+    @Test
     fun liveRoomPublishesDetailWithInitialFollowStateAlreadyResolved() {
         val viewModelSource = File(
             "src/main/java/com/mylive/app/ui/screen/room/LiveRoomViewModel.kt"

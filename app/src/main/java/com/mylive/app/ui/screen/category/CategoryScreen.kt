@@ -68,16 +68,10 @@ fun CategoryScreen(
     val error by viewModel.error.collectAsState()
 
     val selectedTab = selectedSiteIndex.coerceIn(0, siteTabs.lastIndex.coerceAtLeast(0))
-    val activePlatformAccentColor = categoryPlatformAccentColor(
-        siteTabs.getOrNull(selectedTab)?.id.orEmpty()
-    ) ?: MaterialTheme.colorScheme.primary
-    val titleColor by animateColorAsState(
-        targetValue = activePlatformAccentColor,
-        label = "categoryTitleColor"
-    )
     val pagerState = rememberPagerState(initialPage = 0, pageCount = { siteTabs.size })
     val coroutineScope = rememberCoroutineScope()
     var isPullRefreshing by remember { mutableStateOf(false) }
+    val latestSelectedTab by rememberUpdatedState(selectedTab)
 
     LaunchedEffect(refreshSignal) {
         if (refreshSignal > 0) {
@@ -94,7 +88,7 @@ fun CategoryScreen(
     fun selectCategorySite(index: Int) {
         if (siteTabs.isEmpty()) return
         val boundedIndex = index.coerceIn(0, siteTabs.lastIndex)
-        if (selectedTab == boundedIndex) return
+        if (latestSelectedTab == boundedIndex) return
         viewModel.selectSite(boundedIndex)
     }
 
@@ -140,7 +134,7 @@ fun CategoryScreen(
                     fontWeight = FontWeight.ExtraBold,
                     letterSpacing = 0.5.sp
                 ),
-                color = titleColor
+                color = MaterialTheme.colorScheme.onSurface
             )
         }
 

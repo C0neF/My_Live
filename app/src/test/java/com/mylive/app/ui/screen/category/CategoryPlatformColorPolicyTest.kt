@@ -60,11 +60,12 @@ class CategoryPlatformColorPolicyTest {
     }
 
     @Test
-    fun categoryScreenPropagatesPlatformAccentBeyondTopChips() {
+    fun categoryScreenKeepsHeaderTitleNeutralWhilePropagatingPlatformAccent() {
         val source = File("src/main/java/com/mylive/app/ui/screen/category/CategoryScreen.kt").readText()
 
-        assertTrue(source.contains("val activePlatformAccentColor ="))
-        assertTrue(source.contains("color = titleColor"))
+        assertTrue(source.contains("color = MaterialTheme.colorScheme.onSurface"))
+        assertFalse(source.contains("label = \"categoryTitleColor\""))
+        assertFalse(source.contains("color = titleColor"))
         assertTrue(source.contains("platformId = site.id"))
         assertTrue(source.contains("val pageAccentColor ="))
         assertTrue(source.contains("accentColor = pageAccentColor"))
@@ -78,5 +79,16 @@ class CategoryPlatformColorPolicyTest {
         assertTrue(source.contains("val selectedTab = selectedSiteIndex.coerceIn"))
         assertTrue(source.contains("pagerState.scrollToPage(selectedTab)"))
         assertFalse(source.contains("var selectedTab by rememberSaveable { mutableIntStateOf(0) }"))
+    }
+
+    @Test
+    fun categoryPagerSelectionUsesLatestSelectedTabInsideLongLivedCollector() {
+        val source = File("src/main/java/com/mylive/app/ui/screen/category/CategoryScreen.kt").readText()
+        val selectionSource = source.substringAfter("fun selectCategorySite(index: Int)")
+            .substringBefore("LaunchedEffect(selectedTab, siteTabs.size)")
+
+        assertTrue(source.contains("val latestSelectedTab by rememberUpdatedState(selectedTab)"))
+        assertTrue(selectionSource.contains("if (latestSelectedTab == boundedIndex) return"))
+        assertFalse(selectionSource.contains("if (selectedTab == boundedIndex) return"))
     }
 }

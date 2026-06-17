@@ -20,12 +20,7 @@ import com.mylive.app.ui.screen.sync.decodeLanSyncShieldKeywords
 import com.mylive.app.ui.screen.sync.decodeFollowTagsForLanSync
 import dagger.hilt.android.AndroidEntryPoint
 import fi.iki.elonen.NanoHTTPD
-import kotlinx.coroutines.CoroutineExceptionHandler
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.DatagramPacket
@@ -55,13 +50,6 @@ class LanSyncService : Service() {
     private var httpServer: HttpServer? = null
     private var udpSocket: DatagramSocket? = null
     private var udpListenThread: Thread? = null
-
-    // SupervisorJob + a logging handler so one malformed LAN payload can't cancel the whole
-    // scope (which would permanently disable all further sync handling until the service restarts).
-    private val serviceScope = CoroutineScope(
-        SupervisorJob() + Dispatchers.IO +
-            CoroutineExceptionHandler { _, e -> CoreLog.e("LanSyncService: sync task failed", e) }
-    )
 
     companion object {
         const val UDP_PORT = 23235
@@ -161,7 +149,6 @@ class LanSyncService : Service() {
         httpServer?.stop()
         udpSocket?.close()
         udpListenThread?.interrupt()
-        serviceScope.cancel()
         scanClients.clear()
         isRunning = false
     }
@@ -299,7 +286,10 @@ class LanSyncService : Service() {
                     when (uri) {
                         "/sync/follow" -> {
                             val arr = JSONArray(body)
-                            serviceScope.launch {
+                            runBlocking {
+                                if (overlay) {
+                                    followRepository.clearAllFollows()
+                                }
                                 for (i in 0 until arr.length()) {
                                     val item = arr.getJSONObject(i)
                                     val siteId = item.getString("siteId")
@@ -326,7 +316,10 @@ class LanSyncService : Service() {
                         }
                         "/sync/tag" -> {
                             val tags = decodeFollowTagsForLanSync(body)
-                            serviceScope.launch {
+                            runBlocking {
+                                if (overlay) {
+                                    followRepository.clearAllTags()
+                                }
                                 for (tag in tags) {
                                     followRepository.addTag(tag)
                                 }
@@ -335,7 +328,10 @@ class LanSyncService : Service() {
                         }
                         "/sync/history" -> {
                             val arr = JSONArray(body)
-                            serviceScope.launch {
+                            runBlocking {
+                                if (overlay) {
+                                    historyRepository.clearAllHistory()
+                                }
                                 for (i in 0 until arr.length()) {
                                     val item = arr.getJSONObject(i)
                                     val siteId = item.getString("siteId")
@@ -359,7 +355,7 @@ class LanSyncService : Service() {
                         }
                         "/sync/blocked_word" -> {
                             val keywords = decodeLanSyncShieldKeywords(body)
-                            serviceScope.launch {
+                            runBlocking {
                                 if (overlay) {
                                     shieldRepository.clearAllKeywords()
                                 }
@@ -370,7 +366,7 @@ class LanSyncService : Service() {
                             newJsonResponse(true, "success")
                         }
                         "/sync/profile" -> {
-                            serviceScope.launch {
+                            runBlocking {
                                 // Untrusted LAN push: must not be able to redirect our sync/proxy endpoints.
                                 profileBackupManager.importProfileJson(body, trusted = false)
                             }
@@ -379,7 +375,7 @@ class LanSyncService : Service() {
                         "/sync/account/bilibili" -> {
                             val obj = JSONObject(body)
                             val cookie = obj.optString("cookie")
-                            serviceScope.launch {
+                            runBlocking {
                                 settingsRepository.setBilibiliCookie(cookie)
                             }
                             newJsonResponse(true, "success")
@@ -387,7 +383,7 @@ class LanSyncService : Service() {
                         "/sync/account/douyin" -> {
                             val obj = JSONObject(body)
                             val cookie = obj.optString("cookie")
-                            serviceScope.launch {
+                            runBlocking {
                                 settingsRepository.setDouyinCookie(cookie)
                             }
                             newJsonResponse(true, "success")
@@ -414,4 +410,3 @@ class LanSyncService : Service() {
 }
 
 data class SyncClient(val id: String, val name: String, val address: String, val port: Int, val type: String)
-

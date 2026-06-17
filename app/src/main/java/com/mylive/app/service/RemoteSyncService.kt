@@ -382,6 +382,12 @@ class RemoteSyncService @Inject constructor() {
                     val err = resp.optJSONObject("error")
                     val msgStr = err?.optString("message") ?: err?.optString("code") ?: "同步服务返回异常"
                     RemoteSyncResp(false, msgStr, null)
+                } else if (resp.has("status") && !resp.optBoolean("status", true)) {
+                    val msgStr = resp.optString(
+                        "message",
+                        resp.optString("reason", "同步服务返回失败")
+                    )
+                    RemoteSyncResp(false, msgStr, resp)
                 } else {
                     RemoteSyncResp(true, "", resp)
                 }

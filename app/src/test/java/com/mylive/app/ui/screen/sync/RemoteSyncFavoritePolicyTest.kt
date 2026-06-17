@@ -23,4 +23,16 @@ class RemoteSyncFavoritePolicyTest {
         assertTrue(sendBlock.contains("content = json"))
         assertFalse(sendBlock.contains("JSONArray().apply"))
     }
+
+    @Test
+    fun remoteShieldSyncSendsOnlyKeywordPayloads() {
+        val source = File(
+            "src/main/java/com/mylive/app/ui/screen/sync/RemoteSyncRoomViewModel.kt"
+        ).readText()
+        val sendBlock = source.substringAfter("fun syncBlockedWord(")
+            .substringBefore("fun syncBiliAccount(")
+
+        assertTrue(sendBlock.contains("encodeShieldKeywordsForLanSync(shields)"))
+        assertFalse(sendBlock.contains("put(sh.value)"))
+    }
 }

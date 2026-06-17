@@ -319,21 +319,11 @@ class RemoteSyncRoomViewModel @Inject constructor(
             _loadingState.value = "发送中..."
             try {
                 val shields = shieldRepository.getAllShields().first()
-                val arr = JSONArray().apply {
-                    shields.forEach { sh ->
-                        // Extract keyword from raw value e.g. "keyword:danmu" -> "danmu"
-                        val prefix = "keyword:"
-                        if (sh.value.startsWith(prefix)) {
-                            put(sh.value.substring(prefix.length))
-                        } else {
-                            put(sh.value)
-                        }
-                    }
-                }
+                val payload = encodeShieldKeywordsForLanSync(shields)
                 val resp = remoteSyncService.sendContent(
                     action = "SendShieldWord",
                     overlay = overlay,
-                    content = arr.toString()
+                    content = payload
                 )
                 if (resp.isSuccess) {
                     _toastMessage.emit("已发送屏蔽词")

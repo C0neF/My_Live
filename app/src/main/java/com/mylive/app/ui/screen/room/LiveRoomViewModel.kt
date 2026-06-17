@@ -220,8 +220,6 @@ class LiveRoomViewModel @Inject constructor(
         }
 
         val nextRoute = nextSiteId to nextRoomId
-        if (activeRoute == nextRoute) return
-
         activeRoute = nextRoute
         this.roomId = nextRoomId
         this.siteId = nextSiteId

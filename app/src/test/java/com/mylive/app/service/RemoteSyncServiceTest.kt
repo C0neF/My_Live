@@ -7,6 +7,7 @@ import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -110,6 +111,57 @@ class RemoteSyncServiceTest {
 
             assertTrue(resp.message, resp.isSuccess)
             assertEquals("DBG001", service.currentRoomId)
+        } finally {
+            service.disconnect()
+            server.shutdown()
+        }
+    }
+
+    @Test
+    fun sendContentTreatsStatusFalseResponseAsFailure() = runBlocking {
+        val server = MockWebServer()
+        server.enqueue(
+            MockResponse()
+                .withWebSocketUpgrade(object : WebSocketListener() {
+                    override fun onMessage(webSocket: WebSocket, text: String) {
+                        val request = JSONObject(text)
+                        when (request.optString("type")) {
+                            "createRoom" -> {
+                                webSocket.send(
+                                    JSONObject().apply {
+                                        put("type", "roomCreated")
+                                        put("requestId", request.optString("requestId"))
+                                        put("roomId", "FAIL01")
+                                    }.toString()
+                                )
+                            }
+                            "sendFavorite" -> {
+                                webSocket.send(
+                                    JSONObject().apply {
+                                        put("type", "sendFavoriteResp")
+                                        put("requestId", request.optString("requestId"))
+                                        put("status", false)
+                                        put("message", "remote rejected")
+                                    }.toString()
+                                )
+                                webSocket.close(1000, "test complete")
+                            }
+                        }
+                    }
+                })
+        )
+        server.start()
+
+        val service = RemoteSyncService()
+        try {
+            val baseUrl = server.url("/").toString().trimEnd('/').replace("http://", "ws://")
+            val createResp = service.createRoom(baseUrl, RemoteSyncService.K_DIRECT_PROXY_VALUE, JSONObject())
+            assertTrue(createResp.message, createResp.isSuccess)
+
+            val resp = service.sendContent("SendFavorite", overlay = false, content = "{}")
+
+            assertFalse(resp.isSuccess)
+            assertEquals("remote rejected", resp.message)
         } finally {
             service.disconnect()
             server.shutdown()

@@ -52,6 +52,20 @@ class LiveRoomRoutePolicyTest {
     }
 
     @Test
+    fun liveRoomReenteringSameRouteReloadsPlaybackState() {
+        val source = File(
+            "src/main/java/com/mylive/app/ui/screen/room/LiveRoomViewModel.kt"
+        ).readText()
+        val routeOpenBlock = source.substringAfter("val nextRoute = nextSiteId to nextRoomId")
+            .substringBefore("loadRoomJob = viewModelScope.launch")
+
+        assertFalse(
+            "leaving and re-entering the same room must fetch fresh detail/playback sources instead of preserving a failed state",
+            routeOpenBlock.contains("if (activeRoute == nextRoute) return")
+        )
+    }
+
+    @Test
     fun liveRoomViewModelIgnoresStaleRouteCallbacks() {
         val source = File(
             "src/main/java/com/mylive/app/ui/screen/room/LiveRoomViewModel.kt"

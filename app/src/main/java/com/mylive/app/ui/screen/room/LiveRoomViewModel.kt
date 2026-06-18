@@ -220,8 +220,6 @@ class LiveRoomViewModel @Inject constructor(
         }
 
         val nextRoute = nextSiteId to nextRoomId
-        if (activeRoute == nextRoute) return
-
         activeRoute = nextRoute
         this.roomId = nextRoomId
         this.siteId = nextSiteId
@@ -522,13 +520,22 @@ class LiveRoomViewModel @Inject constructor(
         }
     }
 
-    private suspend fun playWithQuality(detail: LiveRoomDetail, quality: LivePlayQuality, route: Pair<String, String>) {
+    private suspend fun playWithQuality(
+        detail: LiveRoomDetail,
+        quality: LivePlayQuality,
+        route: Pair<String, String>,
+        resetSourceRefreshAttempt: Boolean = true
+    ) {
         if (!isActiveRoute(route)) return
         val site = currentSite ?: return
         try {
             val playUrl = site.getPlayUrls(detail, quality)
             if (!isActiveRoute(route)) return
-            playerController?.play(playUrl.urls, playUrl.headers)
+            playerController?.play(
+                urls = playUrl.urls,
+                headers = playUrl.headers,
+                resetSourceRefreshAttempt = resetSourceRefreshAttempt
+            )
         } catch (e: Throwable) {
             if (e is CancellationException) throw e
             if (!isActiveRoute(route)) return
@@ -557,6 +564,26 @@ class LiveRoomViewModel @Inject constructor(
             viewModelScope.launch {
                 playWithQuality(detail, quality, route)
             }
+        }
+    }
+
+    fun recoverPlaybackAfterSourceFailure() {
+        val detail = _uiState.value.detail
+        val qualities = _uiState.value.playQualities
+        val route = activeRoute
+        if (detail == null || route == null || qualities.isEmpty()) {
+            playerController?.showError("播放失败，请刷新重试")
+            return
+        }
+
+        val quality = qualities.getOrNull(_uiState.value.currentQualityIndex) ?: qualities[0]
+        viewModelScope.launch {
+            playWithQuality(
+                detail = detail,
+                quality = quality,
+                route = route,
+                resetSourceRefreshAttempt = false
+            )
         }
     }
 
@@ -658,21 +685,26 @@ class LiveRoomViewModel @Inject constructor(
     }
 
     fun toggleFollow() {
+        val route = activeRoute ?: return
         val detail = _uiState.value.detail ?: return
         val site = currentSite ?: return
+        val routeRoomId = route.second
+        val wasFollowing = _uiState.value.isFollowing
         viewModelScope.launch {
             try {
-                val wasFollowing = _uiState.value.isFollowing
+                if (!isActiveRoute(route)) return@launch
                 if (wasFollowing) {
-                    val follow = followRepository.getFollow(site.id, roomId)
+                    val follow = followRepository.getFollow(site.id, routeRoomId)
+                    if (!isActiveRoute(route)) return@launch
                     if (follow != null) {
                         followRepository.removeFollow(follow.id)
                     }
                 } else {
+                    if (!isActiveRoute(route)) return@launch
                     followRepository.addFollow(
                         FollowUserEntity(
-                            id = "${site.id}_$roomId",
-                            roomId = roomId,
+                            id = "${site.id}_$routeRoomId",
+                            roomId = routeRoomId,
                             siteId = site.id,
                             userName = detail.userName,
                             face = detail.userAvatar,
@@ -685,6 +717,7 @@ class LiveRoomViewModel @Inject constructor(
                         )
                     )
                 }
+                if (!isActiveRoute(route)) return@launch
                 _uiState.value = _uiState.value.copy(
                     isFollowing = !wasFollowing,
                     isFollowStatusKnown = true

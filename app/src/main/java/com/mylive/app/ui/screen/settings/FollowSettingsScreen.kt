@@ -21,6 +21,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mylive.app.ui.navigation.Navigator
 import com.mylive.app.ui.navigation.Route
 import com.mylive.app.R
+import com.mylive.app.service.followUpdateDurationOptions
+import com.mylive.app.service.resolveFollowUpdateConcurrency
 import com.mylive.app.ui.component.settings.SettingsMenu
 import com.mylive.app.ui.component.settings.SettingsSwitch
 
@@ -109,7 +111,7 @@ fun FollowSettingsScreen(
     }
 
     if (showDurationDialog) {
-        val durationOptions = listOf(5, 10, 15, 30, 60, 120, 180, 240, 360)
+        val durationOptions = followUpdateDurationOptions()
         val durationLabels = durationOptions.map { min ->
             val h = min / 60
             val m = min % 60
@@ -131,7 +133,7 @@ fun FollowSettingsScreen(
 
     if (showConcurrencyDialog) {
         val cpuCount = Runtime.getRuntime().availableProcessors()
-        val autoValue = (cpuCount * 2.5).roundToInt().coerceIn(4, 20)
+        val autoValue = resolveFollowUpdateConcurrency(setting = 0, cpuCount = cpuCount)
         var customInput by remember { mutableStateOf("") }
 
         AlertDialog(
@@ -223,8 +225,6 @@ fun FollowSettingsScreen(
         )
     }
 }
-
-private fun Double.roundToInt(): Int = kotlin.math.round(this).toInt()
 
 @Composable
 private fun <T> SelectionDialog(

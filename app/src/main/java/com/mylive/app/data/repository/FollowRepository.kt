@@ -99,44 +99,48 @@ class FollowRepository @Inject constructor(
      * @param overlay if true, clears existing data before importing.
      */
     suspend fun importFromJson(json: String, overlay: Boolean = false) {
+        val payload = parseImportPayload(json)
+
         if (overlay) {
             clearAllFollows()
             clearAllTags()
         }
 
+        payload.follows.forEach { addFollow(it) }
+        payload.tags.forEach { addTag(it) }
+    }
+
+    private fun parseImportPayload(json: String): FollowImportPayload {
         val trimmed = json.trim()
-        if (trimmed.startsWith("[")) {
-            // Legacy format: plain array of follow objects
-            importFollowsFromLegacyArray(JSONArray(trimmed))
+        return if (trimmed.startsWith("[")) {
+            FollowImportPayload(
+                follows = parseFollowsFromLegacyArray(JSONArray(trimmed)),
+                tags = emptyList()
+            )
         } else {
-            // New format
             val obj = JSONObject(trimmed)
-            if (obj.has("follows")) {
-                importFollowsFromLegacyArray(obj.getJSONArray("follows"))
+            val hasFollows = obj.has("follows")
+            val hasTags = obj.has("tags")
+            if (!hasFollows && !hasTags) {
+                throw IllegalArgumentException("invalid_follow_json")
             }
-            if (obj.has("tags")) {
-                val tagsArray = obj.getJSONArray("tags")
-                for (i in 0 until tagsArray.length()) {
-                    val tObj = tagsArray.getJSONObject(i)
-                    val userIds = mutableListOf<String>()
-                    val userIdsArray = tObj.optJSONArray("userIds")
-                    if (userIdsArray != null) {
-                        for (j in 0 until userIdsArray.length()) {
-                            userIds.add(userIdsArray.getString(j))
-                        }
-                    }
-                    val tag = FollowUserTagEntity(
-                        id = tObj.optString("id", UUID.randomUUID().toString()),
-                        tag = tObj.getString("tag"),
-                        userIds = userIds
-                    )
-                    addTag(tag)
+            FollowImportPayload(
+                follows = if (hasFollows) {
+                    parseFollowsFromLegacyArray(obj.getJSONArray("follows"))
+                } else {
+                    emptyList()
+                },
+                tags = if (hasTags) {
+                    parseTagsArray(obj.getJSONArray("tags"))
+                } else {
+                    emptyList()
                 }
-            }
+            )
         }
     }
 
-    private suspend fun importFollowsFromLegacyArray(array: JSONArray) {
+    private fun parseFollowsFromLegacyArray(array: JSONArray): List<FollowUserEntity> {
+        val follows = mutableListOf<FollowUserEntity>()
         for (i in 0 until array.length()) {
             val obj = array.getJSONObject(i)
             val follow = FollowUserEntity(
@@ -149,7 +153,35 @@ class FollowRepository @Inject constructor(
                 tag = obj.optString("tag", ""),
                 isSpecialFollow = obj.optBoolean("isSpecialFollow", false)
             )
-            addFollow(follow)
+            follows.add(follow)
         }
+        return follows
+    }
+
+    private fun parseTagsArray(array: JSONArray): List<FollowUserTagEntity> {
+        val tags = mutableListOf<FollowUserTagEntity>()
+        for (i in 0 until array.length()) {
+            val tObj = array.getJSONObject(i)
+            val userIds = mutableListOf<String>()
+            val userIdsArray = tObj.optJSONArray("userIds")
+            if (userIdsArray != null) {
+                for (j in 0 until userIdsArray.length()) {
+                    userIds.add(userIdsArray.getString(j))
+                }
+            }
+            tags.add(
+                FollowUserTagEntity(
+                    id = tObj.optString("id", UUID.randomUUID().toString()),
+                    tag = tObj.getString("tag"),
+                    userIds = userIds
+                )
+            )
+        }
+        return tags
     }
 }
+
+private data class FollowImportPayload(
+    val follows: List<FollowUserEntity>,
+    val tags: List<FollowUserTagEntity>
+)

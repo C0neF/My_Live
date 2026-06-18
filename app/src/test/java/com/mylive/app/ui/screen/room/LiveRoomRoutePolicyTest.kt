@@ -36,6 +36,36 @@ class LiveRoomRoutePolicyTest {
     }
 
     @Test
+    fun liveRoomRecoversPlaybackByRequestingFreshSourceFromViewModel() {
+        val screenSource = File(
+            "src/main/java/com/mylive/app/ui/screen/room/LiveRoomScreen.kt"
+        ).readText()
+        val viewModelSource = File(
+            "src/main/java/com/mylive/app/ui/screen/room/LiveRoomViewModel.kt"
+        ).readText()
+
+        assertTrue(screenSource.contains("onPlaybackSourceExhausted = {"))
+        assertTrue(screenSource.contains("viewModel.recoverPlaybackAfterSourceFailure()"))
+        assertTrue(screenSource.contains("viewModel.playerController = null"))
+        assertTrue(viewModelSource.contains("fun recoverPlaybackAfterSourceFailure()"))
+        assertTrue(viewModelSource.contains("resetSourceRefreshAttempt = false"))
+    }
+
+    @Test
+    fun liveRoomReenteringSameRouteReloadsPlaybackState() {
+        val source = File(
+            "src/main/java/com/mylive/app/ui/screen/room/LiveRoomViewModel.kt"
+        ).readText()
+        val routeOpenBlock = source.substringAfter("val nextRoute = nextSiteId to nextRoomId")
+            .substringBefore("loadRoomJob = viewModelScope.launch")
+
+        assertFalse(
+            "leaving and re-entering the same room must fetch fresh detail/playback sources instead of preserving a failed state",
+            routeOpenBlock.contains("if (activeRoute == nextRoute) return")
+        )
+    }
+
+    @Test
     fun liveRoomViewModelIgnoresStaleRouteCallbacks() {
         val source = File(
             "src/main/java/com/mylive/app/ui/screen/room/LiveRoomViewModel.kt"
@@ -51,7 +81,8 @@ class LiveRoomRoutePolicyTest {
         )
         assertTrue(
             "play URL loading must ignore callbacks from a previous route",
-            source.contains("private suspend fun playWithQuality(detail: LiveRoomDetail, quality: LivePlayQuality, route:")
+            source.contains("private suspend fun playWithQuality(") &&
+                source.contains("route: Pair<String, String>")
         )
         assertTrue(
             "danmaku startup must ignore callbacks from a previous route",
@@ -163,6 +194,23 @@ class LiveRoomRoutePolicyTest {
             "follow-state subscription should publish a one-shot local value before collecting changes",
             viewModelSource.contains("val initialFollowing = followRepository.isFollowing(siteId, roomId)")
         )
+    }
+
+    @Test
+    fun liveRoomToggleFollowIsBoundToTheRouteThatStartedTheRequest() {
+        val source = File(
+            "src/main/java/com/mylive/app/ui/screen/room/LiveRoomViewModel.kt"
+        ).readText()
+        val toggleBlock = source.substringAfter("fun toggleFollow()")
+            .substringBefore("override fun onCleared()")
+
+        assertTrue(toggleBlock.contains("val route = activeRoute ?: return"))
+        assertTrue(toggleBlock.contains("val routeRoomId = route.second"))
+        assertTrue(toggleBlock.contains("followRepository.getFollow(site.id, routeRoomId)"))
+        assertTrue(toggleBlock.contains("roomId = routeRoomId"))
+        assertTrue(toggleBlock.contains("if (!isActiveRoute(route)) return@launch"))
+        assertFalse(toggleBlock.contains("followRepository.getFollow(site.id, roomId)"))
+        assertFalse(toggleBlock.contains("roomId = roomId"))
     }
 
     @Test

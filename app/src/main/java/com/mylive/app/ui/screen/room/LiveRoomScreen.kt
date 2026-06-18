@@ -22,8 +22,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import com.mylive.app.ui.theme.Icons
@@ -80,7 +78,6 @@ import com.mylive.app.ui.screen.room.player.PlayerView
 import com.mylive.app.ui.screen.room.player.DanmakuController
 import com.mylive.app.ui.screen.room.player.PlayerState
 import com.mylive.app.ui.screen.settings.SettingsViewModel
-import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.activity.compose.BackHandler
@@ -149,7 +146,47 @@ internal fun defaultExpandedRoomSettingsSections(): Set<RoomSettingsSectionKey> 
     return setOf(RoomSettingsSectionKey.PLAYER_DANMAKU)
 }
 
+internal fun liveRoomInitialSidePanelOffsetPx(panelWidthPx: Float): Float {
+    return panelWidthPx
+}
+
+internal fun liveRoomSidePanelOffsetAfterDrag(
+    currentOffsetPx: Float,
+    deltaX: Float,
+    panelWidthPx: Float
+): Float {
+    return (currentOffsetPx + deltaX).coerceIn(0f, panelWidthPx)
+}
+
+internal fun liveRoomTabIndex(roomTabs: List<LiveRoomTabType>, target: LiveRoomTabType): Int {
+    return roomTabs.indexOf(target).coerceAtLeast(0)
+}
+
+internal fun resolveLandscapeLiveRoomTabs(): List<LiveRoomTabType> {
+    return listOf(LiveRoomTabType.CHAT)
+}
+
 private fun currentEpochMillis(): Long = System.currentTimeMillis()
+
+private fun applyLiveRoomFullscreen(activity: Activity, fullscreen: Boolean) {
+    if (fullscreen) {
+        activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        WindowCompat.setDecorFitsSystemWindows(activity.window, false)
+        val controller = WindowCompat.getInsetsController(activity.window, activity.window.decorView)
+        controller.hide(WindowInsetsCompat.Type.systemBars())
+        controller.systemBarsBehavior =
+            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+    } else {
+        restoreLiveRoomSystemUi(activity)
+    }
+}
+
+private fun restoreLiveRoomSystemUi(activity: Activity) {
+    activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+    WindowCompat.setDecorFitsSystemWindows(activity.window, true)
+    WindowCompat.getInsetsController(activity.window, activity.window.decorView)
+        .show(WindowInsetsCompat.Type.systemBars())
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -172,7 +209,8 @@ fun LiveRoomScreen(
         routeInitialIsFollowing = key.initialIsFollowing
     )
     val danmakuMessages by viewModel.danmakuMessages.collectAsState()
-    val isLandscape = LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
     val context = LocalContext.current
     val activity = context as? Activity
 
@@ -264,7 +302,14 @@ fun LiveRoomScreen(
         kotlinx.coroutines.delay(AppMotion.LiveRoomPlayerStartupDelayMillis.toLong())
         val hardwareDecodeEnabled = viewModel.settingsRepository.hardwareDecode.first()
         val forceHttps = viewModel.settingsRepository.playerForceHttps.first()
-        val pc = PlayerController(context, hardwareDecodeEnabled, forceHttps)
+        val pc = PlayerController(
+            context = context,
+            hardwareDecodeEnabled = hardwareDecodeEnabled,
+            forceHttps = forceHttps,
+            onPlaybackSourceExhausted = {
+                viewModel.recoverPlaybackAfterSourceFailure()
+            }
+        )
         playerController = pc
         viewModel.playerController = pc
         viewModel.onPlayerControllerReady()
@@ -274,6 +319,9 @@ fun LiveRoomScreen(
         val pc = playerController
         onDispose {
             pc?.release()
+            if (viewModel.playerController === pc) {
+                viewModel.playerController = null
+            }
         }
     }
 
@@ -343,18 +391,15 @@ fun LiveRoomScreen(
     // Handle fullscreen: change orientation + hide/show system bars
     LaunchedEffect(isFullscreen) {
         val act = activity ?: return@LaunchedEffect
-        if (isFullscreen) {
-            act.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-            WindowCompat.setDecorFitsSystemWindows(act.window, false)
-            val controller = WindowCompat.getInsetsController(act.window, act.window.decorView)
-            controller.hide(WindowInsetsCompat.Type.systemBars())
-            controller.systemBarsBehavior =
-                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        } else {
-            act.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-            WindowCompat.setDecorFitsSystemWindows(act.window, true)
-            WindowCompat.getInsetsController(act.window, act.window.decorView)
-                .show(WindowInsetsCompat.Type.systemBars())
+        applyLiveRoomFullscreen(act, isFullscreen)
+    }
+
+    DisposableEffect(activity) {
+        val act = activity
+        onDispose {
+            if (act != null) {
+                restoreLiveRoomSystemUi(act)
+            }
         }
     }
 
@@ -497,6 +542,8 @@ fun LiveRoomScreen(
                 chatBubbleStyle = chatBubbleStyle,
                 onChatBubbleStyleChange = { settingsViewModel.setChatBubbleStyle(it) },
                 onDanmakuControllerCreated = { pipDanmakuController = it },
+                isFullscreenOverride = isFullscreen,
+                onFullscreenClick = { playerController?.toggleFullscreen() },
                 isExiting = isExiting
             )
         } else if (isLandscape || isFullscreen) {
@@ -715,6 +762,8 @@ private fun PortraitLayout(
                 chatBubbleStyle = chatBubbleStyle,
                 onChatBubbleStyleChange = { settingsViewModel.setChatBubbleStyle(it) },
                 onDanmakuControllerCreated = { danmakuController = it },
+                isFullscreenOverride = false,
+                onFullscreenClick = { playerController?.toggleFullscreen() },
                 isExiting = isExiting
             )
         }
@@ -836,19 +885,8 @@ private fun LandscapeLayout(
     val chatTextSize by settingsViewModel.chatTextSize.collectAsState()
     val chatTextGap by settingsViewModel.chatTextGap.collectAsState()
     val chatBubbleStyle by settingsViewModel.chatBubbleStyle.collectAsState()
-    val superChatSortDesc by settingsViewModel.superChatSortDesc.collectAsState()
 
-    val liveRoomTabSort by settingsViewModel.liveRoomTabSort.collectAsState()
-    val superChats by viewModel.superChats.collectAsState()
-    val activeSuperChatCount = remember(superChats) {
-        countActiveSuperChats(superChats, System.currentTimeMillis())
-    }
-    val roomTabs = remember(viewModel.siteId, liveRoomTabSort) {
-        val list = mutableListOf<LiveRoomTabType>()
-        list.add(LiveRoomTabType.CHAT)
-        list.add(LiveRoomTabType.FOLLOW)
-        list
-    }
+    val roomTabs = remember { resolveLandscapeLiveRoomTabs() }
     val resolvedDanmuDelay = remember(danmuDelay, danmuDelayBySiteJson, viewModel.siteId) {
         resolveDanmuDelayMs(
             globalDelayMs = danmuDelay.toInt(),
@@ -860,22 +898,50 @@ private fun LandscapeLayout(
         siteId = accentSiteId,
         defaultAccentColor = MaterialTheme.colorScheme.primary
     )
-    val landscapePagerState = rememberPagerState(initialPage = 0, pageCount = { roomTabs.size })
-    val selectedLandscapeTab = landscapePagerState.currentPage.coerceIn(0, roomTabs.lastIndex.coerceAtLeast(0))
+    var showQuickAccess by remember { mutableStateOf(false) }
+    var quickAccessInitialTabKey by remember { mutableStateOf<String?>(null) }
+
+    if (showQuickAccess) {
+        MaterialTheme(
+            colorScheme = MaterialTheme.colorScheme.copy(primary = roomPlatformAccentColor)
+        ) {
+            com.mylive.app.ui.screen.room.quickaccess.QuickAccessPanel(
+                currentSiteId = viewModel.siteId,
+                currentRoomId = viewModel.roomId,
+                currentCategoryId = uiState.detail?.categoryId,
+                extraTabs = landscapeQuickAccessExtraTabs(
+                    settingsViewModel = settingsViewModel,
+                    viewModel = viewModel,
+                    navigator = navigator
+                ),
+                initialSelectedKey = quickAccessInitialTabKey,
+                onNavigateToRoom = { siteId, roomId, initialIsFollowing ->
+                    showQuickAccess = false
+                    navigator.navigate(
+                        Route.LiveRoomDetail(
+                            roomId = roomId,
+                            siteId = siteId,
+                            initialIsFollowing = initialIsFollowing
+                        ),
+                        singleTop = true,
+                        popUpToRoute = Route.Index::class.java,
+                        inclusive = false
+                    )
+                },
+                onDismiss = { showQuickAccess = false }
+            )
+        }
+    }
 
     val density = LocalDensity.current
     val panelWidthPx = remember { with(density) { 320.dp.toPx() } }
-    val panelOffset = remember { Animatable(panelWidthPx) }
+    val panelOffset = remember(panelWidthPx) {
+        Animatable(liveRoomInitialSidePanelOffsetPx(panelWidthPx))
+    }
     val coroutineScope = rememberCoroutineScope()
     val showSidePanel = panelOffset.value < panelWidthPx
     val panelWidth = remember(panelOffset.value) {
         with(density) { (panelWidthPx - panelOffset.value).toDp() }
-    }
-
-    LaunchedEffect(roomTabs.size) {
-        if (landscapePagerState.currentPage > roomTabs.lastIndex) {
-            landscapePagerState.scrollToPage(roomTabs.lastIndex.coerceAtLeast(0))
-        }
     }
 
     BackHandler(enabled = showSidePanel) {
@@ -947,9 +1013,22 @@ private fun LandscapeLayout(
                 chatBubbleStyle = chatBubbleStyle,
                 onChatBubbleStyleChange = { settingsViewModel.setChatBubbleStyle(it) },
                 onDanmakuControllerCreated = { danmakuController = it },
+                onQuickAccessClick = {
+                    quickAccessInitialTabKey = "follow"
+                    showQuickAccess = true
+                },
+                onFollowClick = { viewModel.toggleFollow() },
+                isFollowing = uiState.isFollowing,
+                followEnabled = uiState.detail != null && uiState.isFollowStatusKnown,
+                isFullscreenOverride = true,
+                onFullscreenClick = { playerController?.toggleFullscreen() },
                 onHorizontalDragDelta = { deltaX ->
                     coroutineScope.launch {
-                        val newOffset = (panelOffset.value + deltaX).coerceIn(0f, panelWidthPx)
+                        val newOffset = liveRoomSidePanelOffsetAfterDrag(
+                            currentOffsetPx = panelOffset.value,
+                            deltaX = deltaX,
+                            panelWidthPx = panelWidthPx
+                        )
                         panelOffset.snapTo(newOffset)
                     }
                 },
@@ -997,73 +1076,112 @@ private fun LandscapeLayout(
                         .requiredWidth(320.dp)
                         .fillMaxHeight()
                 ) {
-            // Tab selection for Side Panel
-            TabRow(
-                selectedTabIndex = selectedLandscapeTab,
-                containerColor = MaterialTheme.colorScheme.surface,
-                contentColor = roomPlatformAccentColor,
-                indicator = { tabPositions ->
-                    if (selectedLandscapeTab < tabPositions.size) {
-                        TabRowDefaults.SecondaryIndicator(
-                            modifier = Modifier.tabIndicatorOffset(tabPositions[selectedLandscapeTab]),
-                            color = roomPlatformAccentColor
+                    LandscapeRoomSidePanelHeader(
+                        detail = uiState.detail
+                    )
+
+                    if (roomTabs.contains(LiveRoomTabType.CHAT)) {
+                        ChatPanel(
+                            messages = danmakuMessages,
+                            hostName = uiState.detail?.userName ?: "",
+                            chatTextSize = chatTextSize,
+                            chatTextGap = chatTextGap,
+                            chatBubbleStyle = chatBubbleStyle,
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth()
                         )
                     }
                 }
-            ) {
-                roomTabs.forEachIndexed { index, tabType ->
-                    val title = when (tabType) {
-                        LiveRoomTabType.CHAT -> "聊天"
-                        LiveRoomTabType.SUPER_CHAT -> {
-                            val label = if (viewModel.siteId == "huya") "头条" else "SC"
-                            if (activeSuperChatCount > 0) "$label($activeSuperChatCount)" else label
-                        }
-                        LiveRoomTabType.FOLLOW -> "关注"
-                        LiveRoomTabType.SETTINGS -> "设置"
-                    }
-                    Tab(
-                        selected = selectedLandscapeTab == index,
-                        onClick = {
-                            coroutineScope.launch {
-                                val diff = index - landscapePagerState.currentPage
-                                landscapePagerState.animateScrollToPage(
-                                    page = index,
-                                    animationSpec = AppMotion.pagerSpec(diff)
-                                )
-                            }
-                        },
-                        text = { Text(title, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold)) }
-                    )
-                }
             }
-
-            HorizontalPager(
-                state = landscapePagerState,
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-            ) { page ->
-                LiveRoomTabPage(
-                    tabType = roomTabs.getOrNull(page),
-                    uiState = uiState,
-                    danmakuMessages = danmakuMessages,
-                    viewModel = viewModel,
-                    navigator = navigator,
-                    settingsViewModel = settingsViewModel,
-                    chatTextSize = chatTextSize,
-                    chatTextGap = chatTextGap,
-                    chatBubbleStyle = chatBubbleStyle,
-                    superChatSortDesc = superChatSortDesc,
-                    modifier = Modifier.fillMaxSize()
-                )
-            }
-        }
-    }
         } // end if (showSidePanel)
     }
 }
 
+private fun landscapeQuickAccessExtraTabs(
+    settingsViewModel: SettingsViewModel,
+    viewModel: LiveRoomViewModel,
+    navigator: Navigator
+): List<QuickAccessExtraTab> {
+    return listOf(
+        QuickAccessExtraTab(
+            key = "room_settings",
+            label = "设置",
+            icon = Icons.Default.Settings,
+            content = {
+                RoomSettingsPanel(
+                    viewModel = settingsViewModel,
+                    isHuyaOrBilibili = viewModel.siteId == "huya" || viewModel.siteId == "bilibili",
+                    siteId = viewModel.siteId,
+                    onOpenShieldSettings = { navigator.navigate(Route.SettingsDanmuShield) },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        )
+    )
+}
+
 // ── Room Info Bar ───────────────────────────────────────────────
+
+@Composable
+private fun LandscapeRoomSidePanelHeader(
+    detail: com.mylive.app.core.model.LiveRoomDetail?
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surface)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        if (detail == null) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f))
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Box(
+                    modifier = Modifier
+                        .width(112.dp)
+                        .height(16.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f))
+                )
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                AsyncImage(
+                    model = detail.userAvatar,
+                    contentDescription = detail.userName,
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clip(CircleShape),
+                    contentScale = ContentScale.Crop
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = detail.userName,
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+    }
+
+    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+}
 
 @Composable
 private fun CompactPortraitRoomHeader(

@@ -30,6 +30,7 @@ import org.json.JSONObject
 import java.net.URI
 import java.net.URLEncoder
 import java.security.SecureRandom
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Provider
@@ -84,13 +85,26 @@ class DouyinSite @Inject constructor(
     private val secureRandom = SecureRandom()
 
     /**
-     * Stores the stream_url data from the last [getRoomDetail] call.
-     * Used by [getPlayQualites] since Kotlin's [LiveRoomDetail] does not
-     * carry a generic `data` field.
+     * Stream data (`stream_url` JSON) captured per room during [getRoomDetail],
+     * keyed by the returned [LiveRoomDetail.roomId] (web_rid).
+     *
+     * Keyed per room — NOT a single shared field — so that concurrent
+     * room-detail loads for different rooms (e.g. the follow-refresh worker,
+     * which fans out several [getRoomDetail] calls) cannot overwrite each
+     * other and make [getPlayQualites] hand back another room's stream URL.
+     * Mirrors the Dart reference, which carries the data on each returned
+     * `LiveRoomDetail` instead of on the singleton site.
      */
-    @Volatile
-    var lastStreamData: JSONObject? = null
-        private set
+    private val streamDataByRoom = ConcurrentHashMap<String, JSONObject>()
+
+    /**
+     * Short-TTL cache of the per-room web cookie (ttwid/__ac_nonce/msToken),
+     * keyed by `"webRid|baseCookieHash"`. Mirrors the Dart reference: avoids a
+     * fresh HEAD request to live.douyin.com on every room-detail resolution,
+     * which raises the chance of HTTP 444 throttling during room entry.
+     */
+    private val webCookieCache = ConcurrentHashMap<String, String>()
+    private val webCookieCacheAt = ConcurrentHashMap<String, Long>()
 
     /**
      * Stores the danmaku args from the last [getRoomDetail] call.
@@ -116,6 +130,9 @@ class DouyinSite @Inject constructor(
 
         /** Minimum interval between room detail requests (milliseconds). */
         private const val ROOM_DETAIL_THROTTLE_MS = 1200L
+
+        /** TTL for the per-room web cookie cache (milliseconds). Mirrors Dart's 5 minutes. */
+        private const val WEB_COOKIE_CACHE_TTL_MS = 5 * 60 * 1000L
 
         /** Timestamp of the last room detail request (companion-level, shared across instances). */
         private val lastRoomDetailRequestAt = AtomicLong(0L)
@@ -168,6 +185,20 @@ class DouyinSite @Inject constructor(
     private suspend fun getWebCookie(webRid: String): String {
         val requestHeaders = getRequestHeaders().toMutableMap()
         val baseCookie = requestHeaders["cookie"] ?: ""
+
+        // Short-TTL cache keyed by room + base cookie, mirroring the Dart reference,
+        // so repeated room-detail resolutions don't re-issue a HEAD to live.douyin.com
+        // (which increases the chance of HTTP 444 throttling).
+        val cacheKey = "$webRid|${baseCookie.hashCode()}"
+        val cachedAt = webCookieCacheAt[cacheKey]
+        val cachedValue = webCookieCache[cacheKey]
+        if (cachedAt != null && cachedValue != null &&
+            System.currentTimeMillis() - cachedAt < WEB_COOKIE_CACHE_TTL_MS
+        ) {
+            logDebug("获取直播间 Web Cookie：使用缓存 ($webRid)")
+            return cachedValue
+        }
+
         requestHeaders["Referer"] = "https://live.douyin.com/$webRid"
 
         val headResp = try {
@@ -178,6 +209,8 @@ class DouyinSite @Inject constructor(
         } catch (e: Exception) {
             if (baseCookie.isNotEmpty()) {
                 logDebug("获取直播间 Web Cookie 的 HEAD 请求失败，使用已保存 Cookie 继续：$e")
+                webCookieCache[cacheKey] = baseCookie
+                webCookieCacheAt[cacheKey] = System.currentTimeMillis()
                 return baseCookie
             }
             throw e
@@ -202,7 +235,10 @@ class DouyinSite @Inject constructor(
                     dyCookie.append(cookiePart).append(";")
                 }
             }
-            return dyCookie.toString()
+            val result = dyCookie.toString()
+            webCookieCache[cacheKey] = result
+            webCookieCacheAt[cacheKey] = System.currentTimeMillis()
+            return result
         } finally {
             headResp.close()
         }
@@ -525,7 +561,7 @@ class DouyinSite @Inject constructor(
             cookie = danmakuCookie
         )
         lastDanmakuArgs = danmakuArgs
-        lastStreamData = if (roomStatus) room.optJSONObject("stream_url") else null
+        streamDataByRoom[webRid] = (if (roomStatus) room.optJSONObject("stream_url") else null) ?: JSONObject()
 
         return LiveRoomDetail(
             roomId = webRid,
@@ -617,7 +653,7 @@ class DouyinSite @Inject constructor(
             cookie = danmakuCookie
         )
         lastDanmakuArgs = danmakuArgs
-        lastStreamData = if (roomStatus) roomData.optJSONObject("stream_url") else JSONObject()
+        streamDataByRoom[webRid] = (if (roomStatus) roomData.optJSONObject("stream_url") else null) ?: JSONObject()
 
         return LiveRoomDetail(
             roomId = webRid,
@@ -724,7 +760,7 @@ class DouyinSite @Inject constructor(
             cookie = danmakuCookie
         )
         lastDanmakuArgs = danmakuArgs
-        lastStreamData = if (roomStatus) room.optJSONObject("stream_url") else JSONObject()
+        streamDataByRoom[webRid] = (if (roomStatus) room.optJSONObject("stream_url") else null) ?: JSONObject()
 
         return LiveRoomDetail(
             roomId = webRid,
@@ -817,7 +853,7 @@ class DouyinSite @Inject constructor(
     override suspend fun getPlayQualites(detail: LiveRoomDetail): List<LivePlayQuality> {
         val qualities = mutableListOf<LivePlayQuality>()
         try {
-            val streamUrl = lastStreamData ?: return qualities
+            val streamUrl = streamDataByRoom[detail.roomId] ?: return qualities
             val liveCoreData = streamUrl.optJSONObject("live_core_sdk_data") ?: return qualities
             val pullData = liveCoreData.optJSONObject("pull_data") ?: return qualities
             val options = pullData.optJSONObject("options")

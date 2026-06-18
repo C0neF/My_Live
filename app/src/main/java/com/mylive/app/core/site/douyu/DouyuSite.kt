@@ -51,12 +51,33 @@ private val DOUYU_COVER_KEYS = listOf(
     "cover"
 )
 
+internal const val DOUYU_SIGN_ARGS_TTL_MS = 60_000L
+private const val DOUYU_SEARCH_PAGE_SIZE = 20
+
+internal data class DouyuSignArgsCacheEntry(
+    val value: String,
+    val createdAtMillis: Long
+)
+
+internal fun shouldRefreshDouyuSignArgs(
+    cached: DouyuSignArgsCacheEntry?,
+    nowMillis: Long
+): Boolean {
+    if (cached == null) return true
+    if (nowMillis < cached.createdAtMillis) return true
+    return nowMillis - cached.createdAtMillis >= DOUYU_SIGN_ARGS_TTL_MS
+}
+
 internal fun resolveDouyuRoomFaceUrl(item: JSONObject): String {
     return firstJsonImageUrlByKeys(item, DOUYU_AVATAR_KEYS).orEmpty()
 }
 
 internal fun resolveDouyuRoomCoverUrl(item: JSONObject): String {
     return firstJsonImageUrlByKeys(item, DOUYU_COVER_KEYS).orEmpty()
+}
+
+private fun douyuSearchHasMore(itemCount: Int): Boolean {
+    return itemCount >= DOUYU_SEARCH_PAGE_SIZE
 }
 
 private fun firstJsonImageUrlByKeys(item: JSONObject, keys: List<String>): String? {
@@ -84,7 +105,7 @@ class DouyuSite @Inject constructor(
      * The value is a query-string-style result from DouyuSign, e.g.
      * "ver=23061205&rid=1234&did=xxx&time=xxx&sign=xxx"
      */
-    private val signArgsCache = mutableMapOf<String, String>()
+    private val signArgsCache = mutableMapOf<String, DouyuSignArgsCacheEntry>()
 
     companion object {
         private const val DEFAULT_USER_AGENT =
@@ -224,21 +245,7 @@ class DouyuSite @Inject constructor(
         ) as JSONObject
         val showTime = h5RoomInfo.optJSONObject("data")?.optNullableStringValue("show_time")
 
-        // Fetch the room-specific JS for signing
-        val jsEncResult = httpClient.getText(
-            "https://www.douyu.com/swf_api/homeH5Enc?rids=$roomId",
-            queryParameters = emptyMap(),
-            header = mapOf(
-                "referer" to "https://www.douyu.com/$roomId",
-                "user-agent" to DEFAULT_USER_AGENT
-            )
-        )
-        val jsEncJson = JSONObject(jsEncResult)
-        val crptext = jsEncJson.getJSONObject("data").optStringValue("room$roomId")
-
-        // Generate signing parameters and cache them
-        val signArgs = DouyuSign.getSign(crptext, roomId, jsEngineProvider.get())
-        signArgsCache[roomId] = signArgs
+        getFreshSignArgs(roomId, forceRefresh = true)
 
         val bizAll = roomInfo.optJSONObject("room_biz_all")
         val hot = bizAll?.optStringValue("hot")?.toIntOrNull() ?: 0
@@ -274,8 +281,7 @@ class DouyuSite @Inject constructor(
     // ── Play qualities ──────────────────────────────────────────────────
 
     override suspend fun getPlayQualites(detail: LiveRoomDetail): List<LivePlayQuality> {
-        val signArgs = signArgsCache[detail.roomId]
-            ?: throw IllegalStateException("Signing data not available for room ${detail.roomId}. Call getRoomDetail first.")
+        val signArgs = getFreshSignArgs(detail.roomId)
 
         // Build POST data: signing args + SDK params
         val params = parseQueryString(signArgs).toMutableMap()
@@ -340,8 +346,7 @@ class DouyuSite @Inject constructor(
         detail: LiveRoomDetail,
         quality: LivePlayQuality
     ): LivePlayUrl {
-        val signArgs = signArgsCache[detail.roomId]
-            ?: throw IllegalStateException("Signing data not available for room ${detail.roomId}. Call getRoomDetail first.")
+        val signArgs = getFreshSignArgs(detail.roomId)
         val playData = quality.data as PlayQualityData.Douyu
 
         val urls = mutableListOf<String>()
@@ -386,6 +391,34 @@ class DouyuSite @Inject constructor(
         return "$rtmpUrl/$rtmpLive"
     }
 
+    private suspend fun getFreshSignArgs(
+        roomId: String,
+        forceRefresh: Boolean = false
+    ): String {
+        val nowMillis = System.currentTimeMillis()
+        val cached = signArgsCache[roomId]
+        if (cached != null && !forceRefresh && !shouldRefreshDouyuSignArgs(cached, nowMillis)) {
+            return cached.value
+        }
+
+        val jsEncResult = httpClient.getText(
+            "https://www.douyu.com/swf_api/homeH5Enc?rids=$roomId",
+            queryParameters = emptyMap(),
+            header = mapOf(
+                "referer" to "https://www.douyu.com/$roomId",
+                "user-agent" to DEFAULT_USER_AGENT
+            )
+        )
+        val jsEncJson = JSONObject(jsEncResult)
+        val crptext = jsEncJson.getJSONObject("data").optStringValue("room$roomId")
+        val signArgs = DouyuSign.getSign(crptext, roomId, jsEngineProvider.get())
+        signArgsCache[roomId] = DouyuSignArgsCacheEntry(
+            value = signArgs,
+            createdAtMillis = nowMillis
+        )
+        return signArgs
+    }
+
     // ── Search rooms ────────────────────────────────────────────────────
 
     override suspend fun searchRooms(keyword: String, page: Int): LiveSearchRoomResult {
@@ -395,7 +428,7 @@ class DouyuSite @Inject constructor(
             queryParameters = mapOf(
                 "kw" to keyword,
                 "page" to page.toString(),
-                "pageSize" to "20"
+                "pageSize" to DOUYU_SEARCH_PAGE_SIZE.toString()
             ),
             header = mapOf(
                 "User-Agent" to SEARCH_USER_AGENT,
@@ -426,7 +459,7 @@ class DouyuSite @Inject constructor(
             )
         }
 
-        val hasMore = relateShow.length() > 0
+        val hasMore = douyuSearchHasMore(relateShow.length())
         return LiveSearchRoomResult(hasMore = hasMore, items = items)
     }
 
@@ -439,7 +472,7 @@ class DouyuSite @Inject constructor(
             queryParameters = mapOf(
                 "kw" to keyword,
                 "page" to page.toString(),
-                "pageSize" to "20",
+                "pageSize" to DOUYU_SEARCH_PAGE_SIZE.toString(),
                 "filterType" to "1"
             ),
             header = mapOf(
@@ -471,7 +504,7 @@ class DouyuSite @Inject constructor(
             )
         }
 
-        val hasMore = relateUser.length() > 0
+        val hasMore = douyuSearchHasMore(relateUser.length())
         return LiveSearchAnchorResult(hasMore = hasMore, items = items)
     }
 

@@ -2,9 +2,8 @@ package com.mylive.app.ui.screen.sync
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.mylive.app.BuildConfig
 import com.mylive.app.core.common.CoreLog
-import com.mylive.app.data.local.entity.FollowUserEntity
-import com.mylive.app.data.local.entity.FollowUserTagEntity
 import com.mylive.app.data.local.entity.HistoryEntity
 import com.mylive.app.data.local.entity.ShieldEntity
 import com.mylive.app.data.repository.FollowRepository
@@ -69,34 +68,9 @@ class RemoteSyncRoomViewModel @Inject constructor(
         remoteSyncService.onFavoriteReceived = { overlay, content ->
             viewModelScope.launch {
                 try {
-                    val arr = JSONArray(content)
-                    if (overlay) {
-                        followRepository.clearAllFollows()
-                    }
-                    for (i in 0 until arr.length()) {
-                        val item = arr.getJSONObject(i)
-                        val siteId = item.optString("siteId", item.optString("site", ""))
-                        val roomId = item.optString("roomId", item.optString("room", ""))
-                        if (siteId.isBlank() || roomId.isBlank()) continue
-
-                        val userName = item.optString("userName", item.optString("name", ""))
-                        val face = item.optString("face", item.optString("avatar", ""))
-                        val isSpecial = item.optBoolean("isSpecialFollow", false)
-                        val tag = item.optString("tag", "")
-                        followRepository.addFollow(
-                            FollowUserEntity(
-                                id = "${siteId}_${roomId}",
-                                roomId = roomId,
-                                siteId = siteId,
-                                userName = userName,
-                                face = face,
-                                addTime = System.currentTimeMillis(),
-                                isSpecialFollow = isSpecial,
-                                tag = tag
-                            )
-                        )
-                    }
-                    _toastMessage.emit("已同步关注列表（${arr.length()} 条）")
+                    followRepository.importFromJson(content, overlay)
+                    val followCount = followRepository.getAllFollows().first().size
+                    _toastMessage.emit("已同步关注列表（${followCount} 条）")
                 } catch (e: Exception) {
                     CoreLog.e("RemoteSyncRoomViewModel: Favorite sync failed", e)
                     _toastMessage.emit("同步关注失败: ${e.message}")
@@ -224,7 +198,7 @@ class RemoteSyncRoomViewModel @Inject constructor(
                 val clientInfo = JSONObject().apply {
                     put("app", "My Live")
                     put("platform", "android")
-                    put("version", "1.0")
+                    put("version", BuildConfig.VERSION_NAME)
                 }
 
                 if (roomParam.isBlank()) {
@@ -278,25 +252,11 @@ class RemoteSyncRoomViewModel @Inject constructor(
             }
             _loadingState.value = "发送中..."
             try {
-                val follows = followRepository.getAllFollows().first()
-                val arr = JSONArray().apply {
-                    follows.forEach { follow ->
-                        put(JSONObject().apply {
-                            put("id", follow.id)
-                            put("roomId", follow.roomId)
-                            put("siteId", follow.siteId)
-                            put("userName", follow.userName)
-                            put("face", follow.face)
-                            put("addTime", follow.addTime)
-                            put("tag", follow.tag)
-                            put("isSpecialFollow", follow.isSpecialFollow)
-                        })
-                    }
-                }
+                val json = followRepository.exportToJson()
                 val resp = remoteSyncService.sendContent(
                     action = "SendFavorite",
                     overlay = overlay,
-                    content = arr.toString()
+                    content = json
                 )
                 if (resp.isSuccess) {
                     _toastMessage.emit("已发送关注列表")
@@ -359,21 +319,11 @@ class RemoteSyncRoomViewModel @Inject constructor(
             _loadingState.value = "发送中..."
             try {
                 val shields = shieldRepository.getAllShields().first()
-                val arr = JSONArray().apply {
-                    shields.forEach { sh ->
-                        // Extract keyword from raw value e.g. "keyword:danmu" -> "danmu"
-                        val prefix = "keyword:"
-                        if (sh.value.startsWith(prefix)) {
-                            put(sh.value.substring(prefix.length))
-                        } else {
-                            put(sh.value)
-                        }
-                    }
-                }
+                val payload = encodeShieldKeywordsForLanSync(shields)
                 val resp = remoteSyncService.sendContent(
                     action = "SendShieldWord",
                     overlay = overlay,
-                    content = arr.toString()
+                    content = payload
                 )
                 if (resp.isSuccess) {
                     _toastMessage.emit("已发送屏蔽词")

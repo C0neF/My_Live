@@ -7,6 +7,8 @@ import com.mylive.app.core.model.LiveAnchorItem
 import com.mylive.app.core.site.LiveSite
 import com.mylive.app.core.site.sortedByDefaultOrder
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -21,7 +23,8 @@ data class SearchUiState(
     val error: String? = null,
     val searchType: Int = 0, // 0=rooms, 1=anchors
     val currentPage: Int = 1,
-    val hasMore: Boolean = false
+    val hasMore: Boolean = false,
+    val selectedSiteIndex: Int = 0
 )
 
 @HiltViewModel
@@ -33,46 +36,76 @@ class SearchViewModel @Inject constructor(
     val uiState: StateFlow<SearchUiState> = _uiState.asStateFlow()
 
     val siteTabs: List<LiveSite> = sites.sortedByDefaultOrder()
-    private var currentSiteIndex = 0
     private var currentKeyword = ""
+    private var activeSearchRequestId = 0L
+    private var searchJob: Job? = null
+    private var loadMoreJob: Job? = null
 
     fun selectSite(index: Int) {
-        currentSiteIndex = index
+        val nextIndex = if (siteTabs.isEmpty()) {
+            0
+        } else {
+            index.coerceIn(0, siteTabs.lastIndex)
+        }
+        _uiState.value = _uiState.value.copy(selectedSiteIndex = nextIndex)
         if (currentKeyword.isNotEmpty()) {
             search(currentKeyword)
         }
     }
 
     fun setSearchType(type: Int) {
-        _uiState.value = _uiState.value.copy(searchType = type)
+        val nextType = if (type == 1) 1 else 0
+        _uiState.value = _uiState.value.copy(searchType = nextType)
         if (currentKeyword.isNotEmpty()) {
             search(currentKeyword)
         }
     }
 
     fun search(keyword: String) {
-        currentKeyword = keyword
-        val site = siteTabs.getOrNull(currentSiteIndex) ?: return
+        val nextKeyword = keyword.trim()
+        if (nextKeyword.isEmpty()) {
+            clearSearch()
+            return
+        }
 
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true, error = null, currentPage = 1)
+        currentKeyword = nextKeyword
+        val state = _uiState.value
+        val siteIndex = state.selectedSiteIndex
+        val searchType = state.searchType
+        val site = siteTabs.getOrNull(siteIndex) ?: return
+        val requestId = nextSearchRequestId()
+
+        searchJob?.cancel()
+        loadMoreJob?.cancel()
+        _uiState.value = searchUiStateForNewSearch(state)
+
+        searchJob = viewModelScope.launch {
             try {
-                if (_uiState.value.searchType == 0) {
-                    val result = site.searchRooms(keyword)
+                if (searchType == 0) {
+                    val result = site.searchRooms(nextKeyword)
+                    if (!isCurrentSearchRequest(requestId, siteIndex, searchType, nextKeyword)) return@launch
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
                         rooms = result.items,
+                        anchors = emptyList(),
+                        currentPage = 1,
                         hasMore = result.hasMore
                     )
                 } else {
-                    val result = site.searchAnchors(keyword)
+                    val result = site.searchAnchors(nextKeyword)
+                    if (!isCurrentSearchRequest(requestId, siteIndex, searchType, nextKeyword)) return@launch
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
+                        rooms = emptyList(),
                         anchors = result.items,
+                        currentPage = 1,
                         hasMore = result.hasMore
                     )
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
+                if (!isCurrentSearchRequest(requestId, siteIndex, searchType, nextKeyword)) return@launch
                 Timber.e(e, "Search failed")
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
@@ -82,16 +115,37 @@ class SearchViewModel @Inject constructor(
         }
     }
 
+    fun clearSearch() {
+        searchJob?.cancel()
+        loadMoreJob?.cancel()
+        currentKeyword = ""
+        nextSearchRequestId()
+        _uiState.value = _uiState.value.copy(
+            isLoading = false,
+            rooms = emptyList(),
+            anchors = emptyList(),
+            error = null,
+            currentPage = 1,
+            hasMore = false
+        )
+    }
+
     fun loadMore() {
         if (!_uiState.value.hasMore || _uiState.value.isLoading || currentKeyword.isEmpty()) return
-        val site = siteTabs.getOrNull(currentSiteIndex) ?: return
-        val nextPage = _uiState.value.currentPage + 1
+        val state = _uiState.value
+        val siteIndex = state.selectedSiteIndex
+        val searchType = state.searchType
+        val requestId = activeSearchRequestId
+        val keyword = currentKeyword
+        val site = siteTabs.getOrNull(siteIndex) ?: return
+        val nextPage = state.currentPage + 1
 
-        viewModelScope.launch {
+        loadMoreJob = viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true)
             try {
-                if (_uiState.value.searchType == 0) {
-                    val result = site.searchRooms(currentKeyword, page = nextPage)
+                if (searchType == 0) {
+                    val result = site.searchRooms(keyword, page = nextPage)
+                    if (!isCurrentSearchRequest(requestId, siteIndex, searchType, keyword)) return@launch
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
                         rooms = _uiState.value.rooms + result.items,
@@ -99,7 +153,8 @@ class SearchViewModel @Inject constructor(
                         currentPage = nextPage
                     )
                 } else {
-                    val result = site.searchAnchors(currentKeyword, page = nextPage)
+                    val result = site.searchAnchors(keyword, page = nextPage)
+                    if (!isCurrentSearchRequest(requestId, siteIndex, searchType, keyword)) return@launch
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
                         anchors = _uiState.value.anchors + result.items,
@@ -107,10 +162,42 @@ class SearchViewModel @Inject constructor(
                         currentPage = nextPage
                     )
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
+                if (!isCurrentSearchRequest(requestId, siteIndex, searchType, keyword)) return@launch
                 Timber.e(e, "Load more failed")
                 _uiState.value = _uiState.value.copy(isLoading = false)
             }
         }
     }
+
+    private fun nextSearchRequestId(): Long {
+        activeSearchRequestId += 1
+        return activeSearchRequestId
+    }
+
+    private fun isCurrentSearchRequest(
+        requestId: Long,
+        siteIndex: Int,
+        searchType: Int,
+        keyword: String
+    ): Boolean {
+        val state = _uiState.value
+        return requestId == activeSearchRequestId &&
+            state.selectedSiteIndex == siteIndex &&
+            state.searchType == searchType &&
+            currentKeyword == keyword
+    }
+}
+
+internal fun searchUiStateForNewSearch(state: SearchUiState): SearchUiState {
+    return state.copy(
+        isLoading = true,
+        rooms = emptyList(),
+        anchors = emptyList(),
+        error = null,
+        currentPage = 1,
+        hasMore = false
+    )
 }

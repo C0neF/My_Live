@@ -40,6 +40,15 @@ class PlayerErrorPolicyTest {
     }
 
     @Test
+    fun playerRequestsFreshPlaybackSourceAfterCurrentUrlsAreExhausted() {
+        val source = File("src/main/java/com/mylive/app/ui/screen/room/player/PlayerController.kt").readText()
+
+        assertTrue(source.contains("onPlaybackSourceExhausted"))
+        assertTrue(source.contains("sourceRefreshAttempted"))
+        assertTrue(source.contains("resetSourceRefreshAttempt"))
+    }
+
+    @Test
     fun playerErrorOverlayIsConstrainedAndDoesNotCoverControlsWithRawText() {
         val source = File("src/main/java/com/mylive/app/ui/screen/room/player/PlayerView.kt").readText()
         val errorSource = source.substringAfter("// Error state")

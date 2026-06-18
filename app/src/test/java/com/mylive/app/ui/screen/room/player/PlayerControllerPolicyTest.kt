@@ -3,6 +3,7 @@ package com.mylive.app.ui.screen.room.player
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
 
@@ -60,6 +61,31 @@ class PlayerControllerPolicyTest {
                 forceHttps = false
             )
         )
+    }
+
+    @Test
+    fun volumeGestureControlsSystemMediaStreamInsteadOfOnlyPlayerGain() {
+        val source = readMainSource("com/mylive/app/ui/screen/room/player/PlayerController.kt")
+
+        assertTrue(source.contains("audioManager.setStreamVolume("))
+        assertTrue(source.contains("AudioManager.STREAM_MUSIC"))
+        assertTrue(source.contains("player?.volume = 1f"))
+        assertFalse(source.contains("player?.volume = volume"))
+    }
+
+    @Test
+    fun volumeStateReflectsAppliedSystemMediaStreamLevel() {
+        val source = readMainSource("com/mylive/app/ui/screen/room/player/PlayerController.kt")
+
+        assertTrue(source.contains("val appliedVolume = currentSystemMediaVolume()"))
+        assertTrue(source.contains("_state.value = _state.value.copy(volume = appliedVolume)"))
+    }
+
+    @Test
+    fun appDeclaresAudioSettingsPermissionForMediaVolumeGestures() {
+        val manifest = File("src/main/AndroidManifest.xml").readText()
+
+        assertTrue(manifest.contains("android.permission.MODIFY_AUDIO_SETTINGS"))
     }
 
     private fun readMainSource(relativePath: String): String {

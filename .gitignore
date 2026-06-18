@@ -19,6 +19,7 @@ local.properties
 
 # Local agent / Codex workspace state
 /.agent/
+/.superpowers/
 /.android-codex/
 /tmp/
 /docs/superpowers/
@@ -46,6 +47,3 @@ PRODUCT.md
 
 # Documentation (local only)
 /docs/
-
-# Room schema exports (auto-generated, local only)
-/app/schemas/

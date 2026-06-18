@@ -35,6 +35,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -51,6 +52,7 @@ import com.mylive.app.ui.component.status.ErrorState
 import com.mylive.app.ui.motion.AppMotion
 import com.mylive.app.ui.theme.Icons
 import com.mylive.app.ui.theme.livePlatformAccentColor
+import com.mylive.app.ui.theme.livePlatformOnAccentColor
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
@@ -59,6 +61,7 @@ import kotlinx.coroutines.launch
 fun CategoryScreen(
     navigator: Navigator,
     refreshSignal: Int = 0,
+    contentBottomPadding: Dp = 96.dp,
     viewModel: CategoryViewModel = hiltViewModel()
 ) {
     val siteTabs by viewModel.siteList.collectAsStateWithLifecycle()
@@ -68,7 +71,8 @@ fun CategoryScreen(
     val isRefreshing by viewModel.isRefreshing.collectAsState()
     val error by viewModel.error.collectAsState()
 
-    var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+    val selectedTab = selectedSiteIndex.coerceIn(0, siteTabs.lastIndex.coerceAtLeast(0))
+    val latestSelectedTab by rememberUpdatedState(selectedTab)
     val pagerState = rememberPagerState(initialPage = 0, pageCount = { siteTabs.size })
     val coroutineScope = rememberCoroutineScope()
     val platformScrollState = rememberScrollState()
@@ -82,9 +86,14 @@ fun CategoryScreen(
     fun selectCategorySite(index: Int) {
         if (siteTabs.isEmpty()) return
         val boundedIndex = index.coerceIn(0, siteTabs.lastIndex)
-        if (selectedTab == boundedIndex) return
-        selectedTab = boundedIndex
+        if (latestSelectedTab == boundedIndex) return
         viewModel.selectSite(boundedIndex)
+    }
+
+    LaunchedEffect(selectedTab, siteTabs.size) {
+        if (siteTabs.isNotEmpty() && pagerState.currentPage != selectedTab) {
+            pagerState.scrollToPage(selectedTab)
+        }
     }
 
     // Sync pager swipes -> selectedTab
@@ -179,6 +188,9 @@ fun CategoryScreen(
                 userScrollEnabled = siteTabs.size > 1
             ) { page ->
                 val selectedSite = siteTabs.getOrNull(page)
+                val pageAccentColor = categoryPlatformAccentColor(
+                    selectedSite?.id.orEmpty()
+                ) ?: MaterialTheme.colorScheme.primary
 
                 // Use cached state for non-current pages (same as HomeScreen's HomeStateCache)
                 val pageState = if (page == selectedTab) {
@@ -208,6 +220,8 @@ fun CategoryScreen(
                         else -> {
                             CategoryList(
                                 categories = pageCategories,
+                                accentColor = pageAccentColor,
+                                contentBottomPadding = contentBottomPadding,
                                 onSubCategoryClick = { subCategory ->
                                     if (selectedSite != null) {
                                         navigator.navigate(
@@ -235,7 +249,7 @@ private fun CategoryPlatformTab(
     isSelected: Boolean,
     onClick: () -> Unit
 ) {
-    val brandColor = livePlatformAccentColor(platformId) ?: MaterialTheme.colorScheme.primary
+    val brandColor = categoryPlatformAccentColor(platformId) ?: MaterialTheme.colorScheme.primary
     val contentColor by animateColorAsState(
         targetValue = if (isSelected) {
             MaterialTheme.colorScheme.onSurface
@@ -282,6 +296,8 @@ private fun CategoryPlatformTab(
 @Composable
 private fun CategoryList(
     categories: List<LiveCategory>,
+    accentColor: Color,
+    contentBottomPadding: Dp = 96.dp,
     onSubCategoryClick: (LiveSubCategory) -> Unit
 ) {
     var selectedParentIndex by remember(categories) { mutableIntStateOf(0) }
@@ -299,20 +315,17 @@ private fun CategoryList(
 
                 val textColor by animateColorAsState(
                     targetValue = if (isSelected) {
-                        MaterialTheme.colorScheme.primary
+                        accentColor
                     } else {
                         MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
                     },
                     label = "parentTabTextColor"
                 )
 
-                val backgroundColor by animateColorAsState(
-                    targetValue = if (isSelected) {
-                        MaterialTheme.colorScheme.background
-                    } else {
-                        Color.Transparent
-                    },
-                    label = "parentTabBgColor"
+                val backgroundColor = categoryParentTabBackgroundColor(
+                    isSelected = isSelected,
+                    selectedColor = MaterialTheme.colorScheme.background,
+                    unselectedColor = Color.Transparent
                 )
 
                 Box(
@@ -329,7 +342,7 @@ private fun CategoryList(
                                 .width(4.dp)
                                 .height(20.dp)
                                 .background(
-                                    color = MaterialTheme.colorScheme.primary,
+                                    color = accentColor,
                                     shape = RoundedCornerShape(topEnd = 2.dp, bottomEnd = 2.dp)
                                 )
                         )
@@ -367,7 +380,7 @@ private fun CategoryList(
                     start = 12.dp,
                     top = 8.dp,
                     end = 12.dp,
-                    bottom = 96.dp
+                    bottom = contentBottomPadding
                 ),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -398,7 +411,7 @@ private fun CategoryList(
                     start = 12.dp,
                     top = 8.dp,
                     end = 12.dp,
-                    bottom = 96.dp
+                    bottom = contentBottomPadding
                 ),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -493,6 +506,42 @@ internal fun categoryPlatformDisplayName(siteName: String): String {
         return "哔哩哔哩"
     }
     return siteName
+}
+
+internal fun categoryPlatformAccentColor(platformId: String): Color? {
+    return livePlatformAccentColor(platformId)
+}
+
+internal fun categoryPlatformChipContainerColor(
+    platformId: String,
+    selectedContainerColor: Color,
+    unselectedContainerColor: Color,
+    isSelected: Boolean
+): Color {
+    if (!isSelected) {
+        return unselectedContainerColor
+    }
+    return categoryPlatformAccentColor(platformId) ?: selectedContainerColor
+}
+
+internal fun categoryPlatformChipContentColor(
+    platformId: String,
+    selectedContentColor: Color,
+    unselectedContentColor: Color,
+    isSelected: Boolean
+): Color {
+    if (!isSelected) {
+        return unselectedContentColor
+    }
+    return livePlatformOnAccentColor(platformId, selectedContentColor)
+}
+
+internal fun categoryParentTabBackgroundColor(
+    isSelected: Boolean,
+    selectedColor: Color,
+    unselectedColor: Color
+): Color {
+    return if (isSelected) selectedColor else unselectedColor
 }
 
 internal fun categoryFallbackIconKey(name: String): String {

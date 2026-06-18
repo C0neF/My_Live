@@ -193,3 +193,38 @@ fun <S> AnimatedContentTransitionScope<S>.horizontalContentTransform(
             animationSpec = AppMotion.contentSpec()
         ) + fadeOut(animationSpec = AppMotion.contentSpec()))).using(SizeTransform(clip = false))
 }
+
+fun <S> AnimatedContentTransitionScope<S>.verticalContentTransform(
+    direction: Int
+): ContentTransform {
+    if (direction == 0) {
+        return fadeIn(animationSpec = AppMotion.contentSpec()) togetherWith
+            fadeOut(animationSpec = AppMotion.contentSpec())
+    }
+
+    val slideDirection = if (direction > 0) {
+        AnimatedContentTransitionScope.SlideDirection.Up
+    } else {
+        AnimatedContentTransitionScope.SlideDirection.Down
+    }
+
+    return ((slideIntoContainer(
+        towards = slideDirection,
+        animationSpec = AppMotion.contentSpec()
+    ) + fadeIn(animationSpec = AppMotion.contentSpec())) togetherWith
+        (slideOutOfContainer(
+            towards = slideDirection,
+            animationSpec = AppMotion.contentSpec()
+        ) + fadeOut(animationSpec = AppMotion.contentSpec()))).using(SizeTransform(clip = false))
+}
+
+fun <S> AnimatedContentTransitionScope<S>.adaptiveNavigationContentTransform(
+    direction: Int,
+    useSideNavigation: Boolean
+): ContentTransform {
+    return if (useSideNavigation) {
+        verticalContentTransform(direction)
+    } else {
+        horizontalContentTransform(direction)
+    }
+}

@@ -14,8 +14,14 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -35,6 +41,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -60,8 +67,11 @@ fun FollowScreen(
     navigator: Navigator,
     refreshSignal: Int = 0,
     onRevealBottomBar: () -> Unit = {},
+    contentBottomPadding: Dp = 96.dp,
+    followCardColumns: Int = 1,
     viewModel: FollowViewModel = hiltViewModel()
 ) {
+    val allFollows by viewModel.follows.collectAsState()
     val filteredFollows by viewModel.filteredFollows.collectAsState()
     val groupMode by viewModel.groupMode.collectAsState()
     val selectedGroupId by viewModel.selectedGroupId.collectAsState()
@@ -71,7 +81,21 @@ fun FollowScreen(
     val updatingStatus by viewModel.updatingStatus.collectAsState()
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
-    val listState = rememberLazyListState()
+    val gridState = rememberLazyGridState()
+    val liveListState = rememberLazyListState()
+    val inactiveListState = rememberLazyListState()
+    val cardColumns = followCardColumns.coerceAtLeast(1)
+    val useTabletTwoColumnLayout = followUseTabletTwoColumnLayout(cardColumns)
+    var selectedTabletPlatformId by remember { mutableStateOf<String?>(null) }
+    val tabletPlatformOptions = remember(allFollows) {
+        followTabletPlatformOptions(allFollows)
+    }
+    val tabletFollows = remember(allFollows, selectedTabletPlatformId) {
+        selectedTabletPlatformId?.let { siteId ->
+            allFollows.filter { it.siteId == siteId }
+        } ?: allFollows
+    }
+    val displayedFollows = if (useTabletTwoColumnLayout) tabletFollows else filteredFollows
     var isAtTop by remember { mutableStateOf(true) }
     var showMenu by remember { mutableStateOf(false) }
     var showGroupModeMenu by remember { mutableStateOf(false) }
@@ -99,22 +123,52 @@ fun FollowScreen(
         }
     }
 
-    LaunchedEffect(filteredFollows.isEmpty()) {
-        if (filteredFollows.isEmpty()) {
+    LaunchedEffect(tabletPlatformOptions, selectedTabletPlatformId) {
+        val selectedSiteStillExists = tabletPlatformOptions.any { it.siteId == selectedTabletPlatformId }
+        if (selectedTabletPlatformId != null && !selectedSiteStillExists) {
+            selectedTabletPlatformId = null
+        }
+    }
+
+    LaunchedEffect(displayedFollows.isEmpty()) {
+        if (displayedFollows.isEmpty()) {
             isAtTop = true
         }
     }
 
-    LaunchedEffect(listState, filteredFollows.isNotEmpty()) {
-        if (filteredFollows.isNotEmpty()) {
+    LaunchedEffect(
+        useTabletTwoColumnLayout,
+        gridState,
+        liveListState,
+        inactiveListState,
+        displayedFollows.isNotEmpty()
+    ) {
+        if (displayedFollows.isNotEmpty()) {
             snapshotFlow {
-                isScrollableContentAtTop(
-                    firstVisibleItemIndex = listState.firstVisibleItemIndex,
-                    firstVisibleItemScrollOffset = listState.firstVisibleItemScrollOffset
-                )
+                if (useTabletTwoColumnLayout) {
+                    isScrollableContentAtTop(
+                        firstVisibleItemIndex = liveListState.firstVisibleItemIndex,
+                        firstVisibleItemScrollOffset = liveListState.firstVisibleItemScrollOffset
+                    ) && isScrollableContentAtTop(
+                        firstVisibleItemIndex = inactiveListState.firstVisibleItemIndex,
+                        firstVisibleItemScrollOffset = inactiveListState.firstVisibleItemScrollOffset
+                    )
+                } else {
+                    isScrollableContentAtTop(
+                        firstVisibleItemIndex = gridState.firstVisibleItemIndex,
+                        firstVisibleItemScrollOffset = gridState.firstVisibleItemScrollOffset
+                    )
+                }
             }
                 .distinctUntilChanged()
                 .collect { isAtTop = it }
+        }
+    }
+
+    LaunchedEffect(useTabletTwoColumnLayout, selectedTabletPlatformId) {
+        if (useTabletTwoColumnLayout) {
+            liveListState.scrollToItem(0)
+            inactiveListState.scrollToItem(0)
         }
     }
 
@@ -225,66 +279,74 @@ fun FollowScreen(
             }
         }
 
-        // Compact filter bar: platform options are few, so show them all without horizontal scroll.
-        val compactFilterMetrics = followCompactPlatformFilterMetrics()
-        if (followCompactFilterOptionsScrollable(groupMode)) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 2.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                CompactGroupModeMenu(
-                    modifier = Modifier.width(followCompactModeSelectorWidthDp().dp),
-                    groupMode = groupMode,
-                    expanded = showGroupModeMenu,
-                    onExpandedChange = { showGroupModeMenu = it },
-                    onModeSelected = viewModel::setGroupMode,
-                    pillHorizontalPaddingDp = compactFilterMetrics.pillHorizontalPaddingDp,
-                    fontSizeSp = compactFilterMetrics.fontSizeSp,
-                    iconSizeDp = compactFilterMetrics.iconSizeDp
-                )
-
-                LazyRow(
-                    modifier = Modifier.weight(1f),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    contentPadding = PaddingValues(end = 16.dp)
+        if (useTabletTwoColumnLayout) {
+            FollowTabletPlatformBar(
+                options = tabletPlatformOptions,
+                selectedSiteId = selectedTabletPlatformId,
+                onSelected = { selectedTabletPlatformId = it }
+            )
+        } else {
+            // Compact filter bar: platform options are few, so show them all without horizontal scroll.
+            val compactFilterMetrics = followCompactPlatformFilterMetrics()
+            if (followCompactFilterOptionsScrollable(groupMode)) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    items(groupOptions, key = { it.id }) { option ->
-                        CompactFilterPill(
-                            text = option.title,
-                            selected = selectedGroupId == option.id,
-                            onClick = { viewModel.setGroupOption(option.id) }
-                        )
+                    CompactGroupModeMenu(
+                        modifier = Modifier.width(followCompactModeSelectorWidthDp().dp),
+                        groupMode = groupMode,
+                        expanded = showGroupModeMenu,
+                        onExpandedChange = { showGroupModeMenu = it },
+                        onModeSelected = viewModel::setGroupMode,
+                        pillHorizontalPaddingDp = compactFilterMetrics.pillHorizontalPaddingDp,
+                        fontSizeSp = compactFilterMetrics.fontSizeSp,
+                        iconSizeDp = compactFilterMetrics.iconSizeDp
+                    )
+
+                    LazyRow(
+                        modifier = Modifier.weight(1f),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        contentPadding = PaddingValues(end = 16.dp)
+                    ) {
+                        items(groupOptions, key = { it.id }) { option ->
+                            CompactFilterPill(
+                                text = option.title,
+                                selected = selectedGroupId == option.id,
+                                onClick = { viewModel.setGroupOption(option.id) }
+                            )
+                        }
                     }
                 }
-            }
-        } else {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = compactFilterMetrics.horizontalPaddingDp.dp, vertical = 2.dp),
-                horizontalArrangement = Arrangement.spacedBy(compactFilterMetrics.itemGapDp.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                CompactGroupModeMenu(
-                    modifier = Modifier.width(followCompactModeSelectorWidthDp().dp),
-                    groupMode = groupMode,
-                    expanded = showGroupModeMenu,
-                    onExpandedChange = { showGroupModeMenu = it },
-                    onModeSelected = viewModel::setGroupMode
-                )
-
-                groupOptions.forEach { option ->
-                    CompactFilterPill(
-                        modifier = Modifier.weight(1f),
-                        text = option.title,
-                        selected = selectedGroupId == option.id,
-                        onClick = { viewModel.setGroupOption(option.id) },
-                        horizontalPaddingDp = compactFilterMetrics.pillHorizontalPaddingDp,
-                        fontSizeSp = compactFilterMetrics.fontSizeSp
+            } else {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = compactFilterMetrics.horizontalPaddingDp.dp, vertical = 2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(compactFilterMetrics.itemGapDp.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    CompactGroupModeMenu(
+                        modifier = Modifier.width(followCompactModeSelectorWidthDp().dp),
+                        groupMode = groupMode,
+                        expanded = showGroupModeMenu,
+                        onExpandedChange = { showGroupModeMenu = it },
+                        onModeSelected = viewModel::setGroupMode
                     )
+
+                    groupOptions.forEach { option ->
+                        CompactFilterPill(
+                            modifier = Modifier.weight(1f),
+                            text = option.title,
+                            selected = selectedGroupId == option.id,
+                            onClick = { viewModel.setGroupOption(option.id) },
+                            horizontalPaddingDp = compactFilterMetrics.pillHorizontalPaddingDp,
+                            fontSizeSp = compactFilterMetrics.fontSizeSp
+                        )
+                    }
                 }
             }
         }
@@ -295,27 +357,46 @@ fun FollowScreen(
             modifier = Modifier.fillMaxSize()
         ) {
 
-            if (filteredFollows.isEmpty()) {
+            if (displayedFollows.isEmpty()) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
                     EmptyState(message = stringResource(R.string.follow_empty))
                 }
+            } else if (useTabletTwoColumnLayout) {
+                val columns = followTabletStatusColumns(displayedFollows)
+                FollowTabletTwoColumnContent(
+                    columns = columns,
+                    liveListState = liveListState,
+                    inactiveListState = inactiveListState,
+                    contentBottomPadding = contentBottomPadding,
+                    navigator = navigator,
+                    viewModel = viewModel,
+                    onLongClick = { longPressedFollow = it },
+                    onUnfollowConfirm = { unfollowTarget = it }
+                )
             } else {
                 // Group by live status
-                val liveList = filteredFollows.filter { it.liveStatus == 1 }
-                val unknownList = filteredFollows.filter { it.liveStatus == 0 }
-                val offlineList = filteredFollows.filter { it.liveStatus == 2 }
+                val liveList = displayedFollows.filter { it.liveStatus == 1 }
+                val unknownList = displayedFollows.filter { it.liveStatus == 0 }
+                val offlineList = displayedFollows.filter { it.liveStatus == 2 }
 
-                LazyColumn(
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(cardColumns),
                     modifier = Modifier.fillMaxSize(),
-                    state = listState,
-                    contentPadding = PaddingValues(bottom = 96.dp)
+                    state = gridState,
+                    contentPadding = PaddingValues(
+                        start = 16.dp,
+                        end = 16.dp,
+                        bottom = contentBottomPadding
+                    ),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     // 直播中
                     if (liveList.isNotEmpty()) {
-                        item {
+                        item(span = { GridItemSpan(maxLineSpan) }) {
                             FollowGroupHeader(
                                 title = stringResource(R.string.follow_group_live),
                                 count = liveList.size,
@@ -335,7 +416,7 @@ fun FollowScreen(
 
                     // 未知
                     if (unknownList.isNotEmpty()) {
-                        item {
+                        item(span = { GridItemSpan(maxLineSpan) }) {
                             FollowGroupHeader(
                                 title = stringResource(R.string.follow_group_unknown),
                                 count = unknownList.size
@@ -354,7 +435,7 @@ fun FollowScreen(
 
                     // 未开播
                     if (offlineList.isNotEmpty()) {
-                        item {
+                        item(span = { GridItemSpan(maxLineSpan) }) {
                             FollowGroupHeader(
                                 title = stringResource(R.string.follow_group_offline),
                                 count = offlineList.size
@@ -373,13 +454,22 @@ fun FollowScreen(
                 }
             }
 
-            if (backToTopButtonVisible(isAtTop = isAtTop, hasItems = filteredFollows.isNotEmpty())) {
+            if (backToTopButtonVisible(isAtTop = isAtTop, hasItems = displayedFollows.isNotEmpty())) {
                 val metrics = backToTopButtonMetrics()
                 BackToTopButton(
                     onClick = {
                         onRevealBottomBar()
-                        scope.launch {
-                            listState.animateScrollToItem(0)
+                        if (useTabletTwoColumnLayout) {
+                            scope.launch {
+                                liveListState.animateScrollToItem(0)
+                            }
+                            scope.launch {
+                                inactiveListState.animateScrollToItem(0)
+                            }
+                        } else {
+                            scope.launch {
+                                gridState.animateScrollToItem(0)
+                            }
                         }
                     },
                     modifier = Modifier
@@ -667,6 +757,155 @@ fun FollowScreen(
     }
 }
 
+@Composable
+private fun FollowTabletPlatformBar(
+    options: List<FollowTabletPlatformOption>,
+    selectedSiteId: String?,
+    onSelected: (String?) -> Unit
+) {
+    LazyRow(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        contentPadding = PaddingValues(end = 16.dp)
+    ) {
+        items(options, key = { it.id }) { option ->
+            CompactFilterPill(
+                text = "${option.title} ${option.count}",
+                selected = option.siteId == selectedSiteId,
+                onClick = { onSelected(option.siteId) },
+                horizontalPaddingDp = 14,
+                fontSizeSp = 13
+            )
+        }
+    }
+}
+
+@Composable
+private fun FollowTabletTwoColumnContent(
+    columns: FollowTabletStatusColumns,
+    liveListState: LazyListState,
+    inactiveListState: LazyListState,
+    contentBottomPadding: Dp,
+    navigator: Navigator,
+    viewModel: FollowViewModel,
+    onLongClick: (FollowUserEntity) -> Unit,
+    onUnfollowConfirm: (FollowUserEntity) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = contentBottomPadding),
+        horizontalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        FollowTabletStatusColumn(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight(),
+            title = stringResource(R.string.follow_group_live),
+            emptyMessage = "暂无直播中",
+            count = columns.live.size,
+            isLive = true,
+            follows = columns.live,
+            listState = liveListState,
+            navigator = navigator,
+            viewModel = viewModel,
+            onLongClick = onLongClick,
+            onUnfollowConfirm = onUnfollowConfirm
+        )
+        FollowTabletStatusColumn(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight(),
+            title = stringResource(R.string.follow_group_offline),
+            emptyMessage = "暂无未开播",
+            count = columns.inactive.size,
+            isLive = false,
+            follows = columns.inactive,
+            listState = inactiveListState,
+            navigator = navigator,
+            viewModel = viewModel,
+            onLongClick = onLongClick,
+            onUnfollowConfirm = onUnfollowConfirm
+        )
+    }
+}
+
+@Composable
+private fun FollowTabletStatusColumn(
+    modifier: Modifier = Modifier,
+    title: String,
+    emptyMessage: String,
+    count: Int,
+    isLive: Boolean,
+    follows: List<FollowUserEntity>,
+    listState: LazyListState,
+    navigator: Navigator,
+    viewModel: FollowViewModel,
+    onLongClick: (FollowUserEntity) -> Unit,
+    onUnfollowConfirm: (FollowUserEntity) -> Unit
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f))
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (isLive) {
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .background(MaterialTheme.colorScheme.error, CircleShape)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    color = if (isLive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(modifier = Modifier.weight(1f))
+                Text(
+                    text = "$count 个",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            if (follows.isEmpty()) {
+                EmptyState(message = emptyMessage, modifier = Modifier.weight(1f))
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    state = listState,
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(follows, key = { it.id }) { follow ->
+                        SwipeableFollowItem(
+                            follow = follow,
+                            viewModel = viewModel,
+                            navigator = navigator,
+                            cardHorizontalPadding = 0.dp,
+                            onLongClick = { onLongClick(follow) },
+                            onUnfollowConfirm = onUnfollowConfirm
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
 /**
  * 可左滑的关注用户卡片。
  * 左滑固定距离，露出"置顶"和"取关"两个按钮。
@@ -676,6 +915,7 @@ private fun SwipeableFollowItem(
     follow: FollowUserEntity,
     viewModel: FollowViewModel,
     navigator: Navigator,
+    cardHorizontalPadding: Dp = 16.dp,
     onLongClick: () -> Unit,
     onUnfollowConfirm: (FollowUserEntity) -> Unit
 ) {
@@ -711,7 +951,7 @@ private fun SwipeableFollowItem(
         Box(
             modifier = Modifier
                 .matchParentSize()
-                .padding(horizontal = 16.dp, vertical = 6.dp)
+                .padding(horizontal = cardHorizontalPadding, vertical = 6.dp)
                 .clipToBounds()
         ) {
             Row(
@@ -822,6 +1062,7 @@ private fun SwipeableFollowItem(
                 showTime = follow.showTime,
                 isSpecialFollow = follow.isSpecialFollow,
                 avatarSize = cardMetrics.avatarSizeDp.dp,
+                cardHorizontalPadding = cardHorizontalPadding,
                 cardVerticalPadding = cardMetrics.cardVerticalPaddingDp.dp,
                 contentPadding = cardMetrics.contentPaddingDp.dp,
                 horizontalGap = cardMetrics.horizontalGapDp.dp,
@@ -960,6 +1201,75 @@ internal fun followCompactCardMetrics(): FollowCompactCardMetrics {
         horizontalGapDp = 8,
         cardVerticalPaddingDp = 3
     )
+}
+
+internal fun followCardGridColumns(useSideNavigation: Boolean): Int {
+    return if (useSideNavigation) 2 else 1
+}
+
+internal data class FollowTabletStatusColumns(
+    val live: List<FollowUserEntity>,
+    val inactive: List<FollowUserEntity>
+)
+
+internal data class FollowTabletPlatformOption(
+    val id: String,
+    val title: String,
+    val siteId: String?,
+    val count: Int
+)
+
+internal fun followUseTabletTwoColumnLayout(followCardColumns: Int): Boolean {
+    return followCardColumns >= 2
+}
+
+internal fun followTabletStatusColumns(follows: List<FollowUserEntity>): FollowTabletStatusColumns {
+    return FollowTabletStatusColumns(
+        live = follows.filter { it.liveStatus == 1 },
+        inactive = follows.filter { it.liveStatus != 1 }
+    )
+}
+
+internal fun followTabletPlatformOptions(follows: List<FollowUserEntity>): List<FollowTabletPlatformOption> {
+    val siteOrder = listOf("bilibili", "douyu", "huya", "douyin")
+    val counts = follows.groupingBy { it.siteId }.eachCount()
+    val sortedSiteIds = counts.keys.sortedWith(
+        compareBy<String> {
+            val index = siteOrder.indexOf(it)
+            if (index >= 0) index else siteOrder.size
+        }.thenBy { it }
+    )
+
+    return buildList {
+        add(
+            FollowTabletPlatformOption(
+                id = "all",
+                title = "全部",
+                siteId = null,
+                count = follows.size
+            )
+        )
+        sortedSiteIds.forEach { siteId ->
+            add(
+                FollowTabletPlatformOption(
+                    id = "site:$siteId",
+                    title = followTabletPlatformTitle(siteId),
+                    siteId = siteId,
+                    count = counts.getValue(siteId)
+                )
+            )
+        }
+    }
+}
+
+internal fun followTabletPlatformTitle(siteId: String): String {
+    return when (siteId) {
+        "bilibili" -> "B站"
+        "douyu" -> "斗鱼"
+        "huya" -> "虎牙"
+        "douyin" -> "抖音"
+        else -> siteId
+    }
 }
 
 internal fun followCompactGroupModeLabel(mode: FollowGroupMode): String {

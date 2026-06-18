@@ -48,4 +48,38 @@ class HuyaPlaybackPolicyTest {
         assertFalse("large Huya presenter uid must not become uid=0", result.contains("uid=0"))
         assertTrue(result.contains("seqid="))
     }
+
+    /**
+     * Regression: the real Huya `fm` (base64 anti-code seed) is percent-encoded
+     * TWICE inside `sFlvToken`. The previous port decoded it only once, leaving
+     * stray `%XX`/`+` in the string fed to Base64.decode, which threw and dropped
+     * the line (empty play URL list -> playback failure). Mirroring Dart, `fm`
+     * must be decoded twice (form layer + component layer) before base64.
+     */
+    @Test
+    fun antiCodeDecodesDoublePercentEncodedFm() {
+        val okHttpClient = OkHttpClient()
+        val site = HuyaSite(HttpClient(okHttpClient), okHttpClient)
+
+        // base64 payload containing '+', '/' and '=' so BOTH percent layers matter;
+        // include 0x5F ('_') so secretPrefix extraction (split('_')) has a separator.
+        val seedBytes = byteArrayOf(-5, -1, -2, 0x5F, 'x'.code.toByte())
+        val base64 = java.util.Base64.getEncoder().encodeToString(seedBytes)
+        val singleEnc = java.net.URLEncoder.encode(base64, "UTF-8")   // + -> %2B, / -> %2F, = -> %3D
+        val doubleEnc = java.net.URLEncoder.encode(singleEnc, "UTF-8") // % -> %25
+        val antiCode = "fm=$doubleEnc&wsTime=65abc123&fs=gctex&t=0&ctype=huya_pc_exe"
+
+        // Old single-decode threw IllegalArgumentException here; the fix must not throw.
+        val result = site.buildAntiCode(
+            stream = "teststream",
+            presenterUid = 1_239_544_359_035L,
+            antiCode = antiCode
+        )
+
+        assertTrue(
+            "double-encoded fm must yield a 32-hex wsSecret",
+            Regex("wsSecret=[0-9a-f]{32}").containsMatchIn(result)
+        )
+        assertTrue(result.contains("seqid="))
+    }
 }

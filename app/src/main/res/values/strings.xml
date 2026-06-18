@@ -200,6 +200,7 @@
     <string name="webdav_restore_ok">WebDAV 恢复成功</string>
     <string name="webdav_restore_failed">WebDAV 恢复失败: %1$s</string>
     <string name="webdav_config_required">请先填写 WebDAV 服务器地址</string>
+    <string name="webdav_config_invalid">WebDAV 配置无效: %1$s</string>
     <string name="profile_title">配置导入导出</string>
     <string name="profile_export">导出配置</string>
     <string name="profile_import">导入配置</string>

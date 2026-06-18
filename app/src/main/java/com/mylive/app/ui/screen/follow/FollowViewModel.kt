@@ -18,6 +18,8 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.combine
 import com.mylive.app.data.local.entity.FollowUserTagEntity
+import com.mylive.app.data.repository.SettingsRepository
+import com.mylive.app.service.resolveFollowUpdateConcurrency
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -39,6 +41,7 @@ data class FollowGroupOption(
 @HiltViewModel
 class FollowViewModel @Inject constructor(
     private val followRepository: FollowRepository,
+    private val settingsRepository: SettingsRepository,
     private val sites: Set<@JvmSuppressWildcards LiveSite>
 ) : ViewModel() {
 
@@ -147,18 +150,14 @@ class FollowViewModel @Inject constructor(
     private val _updatingStatus = MutableStateFlow(false)
     val updatingStatus: StateFlow<Boolean> = _updatingStatus.asStateFlow()
 
-    /**
-     * Limits concurrent network requests when refreshing follow statuses.
-     * Four in-flight calls strikes a balance between speed and not getting
-     * rate-limited by the upstream platforms (especially Douyin at 444).
-     */
-    private val updateSemaphore = Semaphore(permits = 4)
-
     fun updateFollowStatus() {
         viewModelScope.launch {
             _updatingStatus.value = true
             try {
                 val currentFollows = followRepository.getAllFollows().first()
+                val updateSemaphore = Semaphore(
+                    permits = resolveFollowUpdateConcurrency(settingsRepository.updateFollowThreadCount.first())
+                )
                 coroutineScope {
                     currentFollows.map { follow ->
                         async(Dispatchers.IO) {

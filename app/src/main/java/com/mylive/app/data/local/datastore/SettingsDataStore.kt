@@ -2,6 +2,7 @@ package com.mylive.app.data.local.datastore
 
 import android.content.Context
 import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.doublePreferencesKey
@@ -107,12 +108,15 @@ class SettingsDataStore(private val context: Context) {
         // === 账号 (不导出) ===
         val BilibiliCookie = stringPreferencesKey("BilibiliCookie")
         val DouyinCookie = stringPreferencesKey("DouyinCookie")
+        val EncryptedBilibiliCookie = stringPreferencesKey("EncryptedBilibiliCookie")
+        val EncryptedDouyinCookie = stringPreferencesKey("EncryptedDouyinCookie")
         val BilibiliLoginTip = booleanPreferencesKey("BilibiliLoginTip")
 
         // === WebDAV (不导出) ===
         val WebDAVUri = stringPreferencesKey("WebDAVUri")
         val WebDAVUser = stringPreferencesKey("WebDAVUser")
         val kWebDAVPassword = stringPreferencesKey("kWebDAVPassword")
+        val EncryptedWebDAVPassword = stringPreferencesKey("EncryptedWebDAVPassword")
         val kWebDAVLastUploadTime = stringPreferencesKey("kWebDAVLastUploadTime")
         val kWebDAVLastRecoverTime = stringPreferencesKey("kWebDAVLastRecoverTime")
 
@@ -145,8 +149,16 @@ class SettingsDataStore(private val context: Context) {
         return context.dataStore.data.map { it[key] ?: defaultValue }
     }
 
+    fun preferencesFlow(): Flow<Preferences> {
+        return context.dataStore.data
+    }
+
     suspend fun <T> setValue(key: Preferences.Key<T>, value: T) {
         context.dataStore.edit { it[key] = value }
+    }
+
+    suspend fun edit(block: (MutablePreferences) -> Unit) {
+        context.dataStore.edit(block)
     }
 
     suspend fun <T> removeValue(key: Preferences.Key<T>) {

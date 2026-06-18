@@ -122,6 +122,7 @@ fun QuickAccessPanel(
     currentRoomId: String,
     currentCategoryId: String?,
     extraTabs: List<QuickAccessExtraTab> = emptyList(),
+    initialSelectedKey: String? = null,
     onNavigateToRoom: (siteId: String, roomId: String, initialIsFollowing: Boolean?) -> Unit,
     onDismiss: () -> Unit,
     viewModel: QuickAccessViewModel = hiltViewModel()
@@ -146,14 +147,22 @@ fun QuickAccessPanel(
         (extraKeys + defaultKeys.filterNot { it in extraKeys }).distinct()
     }
 
+    val initialPage = remember(orderedKeys, initialSelectedKey) {
+        orderedKeys.indexOf(initialSelectedKey).takeIf { it >= 0 } ?: 0
+    }
+
     val tabLabels = mapOf(
         "follow" to "关注",
         "history" to "历史",
         "recommendation" to "推荐"
     )
 
-    val pagerState = rememberPagerState(initialPage = 0, pageCount = { orderedKeys.size })
+    val pagerState = rememberPagerState(initialPage = initialPage, pageCount = { orderedKeys.size })
     val coroutineScope = rememberCoroutineScope()
+
+    LaunchedEffect(initialPage, orderedKeys) {
+        pagerState.scrollToPage(initialPage)
+    }
 
     LaunchedEffect(orderedKeys.size) {
         if (pagerState.currentPage > orderedKeys.lastIndex) {

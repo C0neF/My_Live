@@ -136,6 +136,16 @@ fun SettingsScreen(navigator: Navigator) {
                     }
                 }
             )
+
+            SettingsCard(
+                title = stringResource(R.string.settings_update),
+                subtitle = stringResource(R.string.settings_update_subtitle),
+                onClick = {
+                    if (!isExiting) {
+                        navigator.navigate(Route.SettingsUpdate)
+                    }
+                }
+            )
         }
     }
 }

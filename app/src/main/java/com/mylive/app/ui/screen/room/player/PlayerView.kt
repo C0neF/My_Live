@@ -47,6 +47,17 @@ import androidx.media3.ui.PlayerView as Media3PlayerView
 import com.mylive.app.core.model.LivePlayQuality
 import kotlinx.coroutines.delay
 
+internal const val PlayerVolumeGestureSensitivity = 2.5f
+
+internal fun playerVolumeForVerticalDrag(
+    startVolume: Float,
+    totalDragY: Float,
+    heightPx: Float
+): Float {
+    val delta = -totalDragY / heightPx.coerceAtLeast(1f) * PlayerVolumeGestureSensitivity
+    return (startVolume + delta).coerceIn(0f, 1f)
+}
+
 @kotlin.OptIn(ExperimentalMaterial3Api::class)
 @AndroidXOptIn(UnstableApi::class)
 @Composable
@@ -276,6 +287,8 @@ fun PlayerView(
                         val isLeftSide = startX < size.width / 2f
 
                         var lastY = down.position.y
+                        var gestureStartVolume = playerController?.state?.value?.volume ?: 1f
+                        var totalVerticalDragY = 0f
                         var accumulatedX = 0f
                         var accumulatedY = 0f
                         var hasDecidedDirection = false
@@ -307,7 +320,8 @@ fun PlayerView(
                                             brightnessValue = playerController?.state?.value?.brightness ?: 0.5f
                                         } else {
                                             showVolumeIndicator = true
-                                            volumeValue = playerController?.state?.value?.volume ?: 1f
+                                            gestureStartVolume = playerController?.state?.value?.volume ?: 1f
+                                            volumeValue = gestureStartVolume
                                         }
                                     }
                                 }
@@ -325,8 +339,14 @@ fun PlayerView(
                                         playerController?.setBrightness(act, delta)
                                         brightnessValue = playerController?.state?.value?.brightness ?: 0.5f
                                     } else {
-                                        playerController?.setVolume(delta)
-                                        volumeValue = playerController?.state?.value?.volume ?: 1f
+                                        totalVerticalDragY += dragAmount
+                                        volumeValue = playerVolumeForVerticalDrag(
+                                            startVolume = gestureStartVolume,
+                                            totalDragY = totalVerticalDragY,
+                                            heightPx = size.height.toFloat()
+                                        )
+                                        playerController?.setVolumeDirect(volumeValue)
+                                        volumeValue = playerController?.state?.value?.volume ?: volumeValue
                                     }
                                 } else if (isHorizontal) {
                                     onHorizontalDragDelta?.invoke(deltaX)

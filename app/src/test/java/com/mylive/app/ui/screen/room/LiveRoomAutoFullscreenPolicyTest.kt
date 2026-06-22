@@ -30,6 +30,19 @@ class LiveRoomAutoFullscreenPolicyTest {
     }
 
     @Test
+    fun liveRoomScreenKeepsScreenAwakeUntilDisposed() {
+        val source = File("src/main/java/com/mylive/app/ui/screen/room/LiveRoomScreen.kt").readText()
+        val disposeEffect = source.substringAfter("DisposableEffect(activity)")
+            .substringBefore("// Shared back handler")
+
+        assertTrue(source.contains("WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON"))
+        assertTrue(disposeEffect.contains("keepLiveRoomScreenAwake(act, true)"))
+        assertTrue(disposeEffect.contains("keepLiveRoomScreenAwake(act, false)"))
+        assertTrue(source.contains("activity.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)"))
+        assertTrue(source.contains("activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)"))
+    }
+
+    @Test
     fun playerViewDoesNotOwnActivityFullscreenSideEffects() {
         val source = File("src/main/java/com/mylive/app/ui/screen/room/player/PlayerView.kt").readText()
         val playerViewBody = source.substringAfter("fun PlayerView(")

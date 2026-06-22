@@ -2,6 +2,7 @@ package com.mylive.app.ui.screen.room
 
 import android.app.Activity
 import android.content.pm.ActivityInfo
+import android.view.WindowManager
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.expandVertically
@@ -194,6 +195,14 @@ private fun restoreLiveRoomSystemUi(activity: Activity) {
     WindowCompat.setDecorFitsSystemWindows(activity.window, true)
     WindowCompat.getInsetsController(activity.window, activity.window.decorView)
         .show(WindowInsetsCompat.Type.systemBars())
+}
+
+private fun keepLiveRoomScreenAwake(activity: Activity, keepAwake: Boolean) {
+    if (keepAwake) {
+        activity.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    } else {
+        activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -403,8 +412,12 @@ fun LiveRoomScreen(
 
     DisposableEffect(activity) {
         val act = activity
+        if (act != null) {
+            keepLiveRoomScreenAwake(act, true)
+        }
         onDispose {
             if (act != null) {
+                keepLiveRoomScreenAwake(act, false)
                 restoreLiveRoomSystemUi(act)
             }
         }

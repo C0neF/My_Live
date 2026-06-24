@@ -129,7 +129,7 @@ class SettingsRepository @Inject constructor(
     val autoExitDuration: Flow<Int> = settingsDataStore.getFlow(SettingsDataStore.AutoExitDuration, 60)
     suspend fun setAutoExitDuration(value: Int) = settingsDataStore.setValue(SettingsDataStore.AutoExitDuration, value)
 
-    val roomAutoExitDuration: Flow<Int> = settingsDataStore.getFlow(SettingsDataStore.RoomAutoExitDuration, 60)
+    val roomAutoExitDuration: Flow<Int> = settingsDataStore.getFlow(SettingsDataStore.RoomAutoExitDuration, 0)
     suspend fun setRoomAutoExitDuration(value: Int) = settingsDataStore.setValue(SettingsDataStore.RoomAutoExitDuration, value)
 
     // Debug / Log
@@ -213,4 +213,3 @@ class SettingsRepository @Inject constructor(
     val syncProxyUrl: Flow<String> = settingsDataStore.getFlow(SettingsDataStore.SyncProxyUrl, "")
     suspend fun setSyncProxyUrl(value: String) = settingsDataStore.setValue(SettingsDataStore.SyncProxyUrl, value)
 }
-

@@ -1,13 +1,12 @@
 package com.mylive.app.di
 
-import com.mylive.app.BuildConfig
+import com.mylive.app.core.common.RuntimeNetworkLogInterceptor
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
-import okhttp3.logging.HttpLoggingInterceptor
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.brotli.dec.BrotliInputStream
 import java.util.concurrent.TimeUnit
@@ -39,15 +38,7 @@ object NetworkModule {
                 response
             }
         })
-
-        // Only enable HTTP logging in debug builds
-        if (BuildConfig.DEBUG) {
-            builder.addInterceptor(
-                HttpLoggingInterceptor().apply {
-                    level = HttpLoggingInterceptor.Level.BASIC
-                }
-            )
-        }
+        builder.addInterceptor(RuntimeNetworkLogInterceptor())
 
         return builder.build()
     }

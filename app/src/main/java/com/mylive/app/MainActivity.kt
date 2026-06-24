@@ -12,7 +12,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
-import com.mylive.app.core.common.CoreLog
 import com.mylive.app.data.repository.SettingsRepository
 import com.mylive.app.ui.navigation.AppNavGraph
 import com.mylive.app.ui.navigation.Navigator
@@ -45,13 +44,6 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         maybeRequestNotificationPermission()
         val initialRoute = intent.getStringExtra(EXTRA_INITIAL_ROUTE)
-
-        // Sync log settings
-        lifecycleScope.launch {
-            settingsRepository.logEnable.collect { enabled ->
-                CoreLog.enableLog = enabled
-            }
-        }
 
         // Sync sleep timer settings
         lifecycleScope.launch {

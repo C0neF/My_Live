@@ -107,7 +107,7 @@ class ProfileBackupManager @Inject constructor(
         string(SettingsDataStore.AudioOutputDriver, ""),
         bool(SettingsDataStore.AutoExitEnable, false),
         int(SettingsDataStore.AutoExitDuration, 60),
-        int(SettingsDataStore.RoomAutoExitDuration, 60),
+        int(SettingsDataStore.RoomAutoExitDuration, 0),
         double(SettingsDataStore.ChatTextSize, 14.0),
         double(SettingsDataStore.ChatTextGap, 4.0),
         bool(SettingsDataStore.ChatBubbleStyle, false),

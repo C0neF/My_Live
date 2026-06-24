@@ -2,6 +2,7 @@ package com.mylive.app.service
 
 import com.mylive.app.BuildConfig
 import com.mylive.app.core.common.CoreLog
+import com.mylive.app.core.common.safeUrlForLog
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
@@ -113,8 +114,11 @@ class RemoteSyncService @Inject constructor() {
                 return
             } catch (e: Exception) {
                 lastError = e
-                CoreLog.e("RemoteSyncService: Connection failed for ${target.url}", e)
-                Timber.e(e, "RemoteSyncService: Connection failed for %s", target.url)
+                Timber.e(
+                    e,
+                    "RemoteSyncService: Connection failed for %s",
+                    safeUrlForLog(target.url)
+                )
                 cleanupConnection(connectionId)
             }
         }
@@ -129,8 +133,11 @@ class RemoteSyncService @Inject constructor() {
     ) {
         val wsUrl = target.url
         _connectionState.value = RemoteSyncConnectionState.CONNECTING
-        CoreLog.d("RemoteSyncService: Connecting to $wsUrl with proxy '$configuredProxyUrl'")
-        Timber.d("RemoteSyncService: Connecting to %s with proxy '%s'", wsUrl, configuredProxyUrl)
+        Timber.d(
+            "RemoteSyncService: Connecting to %s with proxy configured=%s",
+            safeUrlForLog(wsUrl),
+            configuredProxyUrl.isNotBlank()
+        )
 
         val connectionReady = CompletableDeferred<Unit>()
         val clientBuilder = OkHttpClient.Builder()
@@ -146,8 +153,7 @@ class RemoteSyncService @Inject constructor() {
         }
         if (proxy != null) {
             clientBuilder.proxy(proxy)
-            CoreLog.d("RemoteSyncService: Using proxy $proxy")
-            Timber.d("RemoteSyncService: Using proxy %s", proxy)
+            Timber.d("RemoteSyncService: Using configured proxy")
         }
 
         val okHttpClient = clientBuilder.build()
@@ -162,7 +168,6 @@ class RemoteSyncService @Inject constructor() {
                     return
                 }
                 _connectionState.value = RemoteSyncConnectionState.CONNECTED
-                CoreLog.d("RemoteSyncService: WebSocket connection established")
                 Timber.d("RemoteSyncService: WebSocket connection established")
                 startHeartbeat(connectionId)
                 connectionReady.complete(Unit)
@@ -180,7 +185,6 @@ class RemoteSyncService @Inject constructor() {
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                 if (!isActiveConnection(connectionId)) return
-                CoreLog.d("RemoteSyncService: WebSocket closed ($code): $reason")
                 Timber.d("RemoteSyncService: WebSocket closed (%s): %s", code, reason)
                 connectionReady.completeExceptionally(Exception("同步服务连接已关闭: $reason"))
                 cleanupConnection(connectionId)
@@ -188,7 +192,6 @@ class RemoteSyncService @Inject constructor() {
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 if (!isActiveConnection(connectionId)) return
-                CoreLog.e("RemoteSyncService: WebSocket error", t)
                 Timber.e(t, "RemoteSyncService: WebSocket error response=%s", response?.code)
                 connectionReady.completeExceptionally(t)
                 cleanupConnection(connectionId)

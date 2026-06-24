@@ -2,6 +2,7 @@ package com.mylive.app.ui.screen.mine
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.mylive.app.core.common.safeUrlForLog
 import com.mylive.app.core.model.LivePlayQuality
 import com.mylive.app.core.model.LivePlayUrl
 import com.mylive.app.core.site.LiveSite
@@ -198,13 +199,22 @@ class ParseViewModel @Inject constructor(
             noRedirectClient.newCall(request).execute().use { response ->
                 if (response.isRedirect) {
                     val location = response.header("Location") ?: ""
-                    Timber.d("getLocation %s -> [%d] %s", url, response.code, location)
+                    Timber.d(
+                        "getLocation %s -> [%d] %s",
+                        safeUrlForLog(url),
+                        response.code,
+                        safeUrlForLog(location)
+                    )
                     return@withContext location
                 }
-                Timber.w("getLocation %s returned non-redirect %d", url, response.code)
+                Timber.w(
+                    "getLocation %s returned non-redirect %d",
+                    safeUrlForLog(url),
+                    response.code
+                )
             }
         } catch (e: Exception) {
-            Timber.e(e, "getLocation redirect failed for $url")
+            Timber.e(e, "getLocation redirect failed for %s", safeUrlForLog(url))
         }
         ""
     }

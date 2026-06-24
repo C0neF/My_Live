@@ -8,6 +8,7 @@ import android.os.IBinder
 import androidx.compose.runtime.mutableStateListOf
 import com.mylive.app.BuildConfig
 import com.mylive.app.core.common.CoreLog
+import com.mylive.app.core.common.safePathForLog
 import com.mylive.app.data.local.entity.FollowUserEntity
 import com.mylive.app.data.local.entity.HistoryEntity
 import com.mylive.app.data.local.entity.ShieldEntity
@@ -259,7 +260,7 @@ class LanSyncService : Service() {
             val method = session.method
             val uri = session.uri
             
-            CoreLog.d("LanSyncService: HTTP request: $method $uri")
+            CoreLog.d("LanSyncService: HTTP request: $method ${safePathForLog(uri)}")
             
             return try {
                 if (method == Method.GET && uri == "/") {
@@ -424,7 +425,9 @@ class LanSyncService : Service() {
                 ?: ""
             if (syncToken.isEmpty() || providedToken == syncToken) return null
 
-            CoreLog.w("LanSyncService: rejected unauthorized sync request to $uri")
+            CoreLog.w(
+                "LanSyncService: rejected unauthorized sync request to ${safePathForLog(uri)}"
+            )
             return newJsonResponse(
                 false,
                 "unauthorized: pairing required",

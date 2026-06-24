@@ -167,7 +167,7 @@ class SettingsViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 60)
 
     val roomAutoExitDuration: StateFlow<Int> = settingsRepository.roomAutoExitDuration
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 60)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
     fun setAutoExitEnable(value: Boolean) = viewModelScope.launch { settingsRepository.setAutoExitEnable(value) }
     fun setAutoExitDuration(value: Int) = viewModelScope.launch { settingsRepository.setAutoExitDuration(value) }

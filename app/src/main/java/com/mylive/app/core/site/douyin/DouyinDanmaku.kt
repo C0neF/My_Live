@@ -3,6 +3,7 @@ package com.mylive.app.core.site.douyin
 import com.mylive.app.core.common.CoreLog
 import com.mylive.app.core.common.EmojiParser
 import com.mylive.app.core.common.WebSocketUtils
+import com.mylive.app.core.common.safeUrlForLog
 import com.mylive.app.core.model.DanmakuArgs
 import com.mylive.app.core.model.LiveMessage
 import com.mylive.app.core.model.LiveMessageColor
@@ -114,7 +115,7 @@ class DouyinDanmaku(
             url.replace("webcast3-ws-web-lq", host)
         }
 
-        CoreLog.d("[DouyinDanmaku] Connecting to: $url")
+        CoreLog.d("[DouyinDanmaku] Connecting to: ${safeUrlForLog(url)}")
 
         webSocketUtils.connect(
             url = url,

@@ -75,4 +75,12 @@ class ProfileBackupManagerSettingsTest {
         assertEquals(60, settings.getInt(SettingsDataStore.AutoUpdateFollowDuration.name))
         assertEquals(8, settings.getInt(SettingsDataStore.UpdateFollowThreadCount.name))
     }
+
+    @Test
+    fun exportProfileDefaultsRoomAutoExitToNever() = runBlocking {
+        val backupJson = backupManager.exportProfileJson()
+        val settings = JSONObject(backupJson).getJSONObject("settings")
+
+        assertEquals(0, settings.getInt(SettingsDataStore.RoomAutoExitDuration.name))
+    }
 }

@@ -220,8 +220,11 @@ class BiliBiliSite @Inject constructor(
         quality: LivePlayQuality
     ): LivePlayUrl {
         val qualityId = (quality.data as PlayQualityData.BiliBili).qualityId
-        val urls = mutableListOf<String>()
-        try {
+        val headers = mapOf(
+            "referer" to "https://live.bilibili.com",
+            "user-agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36 Edg/115.0.1901.188"
+        )
+        return try {
             val result = httpClient.getJson(
                 "https://api.live.bilibili.com/xlive/web-room/v2/index/getRoomPlayInfo",
                 queryParameters = mapOf(
@@ -234,45 +237,18 @@ class BiliBiliSite @Inject constructor(
                 ),
                 header = getHeader()
             ) as JSONObject
-            val streamList = result.optJSONObject("data")
+            val playurlData = result.optJSONObject("data")
                 ?.optJSONObject("playurl_info")
                 ?.optJSONObject("playurl")
-                ?.optJSONArray("stream") ?: return LivePlayUrl(urls = urls, headers = emptyMap())
-            for (i in 0 until streamList.length()) {
-                val streamItem = streamList.optJSONObject(i) ?: continue
-                val formatList = streamItem.optJSONArray("format") ?: continue
-                for (j in 0 until formatList.length()) {
-                    val formatItem = formatList.optJSONObject(j) ?: continue
-                    val codecList = formatItem.optJSONArray("codec") ?: continue
-                    for (k in 0 until codecList.length()) {
-                        val codecItem = codecList.optJSONObject(k) ?: continue
-                        val urlList = codecItem.optJSONArray("url_info") ?: continue
-                        val baseUrl = codecItem.optString("base_url")
-                        for (l in 0 until urlList.length()) {
-                            val urlItem = urlList.optJSONObject(l) ?: continue
-                            urls.add("${urlItem.optString("host")}$baseUrl${urlItem.optString("extra")}")
-                        }
-                    }
-                }
-            }
+                ?: return LivePlayUrl(urls = emptyList(), headers = headers)
+            parseBiliBiliPlayback(
+                playurlData = playurlData,
+                requestedQuality = quality
+            ).copy(headers = headers)
         } catch (e: Exception) {
             CoreLog.e("BiliBili getPlayUrls failed", e)
+            LivePlayUrl(urls = emptyList(), headers = headers)
         }
-        // Sort: mcdn URLs last
-        urls.sortWith(Comparator { a, b ->
-            when {
-                a.contains("mcdn") && !b.contains("mcdn") -> 1
-                !a.contains("mcdn") && b.contains("mcdn") -> -1
-                else -> 0
-            }
-        })
-        return LivePlayUrl(
-            urls = urls,
-            headers = mapOf(
-                "referer" to "https://live.bilibili.com",
-                "user-agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36 Edg/115.0.1901.188"
-            )
-        )
     }
 
     override suspend fun getRecommendRooms(page: Int): LiveCategoryResult {

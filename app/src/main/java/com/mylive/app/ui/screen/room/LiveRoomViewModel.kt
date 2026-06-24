@@ -531,6 +531,19 @@ class LiveRoomViewModel @Inject constructor(
         try {
             val playUrl = site.getPlayUrls(detail, quality)
             if (!isActiveRoute(route)) return
+            _uiState.update { state ->
+                val actualIndex = updatedQualityIndexForResolvedPlayback(
+                    qualities = state.playQualities,
+                    currentIndex = state.currentQualityIndex,
+                    requestedQuality = quality,
+                    actualQuality = playUrl.actualQuality
+                )
+                if (actualIndex == state.currentQualityIndex) {
+                    state
+                } else {
+                    state.copy(currentQualityIndex = actualIndex)
+                }
+            }
             playerController?.play(
                 urls = playUrl.urls,
                 headers = playUrl.headers,

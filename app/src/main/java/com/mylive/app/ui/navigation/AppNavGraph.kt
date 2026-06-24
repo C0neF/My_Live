@@ -15,6 +15,7 @@ import com.mylive.app.ui.screen.other.HistoryScreen
 import com.mylive.app.ui.screen.room.LiveRoomScreen
 import com.mylive.app.ui.screen.search.SearchScreen
 import com.mylive.app.ui.screen.settings.AccountScreen
+import com.mylive.app.ui.screen.settings.AppUpdateScreen
 import com.mylive.app.ui.screen.settings.AppearanceSettingsScreen
 import com.mylive.app.ui.screen.settings.AutoExitSettingsScreen
 import com.mylive.app.ui.screen.settings.DanmuSettingsScreen
@@ -123,6 +124,9 @@ fun AppNavGraph(navigator: Navigator, initialRoute: String? = null) {
                 }
                 entry<Route.SettingsPlaybackPage> {
                     PlaybackPageSettingsScreen(navigator = navigator)
+                }
+                entry<Route.SettingsUpdate> {
+                    AppUpdateScreen(navigator = navigator)
                 }
                 entry<Route.LocalSync> {
                     LocalSyncScreen(navigator = navigator)

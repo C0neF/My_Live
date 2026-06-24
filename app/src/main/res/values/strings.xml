@@ -47,6 +47,8 @@
     <string name="settings_indexed_subtitle">Tab排序与平台排序</string>
     <string name="settings_playback_page">播放页设置</string>
     <string name="settings_playback_page_subtitle">快捷面板与直播间自定义</string>
+    <string name="settings_update">应用更新</string>
+    <string name="settings_update_subtitle">检查并安装最新 v1.x 稳定版</string>
     <string name="settings_auto_exit">自动退出</string>
     <string name="settings_auto_exit_subtitle">定时退出与房间内退出</string>
     <string name="settings_other">其他设置</string>

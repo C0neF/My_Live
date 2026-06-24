@@ -71,6 +71,9 @@ sealed interface Route : NavKey {
     data object SettingsPlaybackPage : Route
 
     @Serializable
+    data object SettingsUpdate : Route
+
+    @Serializable
     data object Sync : Route
 
     @Serializable

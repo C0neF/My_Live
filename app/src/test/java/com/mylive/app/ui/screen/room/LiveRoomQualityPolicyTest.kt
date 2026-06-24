@@ -34,6 +34,38 @@ class LiveRoomQualityPolicyTest {
     }
 
     @Test
+    fun unavailableQualityPrefersNearestLevelThatIsNotHigher() {
+        val qualities = listOf(
+            LivePlayQuality("蓝光30M", PlayQualityData.Huya(0, 0)),
+            LivePlayQuality("超清", PlayQualityData.Huya(0, 2000)),
+            LivePlayQuality("流畅", PlayQualityData.Huya(0, 500))
+        )
+
+        assertEquals(2, selectPreferredQualityIndex(qualities, preferredLevel = 3))
+    }
+
+    @Test
+    fun unavailableQualityUsesNearestHigherLevelWhenNoLowerLevelExists() {
+        val qualities = listOf(
+            LivePlayQuality("原画1080P30", PlayQualityData.Douyu(0, emptyList())),
+            LivePlayQuality("高清", PlayQualityData.Douyu(2, emptyList()))
+        )
+
+        assertEquals(1, selectPreferredQualityIndex(qualities, preferredLevel = 4))
+    }
+
+    @Test
+    fun exactQualityMatchStillTakesPriority() {
+        val qualities = listOf(
+            LivePlayQuality("蓝光30M", PlayQualityData.Huya(0, 0)),
+            LivePlayQuality("超清", PlayQualityData.Huya(0, 2000)),
+            LivePlayQuality("流畅", PlayQualityData.Huya(0, 500))
+        )
+
+        assertEquals(1, selectPreferredQualityIndex(qualities, preferredLevel = 2))
+    }
+
+    @Test
     fun liveRoomViewModelUsesCellularQualityPreferenceWhenLoadingQualities() {
         val source = File("src/main/java/com/mylive/app/ui/screen/room/LiveRoomViewModel.kt").readText()
 

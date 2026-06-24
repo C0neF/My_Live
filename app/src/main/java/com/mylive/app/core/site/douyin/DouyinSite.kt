@@ -49,8 +49,64 @@ private val DOUYIN_PARTITION_IMAGE_KEYS = listOf(
     "static_icon"
 )
 
+private val DOUYIN_LEGACY_QUALITY_KEY_GROUPS = listOf(
+    listOf("FULL_HD1", "ORIGION", "ORIGIN", "origin", "uhd"),
+    listOf("HD1", "hd"),
+    listOf("SD2", "sd"),
+    listOf("SD1", "ld")
+)
+
 internal fun resolveDouyinPartitionImageUrl(data: Any?): String? {
     return firstSiteImageUrl(data, DOUYIN_PARTITION_IMAGE_KEYS)
+}
+
+internal fun resolveLegacyDouyinQualityUrls(
+    quality: JSONObject,
+    flvMap: JSONObject?,
+    hlsMap: JSONObject?
+): List<String> {
+    return listOfNotNull(
+        resolveLegacyDouyinQualityUrl(quality, flvMap),
+        resolveLegacyDouyinQualityUrl(quality, hlsMap)
+    ).distinct()
+}
+
+private fun resolveLegacyDouyinQualityUrl(
+    quality: JSONObject,
+    urlMap: JSONObject?
+): String? {
+    if (urlMap == null) return null
+
+    val availableKeys = urlMap.keys().asSequence().toList()
+    val sdkKey = quality.optString("sdk_key", "")
+    val matchingGroup = DOUYIN_LEGACY_QUALITY_KEY_GROUPS.firstOrNull { group ->
+        group.any { it.equals(sdkKey, ignoreCase = true) }
+    }.orEmpty()
+
+    val directCandidates = buildList {
+        if (sdkKey.isNotBlank()) add(sdkKey)
+        addAll(matchingGroup)
+    }
+    directCandidates.forEach { candidate ->
+        val actualKey = availableKeys.firstOrNull { it.equals(candidate, ignoreCase = true) }
+        val url = actualKey?.let { urlMap.optString(it, "") }
+        if (!url.isNullOrBlank()) return url
+    }
+
+    val orderedKnownKeys = DOUYIN_LEGACY_QUALITY_KEY_GROUPS.mapNotNull { group ->
+        group.firstNotNullOfOrNull { candidate ->
+            availableKeys.firstOrNull { it.equals(candidate, ignoreCase = true) }
+        }
+    }
+    val knownKeys = orderedKnownKeys.map { it.lowercase() }.toSet()
+    val orderedKeys = orderedKnownKeys + availableKeys
+        .filterNot { it.lowercase() in knownKeys }
+        .sortedBy { it.lowercase() }
+
+    val level = quality.optInt("level", 0)
+    val fallbackIndex = orderedKeys.size - level
+    val fallbackKey = orderedKeys.getOrNull(fallbackIndex) ?: return null
+    return urlMap.optString(fallbackKey, "").takeIf { it.isNotBlank() }
 }
 
 /**
@@ -866,17 +922,11 @@ class DouyinSite @Inject constructor(
                 // Format 2: use flv_pull_url and hls_pull_url_map
                 val flvMap = streamUrl.optJSONObject("flv_pull_url")
                 val hlsMap = streamUrl.optJSONObject("hls_pull_url_map")
-                val flvList = jsonObjectValues(flvMap)
-                val hlsList = jsonObjectValues(hlsMap)
 
                 for (i in 0 until qualityList.length()) {
                     val quality = qualityList.getJSONObject(i)
                     val level = quality.optInt("level", 0)
-                    val urls = mutableListOf<String>()
-                    val flvIndex = flvList.size - level
-                    if (flvIndex in flvList.indices) urls.add(flvList[flvIndex])
-                    val hlsIndex = hlsList.size - level
-                    if (hlsIndex in hlsList.indices) urls.add(hlsList[hlsIndex])
+                    val urls = resolveLegacyDouyinQualityUrls(quality, flvMap, hlsMap)
                     if (urls.isNotEmpty()) {
                         qualities.add(
                             LivePlayQuality(
@@ -921,15 +971,6 @@ class DouyinSite @Inject constructor(
         qualities.sortByDescending { it.sort }
         logDebug("获取到的画质列表: ${qualities.joinToString { it.quality }}")
         return qualities
-    }
-
-    /**
-     * Extract all values from a JSONObject as a list of strings.
-     * Used for `flv_pull_url` and `hls_pull_url_map` maps.
-     */
-    private fun jsonObjectValues(obj: JSONObject?): List<String> {
-        if (obj == null) return emptyList()
-        return obj.keys().asSequence().map { obj.optString(it, "") }.toList()
     }
 
     // ── Play URLs ───────────────────────────────────────────────────────────

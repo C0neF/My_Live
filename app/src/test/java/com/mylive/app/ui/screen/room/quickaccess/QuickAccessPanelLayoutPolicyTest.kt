@@ -40,4 +40,17 @@ class QuickAccessPanelLayoutPolicyTest {
         assertTrue(source.contains("orderedKeys.indexOf(initialSelectedKey).takeIf { it >= 0 } ?: 0"))
         assertTrue(source.contains("pagerState.scrollToPage(initialPage)"))
     }
+
+    @Test
+    fun disabledPanelDismissesFromAnEffectInsteadOfDuringComposition() {
+        val source = File("src/main/java/com/mylive/app/ui/screen/room/quickaccess/QuickAccessPanel.kt").readText()
+        val disabledGuard = source.substringAfter(
+            "val enabled by viewModel.quickAccessEnabled.collectAsStateWithLifecycle()"
+        ).substringBefore("val extraTabsByKey")
+
+        assertTrue(disabledGuard.contains("LaunchedEffect(enabled)"))
+        assertTrue(disabledGuard.contains("if (!enabled) onDismiss()"))
+        assertTrue(disabledGuard.contains("if (!enabled) return"))
+        assertFalse(disabledGuard.contains("if (!enabled) {\n        onDismiss()"))
+    }
 }

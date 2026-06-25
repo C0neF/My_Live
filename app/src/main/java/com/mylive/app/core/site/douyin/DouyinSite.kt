@@ -8,7 +8,6 @@ import com.mylive.app.core.model.DanmakuArgs
 import com.mylive.app.core.model.LiveAnchorItem
 import com.mylive.app.core.model.LiveCategory
 import com.mylive.app.core.model.LiveCategoryResult
-import com.mylive.app.core.model.LiveContributionRankItem
 import com.mylive.app.core.model.LivePlayQuality
 import com.mylive.app.core.model.LivePlayUrl
 import com.mylive.app.core.model.LiveRoomDetail
@@ -164,7 +163,6 @@ class DouyinSite @Inject constructor(
 
     /**
      * Stores the danmaku args from the last [getRoomDetail] call.
-     * Used by [getContributionRank] when no explicit detail is provided.
      */
     @Volatile
     var lastDanmakuArgs: DanmakuArgs.Douyin? = null
@@ -1162,118 +1160,6 @@ class DouyinSite @Inject constructor(
         detail: LiveRoomDetail?
     ): List<LiveSuperChatMessage> = emptyList()
 
-    // ── Contribution rank ───────────────────────────────────────────────────
-
-    /**
-     * Fetch the contribution (gift) rank for a live room.
-     *
-     * Requires the real roomId and anchor IDs which are obtained from the
-     * room detail API. Uses the `webcast/ranklist/audience/` endpoint with
-     * A-Bogus signing.
-     */
-    override suspend fun getContributionRank(
-        roomId: String,
-        detail: LiveRoomDetail?
-    ): List<LiveContributionRankItem> {
-        val roomDetail = detail ?: getRoomDetail(roomId)
-        val webRid = if (roomDetail.roomId.isNotEmpty()) roomDetail.roomId else roomId
-        val danmakuArgs = lastDanmakuArgs
-
-        val roomInfo = getRoomDataByApi(webRid)
-        val roomList = roomInfo.optJSONArray("data") ?: return emptyList()
-        if (roomList.length() == 0) return emptyList()
-
-        val roomData = roomList.getJSONObject(0)
-        val owner = roomData.optJSONObject("owner")
-            ?: roomInfo.optJSONObject("user") ?: JSONObject()
-        val anchorId = owner.optString("id_str", "").ifEmpty {
-            owner.opt("id")?.toString() ?: ""
-        }
-        val secAnchorId = owner.optString("sec_uid", "")
-        val realRoomId = danmakuArgs?.roomId
-            ?: roomData.optString("id_str", "")
-        if (anchorId.isEmpty() || secAnchorId.isEmpty() || realRoomId.isEmpty()) {
-            return emptyList()
-        }
-
-        val requestHeaders = getRequestHeaders()
-        requestHeaders["Referer"] = "https://live.douyin.com/$webRid"
-
-        val uri = URI("https://live.douyin.com/webcast/ranklist/audience/").let { base ->
-            val params = linkedMapOf(
-                "aid" to "6383",
-                "app_name" to "douyin_web",
-                "live_id" to "1",
-                "device_platform" to "web",
-                "language" to "zh-CN",
-                "enter_from" to "link_share",
-                "cookie_enabled" to "true",
-                "screen_width" to "1920",
-                "screen_height" to "1080",
-                "browser_language" to "zh-CN",
-                "browser_platform" to "Win32",
-                "browser_name" to "Chrome",
-                "browser_version" to "125.0.0.0",
-                "os_name" to "Windows",
-                "os_version" to "10",
-                "webcast_sdk_version" to "2450",
-                "room_id" to realRoomId,
-                "anchor_id" to anchorId,
-                "sec_anchor_id" to secAnchorId,
-                "ignoreToast" to "true",
-                "rank_type" to "30",
-                "msToken" to ""
-            )
-            buildUriWithParams(base, params)
-        }
-
-        val requestUrl = douyinSign.getAbogusUrl(uri.toString(), DEFAULT_USER_AGENT)
-        val result = httpClient.getJson(requestUrl, header = requestHeaders) as JSONObject
-
-        val ranksArray = result.optJSONObject("data")?.optJSONArray("ranks") ?: return emptyList()
-        return (0 until ranksArray.length()).mapNotNull { index ->
-            try {
-                val item = ranksArray.getJSONObject(index)
-                val user = item.optJSONObject("user") ?: JSONObject()
-                val payGrade = user.optJSONObject("pay_grade") ?: JSONObject()
-                val fansData = user.optJSONObject("fans_club")
-                    ?.optJSONObject("data") ?: JSONObject()
-                val userLevel = payGrade.opt("level")?.toString()?.toIntOrNull()
-                val fansLevel = fansData.opt("level")?.toString()?.toIntOrNull()
-                val scoreText = resolveDouyinRankScore(item)
-                val scoreDescription = item.optString("score_description", "").trim()
-                val exactlyScore = item.optString("exactly_score", "").trim()
-
-                val scoreDetail: String? = when {
-                    scoreDescription.isNotEmpty() && scoreDescription != scoreText -> scoreDescription
-                    exactlyScore.isNotEmpty() && exactlyScore != scoreText -> exactlyScore
-                    else -> {
-                        val gapDesc = item.optString("gap_description", "").trim()
-                        gapDesc.ifEmpty { null }
-                    }
-                }
-
-                val rankItem = LiveContributionRankItem(
-                    rank = resolveDouyinRank(item, index),
-                    userName = user.optString("nickname", ""),
-                    avatar = firstImageUrl(user.opt("avatar_thumb")),
-                    scoreText = scoreText,
-                    scoreDetail = scoreDetail,
-                    userLevel = userLevel,
-                    userLevelText = if (userLevel == null || userLevel <= 0) null else "财富 $userLevel",
-                    userLevelIcon = firstImageUrl(payGrade.opt("new_im_icon_with_level")),
-                    fansLevel = fansLevel,
-                    fansName = fansData.optString("club_name", "").ifEmpty { null },
-                    fansIcon = pickDouyinBadgeIcon(fansData.optJSONObject("badge")?.opt("icons"))
-                )
-                if (rankItem.userName.trim().isNotEmpty()) rankItem else null
-            } catch (e: Exception) {
-                CoreLog.error(e)
-                null
-            }
-        }
-    }
-
     // ── Category / rank helper methods ──────────────────────────────────────
 
     /**
@@ -1360,53 +1246,10 @@ class DouyinSite @Inject constructor(
     }
 
     /**
-     * Resolve the rank number from a rank item, falling back to index + 1.
-     */
-    private fun resolveDouyinRank(item: JSONObject, index: Int): Int {
-        val parsed = item.opt("rank")?.toString()?.toIntOrNull()
-        if (parsed == null || parsed <= 0) return index + 1
-        if (parsed == 1 && index > 0) return index + 1
-        return parsed
-    }
-
-    /**
      * Get the first URL from an image object's `url_list` array.
      */
     private fun firstImageUrl(data: Any?): String {
         return firstSiteImageUrl(data, listOf("url_list", "url")).orEmpty()
-    }
-
-    /**
-     * Pick the best badge icon URL from a Douyin fans club badge icons map.
-     * Tries keys "4" through "0" first (highest resolution), then any key.
-     */
-    private fun pickDouyinBadgeIcon(icons: Any?): String? {
-        if (icons !is JSONObject) return null
-        for (key in listOf("4", "3", "2", "1", "0")) {
-            val url = firstImageUrl(icons.opt(key))
-            if (url.isNotEmpty()) return url
-        }
-        for (key in icons.keys()) {
-            val url = firstImageUrl(icons.opt(key))
-            if (url.isNotEmpty()) return url
-        }
-        return null
-    }
-
-    /**
-     * Resolve the score text for a contribution rank item.
-     * Tries exactly_score, score_description, score, and delta in order.
-     */
-    private fun resolveDouyinRankScore(item: JSONObject): String {
-        val exactlyScore = item.optString("exactly_score", "").trim()
-        if (exactlyScore.isNotEmpty()) return exactlyScore
-        val scoreDescription = item.optString("score_description", "").trim()
-        if (scoreDescription.isNotEmpty()) return scoreDescription
-        val score = item.optString("score", "").trim()
-        if (score.isNotEmpty()) return score
-        val delta = item.optString("delta", "").trim()
-        if (delta.isNotEmpty()) return delta
-        return "0"
     }
 
     // ── URI / query helpers ─────────────────────────────────────────────────

@@ -54,9 +54,10 @@ fun SearchScreen(
     viewModel: SearchViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val siteTabs by viewModel.siteTabs.collectAsState()
     var searchText by remember { mutableStateOf("") }
     val selectedTab = uiState.selectedSiteIndex
-    val selectedPlatformId = viewModel.siteTabs.getOrNull(selectedTab)?.id
+    val selectedPlatformId = siteTabs.getOrNull(selectedTab)?.id
     var showSearchTypeMenu by remember { mutableStateOf(false) }
 
     var isExiting by remember { mutableStateOf(false) }
@@ -147,7 +148,7 @@ fun SearchScreen(
             )
 
             // Compact search filter row
-            if (viewModel.siteTabs.isNotEmpty()) {
+            if (siteTabs.isNotEmpty()) {
                 val compactFilterMetrics = searchCompactPlatformFilterMetrics()
                 Row(
                     modifier = Modifier
@@ -169,7 +170,7 @@ fun SearchScreen(
                         metrics = compactFilterMetrics
                     )
 
-                    viewModel.siteTabs.forEachIndexed { index, site ->
+                    siteTabs.forEachIndexed { index, site ->
                         CompactSearchFilterPill(
                             modifier = Modifier.weight(1f),
                             platformId = site.id,
@@ -188,7 +189,7 @@ fun SearchScreen(
                 targetState = selectedTab to uiState.searchType,
                 modifier = Modifier
                     .weight(1f)
-                    .pointerInput(selectedTab, viewModel.siteTabs.size) {
+                    .pointerInput(selectedTab, siteTabs.size) {
                         var dragX = 0f
                         detectHorizontalDragGestures(
                             onDragStart = { dragX = 0f },
@@ -199,7 +200,7 @@ fun SearchScreen(
                             onDragEnd = {
                                 val targetIndex = searchPlatformSwipeTargetIndex(
                                     currentIndex = selectedTab,
-                                    siteCount = viewModel.siteTabs.size,
+                                    siteCount = siteTabs.size,
                                     dragX = dragX
                                 )
                                 if (targetIndex != selectedTab) {
@@ -259,7 +260,7 @@ fun SearchScreen(
                             )
                         }
                         animatedSearchType == 0 -> {
-                            val currentSiteName = viewModel.siteTabs.getOrNull(animatedTab)?.name
+                            val currentSiteName = siteTabs.getOrNull(animatedTab)?.name
                             LazyVerticalGrid(
                                 columns = GridCells.Adaptive(LiveRoomGridMinCellWidth),
                                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
@@ -275,7 +276,7 @@ fun SearchScreen(
                                         coverUrl = room.cover,
                                         siteName = currentSiteName,
                                         onClick = {
-                                            val siteId = viewModel.siteTabs.getOrNull(animatedTab)?.id ?: ""
+                                            val siteId = siteTabs.getOrNull(animatedTab)?.id ?: ""
                                             navigator.navigateToRoom(siteId = siteId, roomId = room.roomId)
                                         }
                                     )
@@ -311,7 +312,7 @@ fun SearchScreen(
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .clickable {
-                                                val siteId = viewModel.siteTabs.getOrNull(animatedTab)?.id ?: ""
+                                                val siteId = siteTabs.getOrNull(animatedTab)?.id ?: ""
                                                 navigator.navigateToRoom(siteId = siteId, roomId = anchor.roomId)
                                             },
                                         colors = CardDefaults.cardColors(

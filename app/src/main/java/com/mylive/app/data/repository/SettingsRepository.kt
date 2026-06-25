@@ -140,9 +140,6 @@ class SettingsRepository @Inject constructor(
     suspend fun setLogEnable(value: Boolean) = settingsDataStore.setValue(SettingsDataStore.LogEnable, value)
 
     // Chat / SC
-    val contributionRankEnable: Flow<Boolean> = settingsDataStore.getFlow(SettingsDataStore.ContributionRankEnable, true)
-    suspend fun setContributionRankEnable(value: Boolean) = settingsDataStore.setValue(SettingsDataStore.ContributionRankEnable, value)
-
     val superChatSortDesc: Flow<Boolean> = settingsDataStore.getFlow(SettingsDataStore.SuperChatSortDesc, false)
     suspend fun setSuperChatSortDesc(value: Boolean) = settingsDataStore.setValue(SettingsDataStore.SuperChatSortDesc, value)
 
@@ -183,10 +180,6 @@ class SettingsRepository @Inject constructor(
     val homeSort: Flow<String> = settingsDataStore.getFlow(SettingsDataStore.HomeSort, "recommend,follow,category,user")
         .map { it.ifBlank { "recommend,follow,category,user" } }
     suspend fun setHomeSort(value: String) = settingsDataStore.setValue(SettingsDataStore.HomeSort, value)
-
-    val liveRoomTabSort: Flow<String> = settingsDataStore.getFlow(SettingsDataStore.LiveRoomTabSort, "chat,super_chat,follow,settings")
-        .map { it.ifBlank { "chat,super_chat,follow,settings" } }
-    suspend fun setLiveRoomTabSort(value: String) = settingsDataStore.setValue(SettingsDataStore.LiveRoomTabSort, value)
 
     val liveRoomQuickAccessSort: Flow<String> = settingsDataStore.getFlow(SettingsDataStore.LiveRoomQuickAccessSort, "follow,history,recommendation")
         .map { it.ifBlank { "follow,history,recommendation" } }

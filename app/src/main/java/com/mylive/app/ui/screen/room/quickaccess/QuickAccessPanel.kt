@@ -131,10 +131,10 @@ fun QuickAccessPanel(
     val sortStr by viewModel.quickAccessSort.collectAsStateWithLifecycle()
     val enabled by viewModel.quickAccessEnabled.collectAsStateWithLifecycle()
 
-    if (!enabled) {
-        onDismiss()
-        return
+    LaunchedEffect(enabled) {
+        if (!enabled) onDismiss()
     }
+    if (!enabled) return
 
     val extraTabsByKey = remember(extraTabs) {
         extraTabs.associateBy { it.key }

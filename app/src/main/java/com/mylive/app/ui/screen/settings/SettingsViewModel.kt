@@ -180,9 +180,6 @@ class SettingsViewModel @Inject constructor(
     val logEnable: StateFlow<Boolean> = settingsRepository.logEnable
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
-    val contributionRankEnable: StateFlow<Boolean> = settingsRepository.contributionRankEnable
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
-
     val superChatSortDesc: StateFlow<Boolean> = settingsRepository.superChatSortDesc
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
@@ -200,7 +197,6 @@ class SettingsViewModel @Inject constructor(
 
     fun setDebugMode(value: Boolean) = viewModelScope.launch { settingsRepository.setDebugMode(value) }
     fun setLogEnable(value: Boolean) = viewModelScope.launch { settingsRepository.setLogEnable(value) }
-    fun setContributionRankEnable(value: Boolean) = viewModelScope.launch { settingsRepository.setContributionRankEnable(value) }
     fun setSuperChatSortDesc(value: Boolean) = viewModelScope.launch { settingsRepository.setSuperChatSortDesc(value) }
     fun setChatTextSize(value: Double) = viewModelScope.launch { settingsRepository.setChatTextSize(value) }
     fun setChatBubbleStyle(value: Boolean) = viewModelScope.launch { settingsRepository.setChatBubbleStyle(value) }
@@ -228,9 +224,6 @@ class SettingsViewModel @Inject constructor(
     val homeSort: StateFlow<String> = settingsRepository.homeSort
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "recommend,follow,category,user")
 
-    val liveRoomTabSort: StateFlow<String> = settingsRepository.liveRoomTabSort
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "chat,super_chat,follow,settings")
-
     val liveRoomQuickAccessSort: StateFlow<String> = settingsRepository.liveRoomQuickAccessSort
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "follow,history,recommendation")
 
@@ -239,7 +232,6 @@ class SettingsViewModel @Inject constructor(
 
     fun setSiteSort(value: String) = viewModelScope.launch { settingsRepository.setSiteSort(value) }
     fun setHomeSort(value: String) = viewModelScope.launch { settingsRepository.setHomeSort(value) }
-    fun setLiveRoomTabSort(value: String) = viewModelScope.launch { settingsRepository.setLiveRoomTabSort(value) }
     fun setLiveRoomQuickAccessSort(value: String) = viewModelScope.launch { settingsRepository.setLiveRoomQuickAccessSort(value) }
     fun setLiveRoomQuickAccessEnabled(value: Boolean) = viewModelScope.launch { settingsRepository.setLiveRoomQuickAccessEnabled(value) }
 

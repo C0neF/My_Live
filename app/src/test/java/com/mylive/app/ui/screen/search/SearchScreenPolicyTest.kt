@@ -26,10 +26,11 @@ class SearchScreenPolicyTest {
         val filterSource = source.substringAfter("// Compact search filter row")
             .substringBefore("AnimatedContent(")
 
-        assertTrue(source.contains("val selectedPlatformId = viewModel.siteTabs.getOrNull(selectedTab)?.id"))
+        assertTrue(source.contains("val siteTabs by viewModel.siteTabs.collectAsState()"))
+        assertTrue(source.contains("val selectedPlatformId = siteTabs.getOrNull(selectedTab)?.id"))
         assertTrue(filterSource.contains("CompactSearchTypeMenu("))
         assertTrue(filterSource.contains("platformId = selectedPlatformId"))
-        assertTrue(filterSource.contains("viewModel.siteTabs.forEachIndexed"))
+        assertTrue(filterSource.contains("siteTabs.forEachIndexed"))
         assertTrue(filterSource.contains("modifier = Modifier.weight(1f)"))
         assertTrue(filterSource.contains("platformId = site.id"))
         assertFalse(filterSource.contains("LazyRow"))
@@ -134,7 +135,7 @@ class SearchScreenPolicyTest {
     fun searchResultsContentRegistersHorizontalSwipeGesture() {
         val source = File("src/main/java/com/mylive/app/ui/screen/search/SearchScreen.kt").readText()
 
-        assertTrue(source.contains(".pointerInput(selectedTab, viewModel.siteTabs.size)"))
+        assertTrue(source.contains(".pointerInput(selectedTab, siteTabs.size)"))
         assertTrue(source.contains("detectHorizontalDragGestures("))
         assertTrue(source.contains("searchPlatformSwipeTargetIndex("))
     }

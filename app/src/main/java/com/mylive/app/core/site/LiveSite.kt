@@ -27,8 +27,6 @@ interface LiveSite {
     suspend fun getLiveStatus(roomId: String): Boolean
 
     suspend fun getSuperChatMessage(roomId: String, detail: LiveRoomDetail? = null): List<LiveSuperChatMessage>
-
-    suspend fun getContributionRank(roomId: String, detail: LiveRoomDetail? = null): List<LiveContributionRankItem>
 }
 
 private val defaultSiteOrder = listOf("bilibili", "douyu", "huya", "douyin")
@@ -53,4 +51,19 @@ fun Iterable<LiveSite>.sortedByUserOrder(orderStr: String): List<LiveSite> {
         }.thenBy { it.name }
             .thenBy { it.id }
     )
+}
+
+fun preserveSelectedSiteIndex(
+    previousSiteIds: List<String>,
+    reorderedSiteIds: List<String>,
+    selectedIndex: Int
+): Int {
+    if (reorderedSiteIds.isEmpty()) return 0
+    val selectedSiteId = previousSiteIds.getOrNull(selectedIndex)
+    val preservedIndex = reorderedSiteIds.indexOf(selectedSiteId)
+    return if (preservedIndex >= 0) {
+        preservedIndex
+    } else {
+        selectedIndex.coerceIn(0, reorderedSiteIds.lastIndex)
+    }
 }

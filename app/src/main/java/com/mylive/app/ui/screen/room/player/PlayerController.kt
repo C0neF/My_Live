@@ -348,7 +348,7 @@ internal fun buildPlaybackUrlCandidates(urls: List<String>, forceHttps: Boolean)
     return urls.flatMap { url ->
         if (url.startsWith("http://")) {
             val httpsUrl = "https://" + url.substring(7)
-            if (httpsUrl == url) listOf(url) else listOf(httpsUrl, url)
+            listOf(httpsUrl)
         } else {
             listOf(url)
         }

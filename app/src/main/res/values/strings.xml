@@ -154,10 +154,9 @@
     <string name="auto_exit_room_1h">1小时</string>
 
     <!-- Other Settings -->
-    <string name="debug_mode_title">调试模式</string>
-    <string name="debug_mode_subtitle">开启后显示调试信息</string>
+    <string name="debug_mode_title">调试级日志</string>
+    <string name="debug_mode_subtitle">日志开关关闭时，仅记录 DEBUG 级日志</string>
     <string name="log_enable_subtitle">记录运行日志用于排查问题</string>
-    <string name="contribution_rank_subtitle">直播间贡献榜显示设置</string>
     <string name="value_show">显示</string>
     <string name="value_hide">隐藏</string>
     <string name="value_newest">最新在上</string>
@@ -341,8 +340,8 @@
         <item>3小时</item>
     </string-array>
     <string name="auto_exit_duration_default">30分钟</string>
-    <string name="auto_exit_room_duration_title">房间内退出时间</string>
-    <string name="auto_exit_room_duration_subtitle">在直播间内停留多长时间后自动退出</string>
+    <string name="auto_exit_room_duration_title">直播间无操作退出时间</string>
+    <string name="auto_exit_room_duration_subtitle">连续无触摸操作多长时间后自动退出直播间</string>
     <string name="auto_exit_room_duration_default">不退出</string>
     <string-array name="auto_exit_room_duration_options">
         <item>不退出</item>
@@ -355,7 +354,6 @@
 
     <!-- Other settings -->
     <string name="log_enable_title">日志开关</string>
-    <string name="contribution_rank_title">贡献榜</string>
     <string name="superchat_sort_title">SuperChat排序</string>
     <string name="superchat_sort_subtitle">SuperChat消息排列顺序</string>
     <string name="superchat_sort_newest">最新在前</string>

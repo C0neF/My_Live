@@ -35,11 +35,10 @@ class PlayerControllerPolicyTest {
     }
 
     @Test
-    fun forceHttpsKeepsOriginalHttpUrlAsFallback() {
+    fun forceHttpsExcludesOriginalHttpUrl() {
         assertEquals(
             listOf(
                 "https://example.com/live.flv",
-                "http://example.com/live.flv",
                 "https://cdn.example.com/live.m3u8"
             ),
             buildPlaybackUrlCandidates(

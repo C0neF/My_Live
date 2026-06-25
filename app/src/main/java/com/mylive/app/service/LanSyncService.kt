@@ -33,10 +33,24 @@ import org.json.JSONObject
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
+import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.UUID
 import javax.inject.Inject
+
+internal fun newLanSyncToken(): String = UUID.randomUUID().toString().replace("-", "")
+
+internal fun isValidLanSyncToken(
+    expectedToken: String,
+    providedToken: String
+): Boolean {
+    if (expectedToken.isEmpty() || providedToken.isEmpty()) return false
+    return MessageDigest.isEqual(
+        expectedToken.toByteArray(Charsets.UTF_8),
+        providedToken.toByteArray(Charsets.UTF_8)
+    )
+}
 
 @AndroidEntryPoint
 class LanSyncService : Service() {
@@ -150,9 +164,7 @@ class LanSyncService : Service() {
         if (syncDeviceId.isEmpty()) {
             syncDeviceId = UUID.randomUUID().toString().split("-").first()
         }
-        if (syncToken.isEmpty()) {
-            syncToken = UUID.randomUUID().toString().replace("-", "").substring(0, 8)
-        }
+        syncToken = newLanSyncToken()
         CoreLog.d("LanSyncService: pair token generated")
         ipAddress = getLocalIpAddress()
         startHttpServer()
@@ -174,6 +186,7 @@ class LanSyncService : Service() {
         pendingSyncJobCount.set(0)
         scanClients.clear()
         isRunning = false
+        syncToken = ""
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -423,7 +436,12 @@ class LanSyncService : Service() {
             val providedToken = session.headers["x-sync-token"]
                 ?: session.parameters["token"]?.firstOrNull()
                 ?: ""
-            if (syncToken.isEmpty() || providedToken == syncToken) return null
+            if (
+                isValidLanSyncToken(
+                    expectedToken = syncToken,
+                    providedToken = providedToken
+                )
+            ) return null
 
             CoreLog.w(
                 "LanSyncService: rejected unauthorized sync request to ${safePathForLog(uri)}"

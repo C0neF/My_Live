@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.mylive.app.R
+import com.mylive.app.core.common.readUtf8TextWithinLimit
 import com.mylive.app.data.local.entity.FollowUserEntity
 import com.mylive.app.data.local.entity.FollowUserTagEntity
 import com.mylive.app.ui.component.BackToTopButton
@@ -55,7 +56,9 @@ import com.mylive.app.ui.navigation.navigateToRoom
 import com.mylive.app.ui.screen.backToTopButtonVisible
 import com.mylive.app.ui.screen.isScrollableContentAtTop
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -149,7 +152,11 @@ fun FollowScreen(
         if (uri != null) {
             scope.launch {
                 try {
-                    val json = context.contentResolver.openInputStream(uri)?.bufferedReader()?.readText() ?: ""
+                    val json = withContext(Dispatchers.IO) {
+                        context.contentResolver.openInputStream(uri)?.use { input ->
+                            input.readUtf8TextWithinLimit()
+                        } ?: error("无法读取导入文件")
+                    }
                     viewModel.importFollows(json)
                     Toast.makeText(context, "导入成功", Toast.LENGTH_SHORT).show()
                 } catch (e: Exception) {

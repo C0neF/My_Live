@@ -1,8 +1,10 @@
 package com.mylive.app.ui.screen.settings
 
 import android.annotation.SuppressLint
+import android.net.Uri
 import android.webkit.CookieManager
 import android.webkit.WebResourceRequest
+import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.compose.BackHandler
@@ -23,6 +25,10 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.mylive.app.ui.navigation.Navigator
 import com.mylive.app.ui.navigation.Route
 import com.mylive.app.R
+
+internal fun isSafeLoginWebUrl(url: Uri?): Boolean {
+    return url?.scheme?.equals("https", ignoreCase = true) == true
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @SuppressLint("SetJavaScriptEnabled")
@@ -98,6 +104,9 @@ fun LoginWebViewScreen(
                         settings.domStorageEnabled = true
                         settings.useWideViewPort = true
                         settings.loadWithOverviewMode = true
+                        settings.allowFileAccess = false
+                        settings.allowContentAccess = false
+                        settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
 
                         // Set mobile User-Agent matching mylive
                         settings.userAgentString = "Mozilla/5.0 (iPhone; CPU iPhone OS 13_2_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.0.3 Mobile/15E148 Safari/604.1 Edg/118.0.0.0"
@@ -109,7 +118,8 @@ fun LoginWebViewScreen(
                                 view: WebView?,
                                 request: WebResourceRequest?
                             ): Boolean {
-                                val url = request?.url ?: return false
+                                val url = request?.url ?: return true
+                                if (!isSafeLoginWebUrl(url)) return true
                                 val host = url.host ?: ""
                                 if (host == "m.bilibili.com" || host == "www.bilibili.com") {
                                     checkBiliCookies()

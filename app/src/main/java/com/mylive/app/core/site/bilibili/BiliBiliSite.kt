@@ -7,7 +7,6 @@ import com.mylive.app.core.model.DanmakuArgs
 import com.mylive.app.core.model.LiveAnchorItem
 import com.mylive.app.core.model.LiveCategory
 import com.mylive.app.core.model.LiveCategoryResult
-import com.mylive.app.core.model.LiveContributionRankItem
 import com.mylive.app.core.model.LivePlayQuality
 import com.mylive.app.core.model.LivePlayUrl
 import com.mylive.app.core.model.LiveRoomDetail
@@ -533,76 +532,6 @@ class BiliBiliSite @Inject constructor(
             }
         }
         return ls
-    }
-
-    override suspend fun getContributionRank(
-        roomId: String,
-        detail: LiveRoomDetail?
-    ): List<LiveContributionRankItem> {
-        val roomInfo = getRoomInfo(roomId)
-        val roomRankItems = roomInfo.optJSONObject("room_rank_info")
-            ?.optJSONObject("user_rank_entry")
-            ?.optJSONObject("user_contribution_rank_entry")
-            ?.optJSONArray("item")
-        if (roomRankItems != null && roomRankItems.length() > 0) {
-            return (0 until roomRankItems.length()).map { i ->
-                mapContributionRankItem(roomRankItems.getJSONObject(i))
-            }
-        }
-
-        val roomData = roomInfo.optJSONObject("room_info")
-        val uid = roomData?.optStringValue("uid") ?: ""
-        val realRoomId = roomData?.optStringValue("room_id", roomId) ?: roomId
-        if (uid.isEmpty()) {
-            return emptyList()
-        }
-
-        val result = httpClient.getJson(
-            "https://api.live.bilibili.com/xlive/general-interface/v1/rank/queryContributionRank",
-            queryParameters = mapOf(
-                "ruid" to uid,
-                "room_id" to realRoomId,
-                "page" to "1",
-                "page_size" to "50"
-            ),
-            header = getHeader()
-        ) as JSONObject
-        val items = result.optJSONObject("data")?.optJSONArray("item")
-        if (items != null) {
-            return (0 until items.length()).map { i ->
-                mapContributionRankItem(items.getJSONObject(i))
-            }
-        }
-        return emptyList()
-    }
-
-    private fun mapContributionRankItem(item: JSONObject): LiveContributionRankItem {
-        val medalInfo = item.optJSONObject("medal_info")
-            ?: item.optJSONObject("uinfo")?.optJSONObject("medal")
-        val wealthLevelRaw = item.opt("wealth_level")
-            ?: item.optJSONObject("uinfo")?.optJSONObject("wealth")?.opt("level")
-        val wealthLevel = wealthLevelRaw?.takeIf { it != JSONObject.NULL }?.toString()?.toIntOrNull()
-        val guardLevel = item.optStringValue("guard_level").toIntOrNull() ?: 0
-
-        return LiveContributionRankItem(
-            rank = item.optStringValue("rank").toIntOrNull() ?: 0,
-            userName = item.optNullableStringValue("name")
-                ?: item.optJSONObject("uinfo")?.optJSONObject("base")?.optNullableStringValue("name")
-                ?: "",
-            avatar = item.optNullableStringValue("face")
-                ?: item.optJSONObject("uinfo")?.optJSONObject("base")?.optNullableStringValue("face")
-                ?: "",
-            scoreText = item.optStringValue("score", "0"),
-            userLevel = wealthLevel,
-            userLevelText = if (wealthLevel == null || wealthLevel <= 0) null else "财富 $wealthLevel",
-            fansLevel = (medalInfo?.opt("level") ?: medalInfo?.opt("medal_level"))
-                ?.takeIf { it != JSONObject.NULL }
-                ?.toString()
-                ?.toIntOrNull(),
-            fansName = medalInfo?.optNullableStringValue("name")
-                ?: medalInfo?.optNullableStringValue("medal_name"),
-            scoreDetail = if (guardLevel > 0) "舰队 $guardLevel" else null
-        )
     }
 
     /**

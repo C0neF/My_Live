@@ -25,6 +25,7 @@ class RuntimeNetworkLogInterceptorTest {
         server.start()
         CoreLog.clear()
         CoreLog.configure(enabled = true, debugEnabled = true)
+        CoreLog.clear()
     }
 
     @After

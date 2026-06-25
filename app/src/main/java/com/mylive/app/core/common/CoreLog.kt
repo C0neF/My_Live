@@ -37,8 +37,12 @@ object CoreLog {
     val entries: StateFlow<List<LogEntry>> = _entries.asStateFlow()
 
     fun configure(enabled: Boolean, debugEnabled: Boolean) {
+        val shouldAnnounce = enabled && !enableLog
         enableLog = enabled
         this.debugEnabled = debugEnabled
+        if (shouldAnnounce) {
+            append(LogLevel.INFO, "运行日志已开启")
+        }
     }
 
     fun clear() {
@@ -111,7 +115,7 @@ object CoreLog {
     }
 
     private fun shouldRecord(level: LogLevel): Boolean {
-        return enableLog && (level != LogLevel.DEBUG || debugEnabled)
+        return enableLog || (level == LogLevel.DEBUG && debugEnabled)
     }
 
     private fun append(level: LogLevel, message: String) {

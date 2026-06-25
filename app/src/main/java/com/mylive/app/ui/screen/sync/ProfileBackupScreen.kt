@@ -21,12 +21,15 @@ import androidx.lifecycle.viewModelScope
 import com.mylive.app.ui.navigation.Navigator
 import com.mylive.app.ui.navigation.Route
 import com.mylive.app.R
+import com.mylive.app.core.common.readUtf8TextWithinLimit
 import com.mylive.app.data.repository.ProfileBackupManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -94,6 +97,7 @@ fun ProfileBackupScreen(
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
 
     var isExiting by remember { mutableStateOf(false) }
     val handleBack: () -> Unit = {
@@ -137,10 +141,18 @@ fun ProfileBackupScreen(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         uri?.let {
-            val jsonString = context.contentResolver.openInputStream(it)?.use { inputStream ->
-                inputStream.bufferedReader().readText()
+            coroutineScope.launch {
+                val jsonString = runCatching {
+                    withContext(Dispatchers.IO) {
+                        context.contentResolver.openInputStream(it)?.use { inputStream ->
+                            inputStream.readUtf8TextWithinLimit()
+                        } ?: error("无法读取导入文件")
+                    }
+                }.getOrElse {
+                    ""
+                }
+                viewModel.importProfile(jsonString)
             }
-            jsonString?.let { json -> viewModel.importProfile(json) }
         }
     }
 

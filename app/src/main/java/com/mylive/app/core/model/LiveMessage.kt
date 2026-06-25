@@ -4,6 +4,10 @@ enum class LiveMessageType {
     CHAT, GIFT, ONLINE, SUPER_CHAT
 }
 
+enum class LiveMessageDanmakuPosition {
+    SCROLL, TOP, BOTTOM
+}
+
 data class LiveMessageColor(
     val r: Int,
     val g: Int,
@@ -31,6 +35,7 @@ data class LiveMessage(
     val type: LiveMessageType,
     val userName: String,
     val message: String,
+    val danmakuPosition: LiveMessageDanmakuPosition = LiveMessageDanmakuPosition.SCROLL,
     val color: LiveMessageColor = LiveMessageColor.WHITE,
     val imageUrls: List<String>? = null,
     val spans: List<LiveMessageSpan>? = null,

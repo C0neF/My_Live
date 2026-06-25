@@ -3,7 +3,6 @@ package com.mylive.app.core.site
 import com.mylive.app.core.model.LiveAnchorItem
 import com.mylive.app.core.model.LiveCategory
 import com.mylive.app.core.model.LiveCategoryResult
-import com.mylive.app.core.model.LiveContributionRankItem
 import com.mylive.app.core.model.LivePlayQuality
 import com.mylive.app.core.model.LivePlayUrl
 import com.mylive.app.core.model.LiveRoomDetail
@@ -32,6 +31,38 @@ class LiveSiteOrderTest {
         )
     }
 
+    @Test
+    fun reorderedSitesPreserveThePreviouslySelectedSiteIdentity() {
+        assertEquals(
+            2,
+            preserveSelectedSiteIndex(
+                previousSiteIds = listOf("bilibili", "douyu", "huya", "douyin"),
+                reorderedSiteIds = listOf("douyin", "huya", "douyu", "bilibili"),
+                selectedIndex = 1
+            )
+        )
+    }
+
+    @Test
+    fun reorderedSitesClampSelectionWhenThePreviousSiteDisappears() {
+        assertEquals(
+            1,
+            preserveSelectedSiteIndex(
+                previousSiteIds = listOf("bilibili", "douyu", "huya"),
+                reorderedSiteIds = listOf("bilibili", "huya"),
+                selectedIndex = 2
+            )
+        )
+        assertEquals(
+            0,
+            preserveSelectedSiteIndex(
+                previousSiteIds = listOf("bilibili"),
+                reorderedSiteIds = emptyList(),
+                selectedIndex = 0
+            )
+        )
+    }
+
     private data class TestSite(
         override val id: String,
         override val name: String
@@ -48,6 +79,5 @@ class LiveSiteOrderTest {
         override suspend fun getPlayUrls(detail: LiveRoomDetail, quality: LivePlayQuality): LivePlayUrl = LivePlayUrl(emptyList())
         override suspend fun getLiveStatus(roomId: String): Boolean = false
         override suspend fun getSuperChatMessage(roomId: String, detail: LiveRoomDetail?): List<LiveSuperChatMessage> = emptyList()
-        override suspend fun getContributionRank(roomId: String, detail: LiveRoomDetail?): List<LiveContributionRankItem> = emptyList()
     }
 }

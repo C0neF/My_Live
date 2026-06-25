@@ -17,11 +17,15 @@ class PlayerDanmakuSettingsPolicyTest {
         assertTrue(source.contains("danmuDelayMs: Int = 0"))
         assertTrue(source.contains("danmuTopMargin: Double = 0.0"))
         assertTrue(source.contains("danmuBottomMargin: Double = 0.0"))
+        assertTrue(source.contains("danmuHideTop: Boolean = false"))
+        assertTrue(source.contains("danmuHideBottom: Boolean = false"))
         assertTrue(source.contains("danmuDedupeStep: Int = 2"))
         assertTrue(source.contains("controller.danmuLineCount = danmuLineCount"))
         assertTrue(source.contains("controller.danmuDelayMs = danmuDelayMs"))
         assertTrue(source.contains("controller.danmuTopMargin = danmuTopMargin.toFloat()"))
         assertTrue(source.contains("controller.danmuBottomMargin = danmuBottomMargin.toFloat()"))
+        assertTrue(source.contains("controller.danmuHideTop = danmuHideTop"))
+        assertTrue(source.contains("controller.danmuHideBottom = danmuHideBottom"))
         assertTrue(source.contains("controller.dedupeStepSize = danmuDedupeStep"))
     }
 

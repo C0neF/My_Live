@@ -32,15 +32,12 @@ class ProfileBackupManager @Inject constructor(
         SettingsDataStore.DouyinCookie.name,
         SettingsDataStore.EncryptedBilibiliCookie.name,
         SettingsDataStore.EncryptedDouyinCookie.name,
-        SettingsDataStore.BilibiliLoginTip.name,
         SettingsDataStore.WebDAVUri.name,
         SettingsDataStore.WebDAVUser.name,
         SettingsDataStore.kWebDAVPassword.name,
         SettingsDataStore.EncryptedWebDAVPassword.name,
         SettingsDataStore.kWebDAVLastUploadTime.name,
-        SettingsDataStore.kWebDAVLastRecoverTime.name,
-        SettingsDataStore.LastLiveRoom.name,
-        SettingsDataStore.LastLiveRoomResumePending.name
+        SettingsDataStore.kWebDAVLastRecoverTime.name
     )
 
     /**
@@ -55,7 +52,6 @@ class ProfileBackupManager @Inject constructor(
     )
 
     private val settingEntries = listOf(
-        bool(SettingsDataStore.FirstRun, false),
         int(SettingsDataStore.ThemeMode, 0),
         bool(SettingsDataStore.DebugMode, false),
         bool(SettingsDataStore.LogEnable, false),
@@ -63,7 +59,6 @@ class ProfileBackupManager @Inject constructor(
         bool(SettingsDataStore.kIsDynamic, false),
         string(SettingsDataStore.SiteSort, "bilibili,douyu,huya,douyin"),
         string(SettingsDataStore.HomeSort, "recommend,follow,category,user"),
-        string(SettingsDataStore.LiveRoomTabSort, "chat,super_chat,follow,settings"),
         string(SettingsDataStore.LiveRoomQuickAccessSort, "follow,history,recommendation"),
         bool(SettingsDataStore.LiveRoomQuickAccessEnabled, true),
         bool(SettingsDataStore.DanmuEnable, true),
@@ -96,43 +91,23 @@ class ProfileBackupManager @Inject constructor(
         bool(SettingsDataStore.PlayerCompatMode, false),
         bool(SettingsDataStore.PlayerAutoPause, false),
         bool(SettingsDataStore.AllowBackgroundPlayback, false),
-        int(SettingsDataStore.PlayerBufferSize, 0),
         bool(SettingsDataStore.PlayerForceHttps, false),
-        double(SettingsDataStore.PlayerVolume, 1.0),
         bool(SettingsDataStore.AutoFullScreen, false),
         bool(SettingsDataStore.AutoPipOnExit, false),
-        bool(SettingsDataStore.CustomPlayerOutput, false),
-        string(SettingsDataStore.VideoOutputDriver, ""),
-        string(SettingsDataStore.VideoHardwareDecoder, ""),
-        string(SettingsDataStore.AudioOutputDriver, ""),
         bool(SettingsDataStore.AutoExitEnable, false),
         int(SettingsDataStore.AutoExitDuration, 60),
         int(SettingsDataStore.RoomAutoExitDuration, 0),
         double(SettingsDataStore.ChatTextSize, 14.0),
         double(SettingsDataStore.ChatTextGap, 4.0),
         bool(SettingsDataStore.ChatBubbleStyle, false),
-        bool(SettingsDataStore.ContributionRankEnable, true),
         bool(SettingsDataStore.PIPHideDanmu, false),
-        bool(SettingsDataStore.PIPHideDanmuDefaultMigrated, false),
         bool(SettingsDataStore.SuperChatSortDesc, false),
         bool(SettingsDataStore.AutoUpdateFollowEnable, true),
         int(SettingsDataStore.AutoUpdateFollowDuration, 60),
         int(SettingsDataStore.UpdateFollowThreadCount, 8),
         string(SettingsDataStore.UserRemarks, ""),
         string(SettingsDataStore.SyncServerUrl, ""),
-        string(SettingsDataStore.SyncProxyUrl, ""),
-        bool(SettingsDataStore.LiveSubtitleEnable, false),
-        string(SettingsDataStore.LiveSubtitleModelPath, ""),
-        string(SettingsDataStore.LiveSubtitleLanguage, ""),
-        double(SettingsDataStore.LiveSubtitleFontSize, 16.0),
-        int(SettingsDataStore.LiveSubtitlePosition, 0),
-        double(SettingsDataStore.LiveSubtitleOffsetX, 0.0),
-        double(SettingsDataStore.LiveSubtitleOffsetY, 0.0),
-        int(SettingsDataStore.LiveSubtitleColor, -1),
-        int(SettingsDataStore.LiveSubtitleFontWeight, 4),
-        bool(SettingsDataStore.LiveSubtitleBackgroundEnable, false),
-        bool(SettingsDataStore.LiveSubtitlePositionLocked, false),
-        bool(SettingsDataStore.LiveSubtitleStartupGuard, false)
+        string(SettingsDataStore.SyncProxyUrl, "")
     ).filterNot { it.name in excludedKeys }
 
     private val settingEntriesByName = settingEntries.associateBy { it.name }

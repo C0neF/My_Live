@@ -20,6 +20,7 @@ import androidx.lifecycle.viewModelScope
 import com.mylive.app.ui.navigation.Navigator
 import com.mylive.app.ui.navigation.Route
 import com.mylive.app.R
+import com.mylive.app.core.common.readUtf8TextWithinLimit
 import com.mylive.app.data.local.datastore.SettingsDataStore
 import com.mylive.app.data.local.secure.SensitiveCredentialStore
 import com.mylive.app.data.repository.ProfileBackupManager
@@ -190,7 +191,9 @@ class WebDavViewModel @Inject constructor(
                         if (!response.isSuccessful) {
                             throw IOException("HTTP ${response.code}: ${response.message}")
                         }
-                        response.body?.string() ?: throw IOException("empty response")
+                        response.body?.byteStream()?.use { input ->
+                            input.readUtf8TextWithinLimit()
+                        } ?: throw IOException("empty response")
                     }
                     profileBackupManager.importProfileJson(body)
                     timestamp()
@@ -223,10 +226,6 @@ class WebDavViewModel @Inject constructor(
 
     private fun timestamp(): String {
         return SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
-    }
-
-    fun clearMessage() {
-        // No-op: SharedFlow doesn't need explicit clearing; UI consumes and moves on.
     }
 
     companion object {

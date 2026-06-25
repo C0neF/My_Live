@@ -175,6 +175,18 @@ internal fun resolveLandscapeLiveRoomTabs(): List<LiveRoomTabType> {
     return listOf(LiveRoomTabType.CHAT)
 }
 
+internal fun liveRoomQuickAccessAction(
+    enabled: Boolean,
+    action: () -> Unit
+): (() -> Unit)? {
+    return action.takeIf { enabled }
+}
+
+internal fun shouldResumeLivePlaybackOnForeground(
+    lifecyclePausedPlayback: Boolean,
+    wasPlayingBeforePause: Boolean
+): Boolean = lifecyclePausedPlayback && wasPlayingBeforePause
+
 private fun currentEpochMillis(): Long = System.currentTimeMillis()
 
 private fun applyLiveRoomFullscreen(activity: Activity, fullscreen: Boolean) {
@@ -249,6 +261,8 @@ fun LiveRoomScreen(
     val pipDanmuTopMargin by settingsViewModel.danmuTopMargin.collectAsState(initial = 0.0)
     val pipDanmuBottomMargin by settingsViewModel.danmuBottomMargin.collectAsState(initial = 0.0)
     val pipDanmuHideScroll by settingsViewModel.danmuHideScroll.collectAsState(initial = false)
+    val pipDanmuHideTop by settingsViewModel.danmuHideTop.collectAsState(initial = false)
+    val pipDanmuHideBottom by settingsViewModel.danmuHideBottom.collectAsState(initial = false)
     val pipDanmuDedupeEnable by settingsViewModel.danmuDedupeEnable.collectAsState(initial = false)
     val pipDanmuDedupeWindow by settingsViewModel.danmuDedupeWindow.collectAsState(initial = 10)
     val pipDanmuDedupeStep by settingsViewModel.danmuDedupeStep.collectAsState(initial = 2)
@@ -346,6 +360,7 @@ fun LiveRoomScreen(
     val playerAutoPause by settingsViewModel.playerAutoPause.collectAsState()
     val playerForceHttps by settingsViewModel.playerForceHttps.collectAsState()
     val lifecycleOwner = LocalLifecycleOwner.current
+    var resumePlaybackOnForeground by remember { mutableStateOf(false) }
 
     LaunchedEffect(playerController, playerForceHttps) {
         playerController?.setForceHttps(playerForceHttps)
@@ -356,7 +371,12 @@ fun LiveRoomScreen(
             when (event) {
                 Lifecycle.Event.ON_PAUSE -> {
                     val p = playerController?.player
-                    if (!allowBackgroundPlayback || playerAutoPause) {
+                    val lifecyclePausesPlayback = !allowBackgroundPlayback || playerAutoPause
+                    resumePlaybackOnForeground = shouldResumeLivePlaybackOnForeground(
+                        lifecyclePausedPlayback = lifecyclePausesPlayback,
+                        wasPlayingBeforePause = p?.isPlaying == true
+                    )
+                    if (lifecyclePausesPlayback) {
                         playerController?.pause()
                     } else if (p != null && p.isPlaying) {
                         com.mylive.app.service.PlaybackForegroundService.start(
@@ -370,7 +390,10 @@ fun LiveRoomScreen(
                 }
                 Lifecycle.Event.ON_RESUME -> {
                     com.mylive.app.service.PlaybackForegroundService.stop(context)
-                    playerController?.resume()
+                    if (resumePlaybackOnForeground) {
+                        playerController?.resume()
+                    }
+                    resumePlaybackOnForeground = false
                 }
                 else -> {}
             }
@@ -461,7 +484,6 @@ fun LiveRoomScreen(
 
     // Quality selection bottom sheet
     var showQualitySheet by remember { mutableStateOf(false) }
-    var showQuickAccess by remember { mutableStateOf(false) }
 
     if (showQualitySheet && uiState.playQualities.isNotEmpty()) {
         QualityBottomSheet(
@@ -473,30 +495,6 @@ fun LiveRoomScreen(
             },
             onDismiss = { showQualitySheet = false }
         )
-    }
-
-    if (showQuickAccess) {
-        CompositionLocalProvider(LocalRoomAccentColor provides roomPlatformAccentColor) {
-            com.mylive.app.ui.screen.room.quickaccess.QuickAccessPanel(
-                currentSiteId = viewModel.siteId,
-                currentRoomId = viewModel.roomId,
-                currentCategoryId = uiState.detail?.categoryId,
-                onNavigateToRoom = { siteId, roomId, initialIsFollowing ->
-                    showQuickAccess = false
-                    navigator.navigate(
-                        Route.LiveRoomDetail(
-                            roomId = roomId,
-                            siteId = siteId,
-                            initialIsFollowing = initialIsFollowing
-                        ),
-                        singleTop = true,
-                        popUpToRoute = Route.Index::class.java,
-                        inclusive = false
-                    )
-                },
-                onDismiss = { showQuickAccess = false }
-            )
-        }
     }
 
     Box(
@@ -540,6 +538,8 @@ fun LiveRoomScreen(
                 danmuTopMargin = pipDanmuTopMargin,
                 danmuBottomMargin = pipDanmuBottomMargin,
                 danmuHideScroll = pipDanmuHideScroll,
+                danmuHideTop = pipDanmuHideTop,
+                danmuHideBottom = pipDanmuHideBottom,
                 danmuDedupeEnable = pipDanmuDedupeEnable,
                 danmuDedupeWindow = pipDanmuDedupeWindow,
                 danmuDedupeStep = pipDanmuDedupeStep,
@@ -616,6 +616,8 @@ private fun PortraitLayout(
     val danmuTopMargin by settingsViewModel.danmuTopMargin.collectAsState()
     val danmuBottomMargin by settingsViewModel.danmuBottomMargin.collectAsState()
     val danmuHideScroll by settingsViewModel.danmuHideScroll.collectAsState()
+    val danmuHideTop by settingsViewModel.danmuHideTop.collectAsState()
+    val danmuHideBottom by settingsViewModel.danmuHideBottom.collectAsState()
     val danmuDedupeEnable by settingsViewModel.danmuDedupeEnable.collectAsState()
     val danmuDedupeWindow by settingsViewModel.danmuDedupeWindow.collectAsState()
     val danmuDedupeStep by settingsViewModel.danmuDedupeStep.collectAsState()
@@ -628,6 +630,7 @@ private fun PortraitLayout(
     val chatTextGap by settingsViewModel.chatTextGap.collectAsState()
     val chatBubbleStyle by settingsViewModel.chatBubbleStyle.collectAsState()
     val superChatSortDesc by settingsViewModel.superChatSortDesc.collectAsState()
+    val liveRoomQuickAccessEnabled by settingsViewModel.liveRoomQuickAccessEnabled.collectAsState()
 
     val superChats by viewModel.superChats.collectAsState()
     val activeSuperChatCount = remember(superChats) {
@@ -654,6 +657,15 @@ private fun PortraitLayout(
     var danmakuController by remember { mutableStateOf<DanmakuController?>(null) }
     var showQuickAccess by remember { mutableStateOf(false) }
     var activeAuxiliaryPanel by remember { mutableStateOf<PortraitLiveRoomPanel?>(null) }
+    val quickAccessAction = liveRoomQuickAccessAction(liveRoomQuickAccessEnabled) {
+        showQuickAccess = true
+    }
+
+    LaunchedEffect(liveRoomQuickAccessEnabled) {
+        if (!liveRoomQuickAccessEnabled) {
+            showQuickAccess = false
+        }
+    }
 
     if (showQuickAccess) {
         CompositionLocalProvider(LocalRoomAccentColor provides roomPlatformAccentColor) {
@@ -757,6 +769,8 @@ private fun PortraitLayout(
                 danmuTopMargin = danmuTopMargin,
                 danmuBottomMargin = danmuBottomMargin,
                 danmuHideScroll = danmuHideScroll,
+                danmuHideTop = danmuHideTop,
+                danmuHideBottom = danmuHideBottom,
                 danmuDedupeEnable = danmuDedupeEnable,
                 danmuDedupeWindow = danmuDedupeWindow,
                 danmuDedupeStep = danmuDedupeStep,
@@ -779,7 +793,7 @@ private fun PortraitLayout(
             onToggleFollow = { viewModel.toggleFollow() },
             onRefreshClick = { viewModel.refreshPlay() },
             onSettingsClick = { activeAuxiliaryPanel = PortraitLiveRoomPanel.SETTINGS },
-            onQuickAccessClick = { showQuickAccess = true }
+            onQuickAccessClick = quickAccessAction
         )
 
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -880,6 +894,8 @@ private fun LandscapeLayout(
     val danmuTopMargin by settingsViewModel.danmuTopMargin.collectAsState()
     val danmuBottomMargin by settingsViewModel.danmuBottomMargin.collectAsState()
     val danmuHideScroll by settingsViewModel.danmuHideScroll.collectAsState()
+    val danmuHideTop by settingsViewModel.danmuHideTop.collectAsState()
+    val danmuHideBottom by settingsViewModel.danmuHideBottom.collectAsState()
     val danmuDedupeEnable by settingsViewModel.danmuDedupeEnable.collectAsState()
     val danmuDedupeWindow by settingsViewModel.danmuDedupeWindow.collectAsState()
     val danmuDedupeStep by settingsViewModel.danmuDedupeStep.collectAsState()
@@ -892,6 +908,7 @@ private fun LandscapeLayout(
     val chatTextGap by settingsViewModel.chatTextGap.collectAsState()
     val chatBubbleStyle by settingsViewModel.chatBubbleStyle.collectAsState()
     val superChatSortDesc by settingsViewModel.superChatSortDesc.collectAsState()
+    val liveRoomQuickAccessEnabled by settingsViewModel.liveRoomQuickAccessEnabled.collectAsState()
 
     val roomTabs = remember { resolveLandscapeLiveRoomTabs() }
     val resolvedDanmuDelay = remember(danmuDelay, danmuDelayBySiteJson, viewModel.siteId) {
@@ -907,6 +924,16 @@ private fun LandscapeLayout(
     )
     var showQuickAccess by remember { mutableStateOf(false) }
     var quickAccessInitialTabKey by remember { mutableStateOf<String?>(null) }
+    val quickAccessAction = liveRoomQuickAccessAction(liveRoomQuickAccessEnabled) {
+        quickAccessInitialTabKey = "follow"
+        showQuickAccess = true
+    }
+
+    LaunchedEffect(liveRoomQuickAccessEnabled) {
+        if (!liveRoomQuickAccessEnabled) {
+            showQuickAccess = false
+        }
+    }
 
     if (showQuickAccess) {
         CompositionLocalProvider(LocalRoomAccentColor provides roomPlatformAccentColor) {
@@ -1008,6 +1035,8 @@ private fun LandscapeLayout(
                 danmuTopMargin = danmuTopMargin,
                 danmuBottomMargin = danmuBottomMargin,
                 danmuHideScroll = danmuHideScroll,
+                danmuHideTop = danmuHideTop,
+                danmuHideBottom = danmuHideBottom,
                 danmuDedupeEnable = danmuDedupeEnable,
                 danmuDedupeWindow = danmuDedupeWindow,
                 danmuDedupeStep = danmuDedupeStep,
@@ -1018,10 +1047,7 @@ private fun LandscapeLayout(
                 chatBubbleStyle = chatBubbleStyle,
                 onChatBubbleStyleChange = { settingsViewModel.setChatBubbleStyle(it) },
                 onDanmakuControllerCreated = { danmakuController = it },
-                onQuickAccessClick = {
-                    quickAccessInitialTabKey = "follow"
-                    showQuickAccess = true
-                },
+                onQuickAccessClick = quickAccessAction,
                 onFollowClick = { viewModel.toggleFollow() },
                 isFollowing = uiState.isFollowing,
                 followEnabled = uiState.detail != null && uiState.isFollowStatusKnown,
@@ -1195,7 +1221,7 @@ private fun CompactPortraitRoomHeader(
     onToggleFollow: () -> Unit,
     onRefreshClick: () -> Unit,
     onSettingsClick: () -> Unit,
-    onQuickAccessClick: () -> Unit
+    onQuickAccessClick: (() -> Unit)?
 ) {
     val toolbarIconTint = resolveLiveRoomToolbarIconTint(MaterialTheme.colorScheme.onSurface)
 
@@ -1273,13 +1299,15 @@ private fun CompactPortraitRoomHeader(
                     modifier = Modifier.size(18.dp)
                 )
             }
-            IconButton(onClick = onQuickAccessClick, modifier = Modifier.size(36.dp)) {
-                Icon(
-                    imageVector = Icons.Default.PlaylistAdd,
-                    contentDescription = "快速入口",
-                    tint = toolbarIconTint,
-                    modifier = Modifier.size(18.dp)
-                )
+            if (onQuickAccessClick != null) {
+                IconButton(onClick = onQuickAccessClick, modifier = Modifier.size(36.dp)) {
+                    Icon(
+                        imageVector = Icons.Default.PlaylistAdd,
+                        contentDescription = "快速入口",
+                        tint = toolbarIconTint,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
             }
             val canToggleFollow = detail != null && isFollowStatusKnown
             LiveRoomFollowButton(

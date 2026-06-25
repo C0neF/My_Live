@@ -7,7 +7,7 @@ class ReleaseVersionPolicyTest {
 
     @Test
     fun releaseUsesVersionOneOneFive() {
-        assertEquals("1.1.5", BuildConfig.VERSION_NAME)
+        assertEquals("1.1.6", BuildConfig.VERSION_NAME)
         assertEquals(15, BuildConfig.VERSION_CODE)
     }
 }

@@ -2,7 +2,6 @@ package com.mylive.app.ui.screen.home
 
 import com.mylive.app.core.model.LiveCategory
 import com.mylive.app.core.model.LiveCategoryResult
-import com.mylive.app.core.model.LiveContributionRankItem
 import com.mylive.app.core.model.LivePlayQuality
 import com.mylive.app.core.model.LivePlayUrl
 import com.mylive.app.core.model.LiveRoomDetail
@@ -12,9 +11,21 @@ import com.mylive.app.core.model.LiveSuperChatMessage
 import com.mylive.app.core.site.LiveDanmaku
 import com.mylive.app.core.site.LiveSite
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 
 class HomeNavigationPolicyTest {
+
+    @Test
+    fun homeSelectionTracksTheSameSiteWhenPlatformOrderChanges() {
+        val source = File("src/main/java/com/mylive/app/ui/screen/home/HomeViewModel.kt").readText()
+
+        assertTrue(source.contains("previousSiteIds"))
+        assertTrue(source.contains("preserveSelectedSiteIndex("))
+        assertTrue(source.contains("previousSiteIds = previousSiteIds"))
+        assertTrue(source.contains("reorderedSiteIds = reorderedSiteIds"))
+    }
 
     @Test
     fun homeRoomRouteIncludesSelectedSiteId() {
@@ -53,6 +64,5 @@ class HomeNavigationPolicyTest {
         override suspend fun getPlayUrls(detail: LiveRoomDetail, quality: LivePlayQuality): LivePlayUrl = error("not used")
         override suspend fun getLiveStatus(roomId: String): Boolean = error("not used")
         override suspend fun getSuperChatMessage(roomId: String, detail: LiveRoomDetail?): List<LiveSuperChatMessage> = error("not used")
-        override suspend fun getContributionRank(roomId: String, detail: LiveRoomDetail?): List<LiveContributionRankItem> = error("not used")
     }
 }

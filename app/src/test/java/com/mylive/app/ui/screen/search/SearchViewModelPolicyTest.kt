@@ -37,4 +37,26 @@ class SearchViewModelPolicyTest {
         assertTrue(source.contains("selectedSiteIndex = nextIndex"))
         assertFalse(source.contains("private var currentSiteIndex"))
     }
+
+    @Test
+    fun searchPlatformsFollowThePersistedUserOrder() {
+        val source = File("src/main/java/com/mylive/app/ui/screen/search/SearchViewModel.kt").readText()
+
+        assertTrue(source.contains("private val settingsRepository: SettingsRepository"))
+        assertTrue(source.contains("settingsRepository.siteSort"))
+        assertTrue(source.contains("sortedByUserOrder(sortStr)"))
+        assertTrue(source.contains("val siteTabs: StateFlow<List<LiveSite>>"))
+        assertFalse(source.contains("val siteTabs: List<LiveSite> = sites.sortedByDefaultOrder()"))
+    }
+
+    @Test
+    fun searchSelectionTracksTheSameSiteWhenPlatformOrderChanges() {
+        val source = File("src/main/java/com/mylive/app/ui/screen/search/SearchViewModel.kt").readText()
+
+        assertTrue(source.contains("siteTabs.collect { reorderedSites ->"))
+        assertTrue(source.contains("preserveSelectedSiteIndex("))
+        assertTrue(source.contains("previousSiteIds = previousSiteIds"))
+        assertTrue(source.contains("reorderedSiteIds = reorderedSiteIds"))
+        assertTrue(source.contains("search(currentKeyword)"))
+    }
 }

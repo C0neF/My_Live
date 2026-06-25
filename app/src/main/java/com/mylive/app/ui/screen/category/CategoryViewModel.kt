@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.mylive.app.core.model.LiveCategory
 import com.mylive.app.core.site.LiveSite
+import com.mylive.app.core.site.preserveSelectedSiteIndex
 import com.mylive.app.core.site.sortedByDefaultOrder
 import com.mylive.app.core.site.sortedByUserOrder
 import com.mylive.app.data.repository.SettingsRepository
@@ -52,6 +53,7 @@ class CategoryViewModel @Inject constructor(
 
     private val _loadedSiteId = MutableStateFlow<String?>(null)
     private var loadJob: Job? = null
+    private var previousSiteIds = liveSites.sortedByDefaultOrder().map { it.id }
 
     // Per-site cache to avoid flicker when swiping between pages
     private data class SiteCache(
@@ -66,11 +68,17 @@ class CategoryViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             siteList.collect { sites ->
-                if (sites.isNotEmpty()) {
-                    val currentSite = sites.getOrNull(_selectedSiteIndex.value)
-                    if (currentSite != null && _loadedSiteId.value != currentSite.id) {
-                        selectSite(_selectedSiteIndex.value)
-                    }
+                val reorderedSiteIds = sites.map { it.id }
+                val nextIndex = preserveSelectedSiteIndex(
+                    previousSiteIds = previousSiteIds,
+                    reorderedSiteIds = reorderedSiteIds,
+                    selectedIndex = _selectedSiteIndex.value
+                )
+                previousSiteIds = reorderedSiteIds
+                _selectedSiteIndex.value = nextIndex
+                val selectedSite = sites.getOrNull(nextIndex)
+                if (selectedSite != null && _loadedSiteId.value != selectedSite.id) {
+                    loadCategories()
                 }
             }
         }

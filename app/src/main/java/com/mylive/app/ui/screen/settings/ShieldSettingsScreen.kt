@@ -24,11 +24,14 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.mylive.app.ui.navigation.Navigator
 import com.mylive.app.ui.navigation.Route
 import com.mylive.app.R
+import com.mylive.app.core.common.readUtf8TextWithinLimit
 import com.mylive.app.data.local.entity.ShieldEntity
 import com.mylive.app.data.local.entity.ShieldPresetEntity
 import com.mylive.app.ui.component.settings.SettingsSwitch
 import com.mylive.app.ui.util.copyPlainText
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -90,19 +93,23 @@ fun ShieldSettingsScreen(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri != null) {
-            runCatching {
-                context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { reader ->
-                    reader.readText()
-                }.orEmpty()
-            }.onSuccess { json ->
-                val success = viewModel.importPresetJson(json)
-                Toast.makeText(
-                    context,
-                    if (success) R.string.shield_preset_import_success else R.string.shield_preset_import_failed,
-                    Toast.LENGTH_SHORT
-                ).show()
-            }.onFailure {
-                Toast.makeText(context, R.string.shield_preset_import_failed, Toast.LENGTH_SHORT).show()
+            coroutineScope.launch {
+                runCatching {
+                    withContext(Dispatchers.IO) {
+                        context.contentResolver.openInputStream(uri)?.use { input ->
+                            input.readUtf8TextWithinLimit()
+                        } ?: error("无法读取导入文件")
+                    }
+                }.onSuccess { json ->
+                    val success = viewModel.importPresetJson(json)
+                    Toast.makeText(
+                        context,
+                        if (success) R.string.shield_preset_import_success else R.string.shield_preset_import_failed,
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }.onFailure {
+                    Toast.makeText(context, R.string.shield_preset_import_failed, Toast.LENGTH_SHORT).show()
+                }
             }
         }
     }

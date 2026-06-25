@@ -28,6 +28,7 @@ class CoreLogTest {
     @Test
     fun timberEntryIsCapturedWhenRuntimeLoggingIsEnabled() {
         CoreLog.configure(enabled = true, debugEnabled = true)
+        CoreLog.clear()
         Timber.plant(RuntimeLogTree(logToLogcat = false))
 
         Timber.tag("Player").d("playback started")
@@ -40,6 +41,7 @@ class CoreLogTest {
     @Test
     fun coreLogEntryIsNotCapturedTwiceThroughTimber() {
         CoreLog.configure(enabled = true, debugEnabled = true)
+        CoreLog.clear()
         Timber.plant(RuntimeLogTree(logToLogcat = false))
 
         CoreLog.i("room loaded")
@@ -51,6 +53,7 @@ class CoreLogTest {
     @Test
     fun timberThrowableStackIsCapturedOnlyOnce() {
         CoreLog.configure(enabled = true, debugEnabled = true)
+        CoreLog.clear()
         Timber.plant(RuntimeLogTree(logToLogcat = false))
 
         Timber.e(IllegalStateException("boom"), "playback failed")
@@ -60,27 +63,48 @@ class CoreLogTest {
     }
 
     @Test
-    fun disabledLoggingAndDisabledDebugFilterExpectedEntries() {
-        Timber.plant(RuntimeLogTree(logToLogcat = false))
-        CoreLog.configure(enabled = false, debugEnabled = true)
-
-        Timber.i("ignored")
-
-        assertTrue(CoreLog.entries.value.isEmpty())
-
+    fun loggingSwitchCapturesDebugEntriesWithoutDebugMode() {
         CoreLog.configure(enabled = true, debugEnabled = false)
-        Timber.d("debug ignored")
-        Timber.w("warning kept")
+        CoreLog.clear()
+        Timber.plant(RuntimeLogTree(logToLogcat = false))
+
+        Timber.d("debug captured")
 
         assertEquals(
-            listOf(CoreLog.LogLevel.WARNING),
+            listOf(CoreLog.LogLevel.DEBUG),
             CoreLog.entries.value.map { it.level }
         )
     }
 
     @Test
+    fun debugModeCapturesDebugEntriesWithoutGeneralLogging() {
+        Timber.plant(RuntimeLogTree(logToLogcat = false))
+        CoreLog.configure(enabled = false, debugEnabled = true)
+
+        Timber.d("debug captured")
+        Timber.w("warning ignored")
+
+        assertEquals(
+            listOf(CoreLog.LogLevel.DEBUG),
+            CoreLog.entries.value.map { it.level }
+        )
+    }
+
+    @Test
+    fun enablingRuntimeLoggingPublishesConfirmationEntry() {
+        CoreLog.configure(enabled = false, debugEnabled = false)
+
+        CoreLog.configure(enabled = true, debugEnabled = false)
+
+        assertEquals(1, CoreLog.entries.value.size)
+        assertEquals(CoreLog.LogLevel.INFO, CoreLog.entries.value.single().level)
+        assertTrue(CoreLog.entries.value.single().message.contains("日志"))
+    }
+
+    @Test
     fun historyIsBoundedAndClearPublishesEmptySnapshot() {
         CoreLog.configure(enabled = true, debugEnabled = true)
+        CoreLog.clear()
 
         repeat(510) { CoreLog.i("entry-$it") }
 

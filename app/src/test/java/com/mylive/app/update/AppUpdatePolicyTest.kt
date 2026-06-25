@@ -197,6 +197,18 @@ class AppUpdatePolicyTest {
     }
 
     @Test
+    fun repositoryDownloadsToBoundedTemporaryFileAndCleansFailures() {
+        val source = File("src/main/java/com/mylive/app/update/AppUpdateRepository.kt").readText()
+
+        assertTrue(source.contains("MAX_APK_SIZE_BYTES"))
+        assertTrue(source.contains("\"${'$'}{targetFile.name}.part\""))
+        assertTrue(source.contains("downloadedBytes <= MAX_APK_SIZE_BYTES"))
+        assertTrue(source.contains("temporaryFile.delete()"))
+        assertTrue(source.contains("temporaryFile.renameTo(targetFile)"))
+        assertFalse(source.contains("targetFile.outputStream()"))
+    }
+
+    @Test
     fun installIntentUsesContentUriAndApkMimeType() {
         val source = File("src/main/java/com/mylive/app/update/AppUpdateInstaller.kt").readText()
 

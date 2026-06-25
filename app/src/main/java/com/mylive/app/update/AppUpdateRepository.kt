@@ -42,37 +42,60 @@ class AppUpdateRepository @Inject constructor(
             .url(updateInfo.apkDownloadUrl)
             .header("User-Agent", "MyLive/${BuildConfig.VERSION_NAME}")
             .build()
+        require(updateInfo.apkSizeBytes <= 0 || updateInfo.apkSizeBytes <= MAX_APK_SIZE_BYTES) {
+            "下载失败：安装包超过大小限制"
+        }
         val updateDir = File(context.cacheDir, "updates").apply { mkdirs() }
         val targetFile = File(updateDir, updateInfo.apkName.sanitizeFileName())
-        okHttpClient.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) {
-                error("下载失败：HTTP ${response.code}")
-            }
-            val body = response.body ?: error("下载失败：文件为空")
-            val totalBytes = if (body.contentLength() > 0) {
-                body.contentLength()
-            } else {
-                updateInfo.apkSizeBytes
-            }
-            body.byteStream().use { input ->
-                targetFile.outputStream().use { output ->
-                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                    var downloadedBytes = 0L
-                    while (true) {
-                        val read = input.read(buffer)
-                        if (read == -1) break
-                        output.write(buffer, 0, read)
-                        downloadedBytes += read
-                        if (totalBytes > 0) {
-                            onProgress(
-                                ((downloadedBytes * 100) / totalBytes)
-                                    .toInt()
-                                    .coerceIn(0, 100)
-                            )
+        val temporaryFile = File(updateDir, "${targetFile.name}.part")
+        temporaryFile.delete()
+        try {
+            okHttpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    error("下载失败：HTTP ${response.code}")
+                }
+                val body = response.body ?: error("下载失败：文件为空")
+                val responseSize = body.contentLength()
+                require(responseSize <= 0 || responseSize <= MAX_APK_SIZE_BYTES) {
+                    "下载失败：安装包超过大小限制"
+                }
+                val totalBytes = if (responseSize > 0) responseSize else updateInfo.apkSizeBytes
+                var downloadedBytes = 0L
+                body.byteStream().use { input ->
+                    temporaryFile.outputStream().use { output ->
+                        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                        while (true) {
+                            val read = input.read(buffer)
+                            if (read == -1) break
+                            downloadedBytes += read
+                            require(downloadedBytes <= MAX_APK_SIZE_BYTES) {
+                                "下载失败：安装包超过大小限制"
+                            }
+                            output.write(buffer, 0, read)
+                            if (totalBytes > 0) {
+                                onProgress(
+                                    ((downloadedBytes * 100) / totalBytes)
+                                        .toInt()
+                                        .coerceIn(0, 100)
+                                )
+                            }
                         }
                     }
                 }
+                require(downloadedBytes > 0) { "下载失败：文件为空" }
+                require(responseSize <= 0 || downloadedBytes == responseSize) {
+                    "下载失败：文件不完整"
+                }
             }
+            if (targetFile.exists() && !targetFile.delete()) {
+                error("下载失败：无法替换旧安装包")
+            }
+            if (!temporaryFile.renameTo(targetFile)) {
+                error("下载失败：无法保存安装包")
+            }
+        } catch (error: Throwable) {
+            temporaryFile.delete()
+            throw error
         }
         onProgress(100)
         targetFile
@@ -85,5 +108,6 @@ class AppUpdateRepository @Inject constructor(
 
     private companion object {
         const val RELEASES_URL = "https://api.github.com/repos/C0neF/My_Live/releases"
+        const val MAX_APK_SIZE_BYTES = 250L * 1024L * 1024L
     }
 }

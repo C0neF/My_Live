@@ -92,6 +92,8 @@ fun PlayerView(
     danmuTopMargin: Double = 0.0,
     danmuBottomMargin: Double = 0.0,
     danmuHideScroll: Boolean = false,
+    danmuHideTop: Boolean = false,
+    danmuHideBottom: Boolean = false,
     danmuDedupeEnable: Boolean = false,
     danmuDedupeWindow: Int = 10,
     danmuDedupeStep: Int = 2,
@@ -216,6 +218,8 @@ fun PlayerView(
                                 danmuTopMargin,
                                 danmuBottomMargin,
                                 danmuHideScroll,
+                                danmuHideTop,
+                                danmuHideBottom,
                                 danmuDedupeEnable,
                                 danmuDedupeWindow,
                                 danmuDedupeStep,
@@ -239,6 +243,8 @@ fun PlayerView(
                             danmuTopMargin,
                             danmuBottomMargin,
                             danmuHideScroll,
+                            danmuHideTop,
+                            danmuHideBottom,
                             danmuDedupeEnable,
                             danmuDedupeWindow,
                             danmuDedupeStep,
@@ -1250,6 +1256,8 @@ private fun updateControllerConfig(
     danmuTopMargin: Double,
     danmuBottomMargin: Double,
     danmuHideScroll: Boolean,
+    danmuHideTop: Boolean,
+    danmuHideBottom: Boolean,
     danmuDedupeEnable: Boolean,
     danmuDedupeWindow: Int,
     danmuDedupeStep: Int,
@@ -1267,6 +1275,8 @@ private fun updateControllerConfig(
     controller.danmuTopMargin = danmuTopMargin.toFloat()
     controller.danmuBottomMargin = danmuBottomMargin.toFloat()
     controller.danmuHideScroll = danmuHideScroll
+    controller.danmuHideTop = danmuHideTop
+    controller.danmuHideBottom = danmuHideBottom
     controller.dedupeEnabled = danmuDedupeEnable
     controller.dedupeWindowSize = danmuDedupeWindow
     controller.dedupeStepSize = danmuDedupeStep

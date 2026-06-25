@@ -82,4 +82,27 @@ class LanSyncSecurityPolicyTest {
         assertFalse(receiveSource.contains("/sync/account/bilibili"))
         assertFalse(receiveSource.contains("/sync/account/douyin"))
     }
+
+    @Test
+    fun lanSyncAuthorizationFailsClosedAndRequiresAnExactNonEmptyToken() {
+        assertFalse(isValidLanSyncToken(expectedToken = "", providedToken = "anything"))
+        assertFalse(isValidLanSyncToken(expectedToken = "secret", providedToken = ""))
+        assertFalse(isValidLanSyncToken(expectedToken = "secret", providedToken = "Secret"))
+        assertTrue(isValidLanSyncToken(expectedToken = "secret", providedToken = "secret"))
+    }
+
+    @Test
+    fun lanSyncRotatesAndClearsItsPairingTokenWithTheServiceLifecycle() {
+        val source = File("src/main/java/com/mylive/app/service/LanSyncService.kt").readText()
+        val createBlock = source.substringAfter("override fun onCreate()")
+            .substringBefore("override fun onStartCommand")
+        val destroyBlock = source.substringAfter("override fun onDestroy()")
+            .substringBefore("override fun onBind")
+
+        assertTrue(createBlock.contains("syncToken = newLanSyncToken()"))
+        assertFalse(createBlock.contains("if (syncToken.isEmpty())"))
+        assertTrue(destroyBlock.contains("syncToken = \"\""))
+        assertTrue(source.contains("providedToken = providedToken"))
+        assertFalse(source.contains("syncToken.isEmpty() || providedToken == syncToken"))
+    }
 }

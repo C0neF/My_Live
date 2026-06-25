@@ -64,4 +64,14 @@ class CategoryRefreshPolicyTest {
         assertTrue(source.contains("fun refresh()"))
         assertTrue(source.contains("loadCategories(forceRefresh = true)"))
     }
+
+    @Test
+    fun categorySelectionTracksTheSameSiteWhenPlatformOrderChanges() {
+        val source = File("src/main/java/com/mylive/app/ui/screen/category/CategoryViewModel.kt").readText()
+
+        assertTrue(source.contains("previousSiteIds"))
+        assertTrue(source.contains("preserveSelectedSiteIndex("))
+        assertTrue(source.contains("previousSiteIds = previousSiteIds"))
+        assertTrue(source.contains("reorderedSiteIds = reorderedSiteIds"))
+    }
 }

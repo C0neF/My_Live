@@ -6,8 +6,8 @@ import org.junit.Test
 class ReleaseVersionPolicyTest {
 
     @Test
-    fun releaseUsesVersionOneOneFive() {
+    fun releaseUsesVersionOneOneSix() {
         assertEquals("1.1.6", BuildConfig.VERSION_NAME)
-        assertEquals(15, BuildConfig.VERSION_CODE)
+        assertEquals(16, BuildConfig.VERSION_CODE)
     }
 }

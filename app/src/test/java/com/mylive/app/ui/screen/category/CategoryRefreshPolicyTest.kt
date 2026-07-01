@@ -56,4 +56,14 @@ class CategoryRefreshPolicyTest {
         assertTrue(source.contains("contentType = { \"category_detail_room\" }"))
         assertTrue(source.contains("contentType = \"category_detail_loading_more\""))
     }
+
+    @Test
+    fun categorySelectionTracksTheSameSiteWhenPlatformOrderChanges() {
+        val source = File("src/main/java/com/mylive/app/ui/screen/category/CategoryViewModel.kt").readText()
+
+        assertTrue(source.contains("previousSiteIds"))
+        assertTrue(source.contains("preserveSelectedSiteIndex("))
+        assertTrue(source.contains("previousSiteIds = previousSiteIds"))
+        assertTrue(source.contains("reorderedSiteIds = reorderedSiteIds"))
+    }
 }

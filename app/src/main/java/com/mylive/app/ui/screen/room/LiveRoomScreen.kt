@@ -1064,8 +1064,6 @@ private fun LandscapeLayout(
                 onFollowClick = { viewModel.toggleFollow() },
                 isFollowing = uiState.isFollowing,
                 followEnabled = uiState.detail != null && uiState.isFollowStatusKnown,
-                isFullscreenOverride = true,
-                onFullscreenClick = { playerController?.toggleFullscreen() },
                 onHorizontalDragDelta = { deltaX ->
                     coroutineScope.launch {
                         val newOffset = liveRoomSidePanelOffsetAfterDrag(

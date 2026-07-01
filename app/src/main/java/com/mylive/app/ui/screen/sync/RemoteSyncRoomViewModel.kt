@@ -222,7 +222,6 @@ class RemoteSyncRoomViewModel @Inject constructor(
                     }
                 }
             } catch (e: Exception) {
-                CoreLog.e("RemoteSyncRoomViewModel: Connection failed", e)
                 Timber.e(e, "RemoteSyncRoomViewModel: Connection failed")
                 _toastMessage.emit("连接同步服务失败: ${e.message}")
                 _roomDestroyedEvent.emit(Unit)

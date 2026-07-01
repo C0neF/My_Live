@@ -38,7 +38,7 @@ class FollowRefreshPolicyTest {
         val source = File("src/main/java/com/mylive/app/ui/screen/follow/FollowViewModel.kt").readText()
         val normalized = source.replace(Regex("\\s+"), " ")
 
-        assertTrue(normalized.contains("combine( groupMode, follows, userTags )"))
+        assertTrue(normalized.contains("combine( groupMode, follows, userTags, settingsRepository.siteSort )"))
         assertTrue(normalized.contains("combine( follows, groupMode, selectedGroupId, groupOptions, userTags )"))
     }
 

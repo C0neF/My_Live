@@ -39,6 +39,26 @@ data class FollowGroupOption(
     val tagId: String? = null
 )
 
+internal fun sortFollowPlatformIds(siteIds: List<String>, sortOrder: String): List<String> {
+    val configuredOrder = sortOrder
+        .split(",")
+        .map(String::trim)
+        .filter(String::isNotEmpty)
+        .distinct()
+        .withIndex()
+        .associate { (index, siteId) -> siteId to index }
+
+    return siteIds
+        .distinct()
+        .withIndex()
+        .sortedWith(
+            compareBy<IndexedValue<String>> {
+                configuredOrder[it.value] ?: Int.MAX_VALUE
+            }.thenBy { it.index }
+        )
+        .map { it.value }
+}
+
 @HiltViewModel
 class FollowViewModel @Inject constructor(
     private val followRepository: FollowRepository,
@@ -71,8 +91,9 @@ class FollowViewModel @Inject constructor(
     val groupOptions: StateFlow<List<FollowGroupOption>> = combine(
         groupMode,
         follows,
-        userTags
-    ) { mode, followsList, tagsList ->
+        userTags,
+        settingsRepository.siteSort
+    ) { mode, followsList, tagsList, siteSort ->
         val options = mutableListOf(FollowGroupOption("all", "全部"))
         when (mode) {
             FollowGroupMode.STATUS -> {
@@ -81,11 +102,7 @@ class FollowViewModel @Inject constructor(
             }
             FollowGroupMode.PLATFORM -> {
                 val siteIds = followsList.map { it.siteId }.distinct()
-                val siteSort = listOf("bilibili", "douyu", "huya", "douyin")
-                val sortedSiteIds = siteIds.sortedWith(compareBy {
-                    val idx = siteSort.indexOf(it)
-                    if (idx >= 0) idx else 99
-                })
+                val sortedSiteIds = sortFollowPlatformIds(siteIds, siteSort)
                 for (siteId in sortedSiteIds) {
                     val siteName = when (siteId) {
                         "bilibili" -> "B站"

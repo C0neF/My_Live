@@ -2,6 +2,7 @@ package com.mylive.app.ui.screen.room
 
 import android.app.Activity
 import android.content.pm.ActivityInfo
+import android.view.WindowManager
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.expandVertically
@@ -72,6 +73,7 @@ import com.mylive.app.core.model.LiveMessage
 import com.mylive.app.core.model.LiveMessageType
 import com.mylive.app.core.model.LiveMessageSpan
 import com.mylive.app.core.model.LivePlayQuality
+import com.mylive.app.data.repository.LiveRoomPreferences
 import com.mylive.app.ui.emoji.EmojiImage
 import com.mylive.app.ui.screen.room.player.PlayerController
 import com.mylive.app.ui.screen.room.player.PlayerView
@@ -100,6 +102,7 @@ import kotlinx.coroutines.launch
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.flow.first
 import kotlin.math.roundToInt
 import java.util.concurrent.atomic.AtomicLong
@@ -166,8 +169,19 @@ internal fun resolveLandscapeLiveRoomTabs(): List<LiveRoomTabType> {
     return listOf(LiveRoomTabType.CHAT)
 }
 
-private fun currentEpochMillis(): Long = System.currentTimeMillis()
+internal fun shouldResumeLivePlaybackOnForeground(
+    lifecyclePausedPlayback: Boolean,
+    wasPlayingBeforePause: Boolean
+): Boolean = lifecyclePausedPlayback && wasPlayingBeforePause
 
+internal fun liveRoomQuickAccessAction(
+    enabled: Boolean,
+    action: () -> Unit
+): (() -> Unit)? = if (enabled) action else null
+
+val LocalRoomAccentColor = compositionLocalOf { Color.Unspecified }
+
+private fun currentEpochMillis(): Long = System.currentTimeMillis()
 private fun applyLiveRoomFullscreen(activity: Activity, fullscreen: Boolean) {
     if (fullscreen) {
         activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
@@ -188,6 +202,14 @@ private fun restoreLiveRoomSystemUi(activity: Activity) {
         .show(WindowInsetsCompat.Type.systemBars())
 }
 
+private fun keepLiveRoomScreenAwake(activity: Activity, keepAwake: Boolean) {
+    if (keepAwake) {
+        activity.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    } else {
+        activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LiveRoomScreen(
@@ -199,7 +221,7 @@ fun LiveRoomScreen(
         viewModel.openRoute(key.roomId, key.siteId, key.initialIsFollowing)
     }
 
-    val rawUiState by viewModel.uiState.collectAsState()
+    val rawUiState by viewModel.uiState.collectAsStateWithLifecycle()
     val uiState = liveRoomUiStateForRoute(
         uiState = rawUiState,
         viewModelRoomId = viewModel.roomId,
@@ -208,7 +230,7 @@ fun LiveRoomScreen(
         routeSiteId = key.siteId,
         routeInitialIsFollowing = key.initialIsFollowing
     )
-    val danmakuMessages by viewModel.danmakuMessages.collectAsState()
+    val danmakuMessages by viewModel.danmakuMessages.collectAsStateWithLifecycle()
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
     val context = LocalContext.current
@@ -216,28 +238,31 @@ fun LiveRoomScreen(
 
     var isExiting by remember { mutableStateOf(false) }
     val settingsViewModel: SettingsViewModel = hiltViewModel()
-    val scaleMode by settingsViewModel.scaleMode.collectAsState()
-    val playerCompatMode by settingsViewModel.playerCompatMode.collectAsState()
-    val pipHideDanmu by settingsViewModel.pipHideDanmu.collectAsState(initial = false)
-    val chatBubbleStyle by settingsViewModel.chatBubbleStyle.collectAsState()
-    val pipDanmuEnable by settingsViewModel.danmuEnable.collectAsState(initial = true)
-    val pipDanmuSize by settingsViewModel.danmuSize.collectAsState(initial = 16.0)
-    val pipDanmuSpeed by settingsViewModel.danmuSpeed.collectAsState(initial = 10.0)
-    val pipDanmuArea by settingsViewModel.danmuArea.collectAsState(initial = 0.8)
-    val pipDanmuLineCount by settingsViewModel.danmuLineCount.collectAsState(initial = 8)
-    val pipDanmuDelay by settingsViewModel.danmuDelay.collectAsState(initial = 0.0)
-    val pipDanmuDelayBySiteJson by settingsViewModel.danmuDelayBySiteJson.collectAsState(initial = "{}")
-    val pipDanmuOpacity by settingsViewModel.danmuOpacity.collectAsState(initial = 1.0)
-    val pipDanmuFontWeight by settingsViewModel.danmuFontWeight.collectAsState(initial = 4)
-    val pipDanmuStrokeWidth by settingsViewModel.danmuStrokeWidth.collectAsState(initial = 2.0)
-    val pipDanmuTopMargin by settingsViewModel.danmuTopMargin.collectAsState(initial = 0.0)
-    val pipDanmuBottomMargin by settingsViewModel.danmuBottomMargin.collectAsState(initial = 0.0)
-    val pipDanmuHideScroll by settingsViewModel.danmuHideScroll.collectAsState(initial = false)
-    val pipDanmuDedupeEnable by settingsViewModel.danmuDedupeEnable.collectAsState(initial = false)
-    val pipDanmuDedupeWindow by settingsViewModel.danmuDedupeWindow.collectAsState(initial = 10)
-    val pipDanmuDedupeStep by settingsViewModel.danmuDedupeStep.collectAsState(initial = 2)
-    val pipDanmuDedupeStrictMode by settingsViewModel.danmuDedupeStrictMode.collectAsState(initial = false)
-    val pipDanmuRenderEmoji by settingsViewModel.danmuRenderEmoji.collectAsState(initial = true)
+    val liveRoomPreferences by settingsViewModel.liveRoomPreferences.collectAsStateWithLifecycle()
+    val scaleMode = liveRoomPreferences.scaleMode
+    val playerCompatMode = liveRoomPreferences.playerCompatMode
+    val pipHideDanmu = liveRoomPreferences.pipHideDanmu
+    val chatBubbleStyle = liveRoomPreferences.chatBubbleStyle
+    val pipDanmuEnable = liveRoomPreferences.danmuEnable
+    val pipDanmuSize = liveRoomPreferences.danmuSize
+    val pipDanmuSpeed = liveRoomPreferences.danmuSpeed
+    val pipDanmuArea = liveRoomPreferences.danmuArea
+    val pipDanmuLineCount = liveRoomPreferences.danmuLineCount
+    val pipDanmuDelay = liveRoomPreferences.danmuDelay
+    val pipDanmuDelayBySiteJson = liveRoomPreferences.danmuDelayBySiteJson
+    val pipDanmuOpacity = liveRoomPreferences.danmuOpacity
+    val pipDanmuFontWeight = liveRoomPreferences.danmuFontWeight
+    val pipDanmuStrokeWidth = liveRoomPreferences.danmuStrokeWidth
+    val pipDanmuTopMargin = liveRoomPreferences.danmuTopMargin
+    val pipDanmuBottomMargin = liveRoomPreferences.danmuBottomMargin
+    val pipDanmuHideScroll = liveRoomPreferences.danmuHideScroll
+    val pipDanmuHideTop = liveRoomPreferences.danmuHideTop
+    val pipDanmuHideBottom = liveRoomPreferences.danmuHideBottom
+    val pipDanmuDedupeEnable = liveRoomPreferences.danmuDedupeEnable
+    val pipDanmuDedupeWindow = liveRoomPreferences.danmuDedupeWindow
+    val pipDanmuDedupeStep = liveRoomPreferences.danmuDedupeStep
+    val pipDanmuDedupeStrictMode = liveRoomPreferences.danmuDedupeStrictMode
+    val pipDanmuRenderEmoji = liveRoomPreferences.danmuRenderEmoji
 
     val componentActivity = context as? androidx.activity.ComponentActivity
     var isInPip by remember { mutableStateOf(componentActivity?.isInPictureInPictureMode == true) }
@@ -281,8 +306,8 @@ fun LiveRoomScreen(
         }
     }
 
-    val autoPipOnExit by settingsViewModel.autoPipOnExit.collectAsState(initial = false)
-    val autoFullScreen by settingsViewModel.autoFullScreen.collectAsState(initial = false)
+    val autoPipOnExit = liveRoomPreferences.autoPipOnExit
+    val autoFullScreen = liveRoomPreferences.autoFullScreen
     DisposableEffect(autoPipOnExit) {
         com.mylive.app.MainActivity.isPipSupportedAndActive = autoPipOnExit
         onDispose {
@@ -300,12 +325,11 @@ fun LiveRoomScreen(
 
     LaunchedEffect(Unit) {
         kotlinx.coroutines.delay(AppMotion.LiveRoomPlayerStartupDelayMillis.toLong())
-        val hardwareDecodeEnabled = viewModel.settingsRepository.hardwareDecode.first()
-        val forceHttps = viewModel.settingsRepository.playerForceHttps.first()
+        val startupPreferences = viewModel.settingsRepository.liveRoomPreferences.first()
         val pc = PlayerController(
             context = context,
-            hardwareDecodeEnabled = hardwareDecodeEnabled,
-            forceHttps = forceHttps,
+            hardwareDecodeEnabled = startupPreferences.hardwareDecode,
+            forceHttps = startupPreferences.playerForceHttps,
             onPlaybackSourceExhausted = {
                 viewModel.recoverPlaybackAfterSourceFailure()
             }
@@ -326,10 +350,11 @@ fun LiveRoomScreen(
     }
 
     // Sync playback auto-pause & background play settings with Lifecycle
-    val allowBackgroundPlayback by settingsViewModel.allowBackgroundPlayback.collectAsState()
-    val playerAutoPause by settingsViewModel.playerAutoPause.collectAsState()
-    val playerForceHttps by settingsViewModel.playerForceHttps.collectAsState()
+    val allowBackgroundPlayback = liveRoomPreferences.allowBackgroundPlayback
+    val playerAutoPause = liveRoomPreferences.playerAutoPause
+    val playerForceHttps = liveRoomPreferences.playerForceHttps
     val lifecycleOwner = LocalLifecycleOwner.current
+    var resumePlaybackOnForeground by remember { mutableStateOf(false) }
 
     LaunchedEffect(playerController, playerForceHttps) {
         playerController?.setForceHttps(playerForceHttps)
@@ -340,7 +365,12 @@ fun LiveRoomScreen(
             when (event) {
                 Lifecycle.Event.ON_PAUSE -> {
                     val p = playerController?.player
-                    if (!allowBackgroundPlayback || playerAutoPause) {
+                    val lifecyclePausesPlayback = !allowBackgroundPlayback || playerAutoPause
+                    resumePlaybackOnForeground = shouldResumeLivePlaybackOnForeground(
+                        lifecyclePausedPlayback = lifecyclePausesPlayback,
+                        wasPlayingBeforePause = p?.isPlaying == true
+                    )
+                    if (lifecyclePausesPlayback) {
                         playerController?.pause()
                     } else if (p != null && p.isPlaying) {
                         com.mylive.app.service.PlaybackForegroundService.start(
@@ -354,7 +384,10 @@ fun LiveRoomScreen(
                 }
                 Lifecycle.Event.ON_RESUME -> {
                     com.mylive.app.service.PlaybackForegroundService.stop(context)
-                    playerController?.resume()
+                    if (resumePlaybackOnForeground) {
+                        playerController?.resume()
+                    }
+                    resumePlaybackOnForeground = false
                 }
                 else -> {}
             }
@@ -367,10 +400,10 @@ fun LiveRoomScreen(
     }
 
     // Room idle auto exit state
-    val roomAutoExitDuration by settingsViewModel.roomAutoExitDuration.collectAsState()
+    val roomAutoExitDuration = liveRoomPreferences.roomAutoExitDuration
     val lastInteractionTime = remember { AtomicLong(System.currentTimeMillis()) }
 
-    val playerState = playerController?.state?.collectAsState()?.value ?: PlayerState()
+    val playerState = playerController?.state?.collectAsStateWithLifecycle()?.value ?: PlayerState()
     val isFullscreen = playerState.isFullscreen
     var autoFullscreenAppliedRoute by remember { mutableStateOf<Pair<String, String>?>(null) }
 
@@ -396,8 +429,12 @@ fun LiveRoomScreen(
 
     DisposableEffect(activity) {
         val act = activity
+        if (act != null) {
+            keepLiveRoomScreenAwake(act, true)
+        }
         onDispose {
             if (act != null) {
+                keepLiveRoomScreenAwake(act, false)
                 restoreLiveRoomSystemUi(act)
             }
         }
@@ -451,7 +488,6 @@ fun LiveRoomScreen(
 
     // Quality selection bottom sheet
     var showQualitySheet by remember { mutableStateOf(false) }
-    var showQuickAccess by remember { mutableStateOf(false) }
 
     if (showQualitySheet && uiState.playQualities.isNotEmpty()) {
         QualityBottomSheet(
@@ -465,31 +501,7 @@ fun LiveRoomScreen(
         )
     }
 
-    if (showQuickAccess) {
-        MaterialTheme(
-            colorScheme = MaterialTheme.colorScheme.copy(primary = roomPlatformAccentColor)
-        ) {
-        com.mylive.app.ui.screen.room.quickaccess.QuickAccessPanel(
-            currentSiteId = viewModel.siteId,
-            currentRoomId = viewModel.roomId,
-            currentCategoryId = uiState.detail?.categoryId,
-            onNavigateToRoom = { siteId, roomId, initialIsFollowing ->
-                showQuickAccess = false
-                navigator.navigate(
-                    Route.LiveRoomDetail(
-                        roomId = roomId,
-                        siteId = siteId,
-                        initialIsFollowing = initialIsFollowing
-                    ),
-                    singleTop = true,
-                    popUpToRoute = Route.Index::class.java,
-                    inclusive = false
-                )
-            },
-            onDismiss = { showQuickAccess = false }
-        )
-        }
-    }
+
 
     Box(
         modifier = Modifier
@@ -532,6 +544,8 @@ fun LiveRoomScreen(
                 danmuTopMargin = pipDanmuTopMargin,
                 danmuBottomMargin = pipDanmuBottomMargin,
                 danmuHideScroll = pipDanmuHideScroll,
+                danmuHideTop = pipDanmuHideTop,
+                danmuHideBottom = pipDanmuHideBottom,
                 danmuDedupeEnable = pipDanmuDedupeEnable,
                 danmuDedupeWindow = pipDanmuDedupeWindow,
                 danmuDedupeStep = pipDanmuDedupeStep,
@@ -555,6 +569,8 @@ fun LiveRoomScreen(
                 navigator = navigator,
                 playerController = playerController,
                 activity = activity,
+                settingsViewModel = settingsViewModel,
+                liveRoomPreferences = liveRoomPreferences,
                 onQualityClick = { showQualitySheet = true },
                 isExiting = isExiting,
                 onBack = {
@@ -574,6 +590,8 @@ fun LiveRoomScreen(
                 navigator = navigator,
                 playerController = playerController,
                 activity = activity,
+                settingsViewModel = settingsViewModel,
+                liveRoomPreferences = liveRoomPreferences,
                 onQualityClick = { showQualitySheet = true },
                 isExiting = isExiting,
                 onBack = handleBack
@@ -592,38 +610,41 @@ private fun PortraitLayout(
     navigator: Navigator,
     playerController: PlayerController?,
     activity: Activity?,
+    settingsViewModel: SettingsViewModel,
+    liveRoomPreferences: LiveRoomPreferences,
     onQualityClick: () -> Unit,
     isExiting: Boolean = false,
     onBack: () -> Unit = {}
 ) {
-    val settingsViewModel: SettingsViewModel = hiltViewModel()
-    val danmuEnable by settingsViewModel.danmuEnable.collectAsState()
-    val danmuSize by settingsViewModel.danmuSize.collectAsState()
-    val danmuSpeed by settingsViewModel.danmuSpeed.collectAsState()
-    val danmuArea by settingsViewModel.danmuArea.collectAsState()
-    val danmuLineCount by settingsViewModel.danmuLineCount.collectAsState()
-    val danmuDelay by settingsViewModel.danmuDelay.collectAsState()
-    val danmuDelayBySiteJson by settingsViewModel.danmuDelayBySiteJson.collectAsState()
-    val danmuOpacity by settingsViewModel.danmuOpacity.collectAsState()
-    val danmuFontWeight by settingsViewModel.danmuFontWeight.collectAsState()
-    val danmuStrokeWidth by settingsViewModel.danmuStrokeWidth.collectAsState()
-    val danmuTopMargin by settingsViewModel.danmuTopMargin.collectAsState()
-    val danmuBottomMargin by settingsViewModel.danmuBottomMargin.collectAsState()
-    val danmuHideScroll by settingsViewModel.danmuHideScroll.collectAsState()
-    val danmuDedupeEnable by settingsViewModel.danmuDedupeEnable.collectAsState()
-    val danmuDedupeWindow by settingsViewModel.danmuDedupeWindow.collectAsState()
-    val danmuDedupeStep by settingsViewModel.danmuDedupeStep.collectAsState()
-    val danmuDedupeStrictMode by settingsViewModel.danmuDedupeStrictMode.collectAsState()
-    val scaleMode by settingsViewModel.scaleMode.collectAsState()
-    val playerCompatMode by settingsViewModel.playerCompatMode.collectAsState()
-    val danmuRenderEmoji by settingsViewModel.danmuRenderEmoji.collectAsState()
+    val danmuEnable = liveRoomPreferences.danmuEnable
+    val danmuSize = liveRoomPreferences.danmuSize
+    val danmuSpeed = liveRoomPreferences.danmuSpeed
+    val danmuArea = liveRoomPreferences.danmuArea
+    val danmuLineCount = liveRoomPreferences.danmuLineCount
+    val danmuDelay = liveRoomPreferences.danmuDelay
+    val danmuDelayBySiteJson = liveRoomPreferences.danmuDelayBySiteJson
+    val danmuOpacity = liveRoomPreferences.danmuOpacity
+    val danmuFontWeight = liveRoomPreferences.danmuFontWeight
+    val danmuStrokeWidth = liveRoomPreferences.danmuStrokeWidth
+    val danmuTopMargin = liveRoomPreferences.danmuTopMargin
+    val danmuBottomMargin = liveRoomPreferences.danmuBottomMargin
+    val danmuHideScroll = liveRoomPreferences.danmuHideScroll
+    val danmuHideTop = liveRoomPreferences.danmuHideTop
+    val danmuHideBottom = liveRoomPreferences.danmuHideBottom
+    val danmuDedupeEnable = liveRoomPreferences.danmuDedupeEnable
+    val danmuDedupeWindow = liveRoomPreferences.danmuDedupeWindow
+    val danmuDedupeStep = liveRoomPreferences.danmuDedupeStep
+    val danmuDedupeStrictMode = liveRoomPreferences.danmuDedupeStrictMode
+    val scaleMode = liveRoomPreferences.scaleMode
+    val playerCompatMode = liveRoomPreferences.playerCompatMode
+    val danmuRenderEmoji = liveRoomPreferences.danmuRenderEmoji
+    val chatTextSize = liveRoomPreferences.chatTextSize
+    val chatTextGap = liveRoomPreferences.chatTextGap
+    val chatBubbleStyle = liveRoomPreferences.chatBubbleStyle
+    val superChatSortDesc = liveRoomPreferences.superChatSortDesc
+    val liveRoomQuickAccessEnabled = liveRoomPreferences.liveRoomQuickAccessEnabled
 
-    val chatTextSize by settingsViewModel.chatTextSize.collectAsState()
-    val chatTextGap by settingsViewModel.chatTextGap.collectAsState()
-    val chatBubbleStyle by settingsViewModel.chatBubbleStyle.collectAsState()
-    val superChatSortDesc by settingsViewModel.superChatSortDesc.collectAsState()
-
-    val superChats by viewModel.superChats.collectAsState()
+    val superChats by viewModel.superChats.collectAsStateWithLifecycle()
     val activeSuperChatCount = remember(superChats) {
         countActiveSuperChats(superChats, System.currentTimeMillis())
     }
@@ -648,11 +669,18 @@ private fun PortraitLayout(
     var danmakuController by remember { mutableStateOf<DanmakuController?>(null) }
     var showQuickAccess by remember { mutableStateOf(false) }
     var activeAuxiliaryPanel by remember { mutableStateOf<PortraitLiveRoomPanel?>(null) }
+    val quickAccessAction = liveRoomQuickAccessAction(liveRoomQuickAccessEnabled) {
+        showQuickAccess = true
+    }
+
+    LaunchedEffect(liveRoomQuickAccessEnabled) {
+        if (!liveRoomQuickAccessEnabled) {
+            showQuickAccess = false
+        }
+    }
 
     if (showQuickAccess) {
-        MaterialTheme(
-            colorScheme = MaterialTheme.colorScheme.copy(primary = roomPlatformAccentColor)
-        ) {
+        CompositionLocalProvider(LocalRoomAccentColor provides roomPlatformAccentColor) {
         com.mylive.app.ui.screen.room.quickaccess.QuickAccessPanel(
             currentSiteId = viewModel.siteId,
             currentRoomId = viewModel.roomId,
@@ -698,6 +726,7 @@ private fun PortraitLayout(
             viewModel = viewModel,
             navigator = navigator,
             settingsViewModel = settingsViewModel,
+            liveRoomPreferences = liveRoomPreferences,
             superChatSortDesc = superChatSortDesc,
             onDismiss = { activeAuxiliaryPanel = null }
         )
@@ -752,6 +781,8 @@ private fun PortraitLayout(
                 danmuTopMargin = danmuTopMargin,
                 danmuBottomMargin = danmuBottomMargin,
                 danmuHideScroll = danmuHideScroll,
+                danmuHideTop = danmuHideTop,
+                danmuHideBottom = danmuHideBottom,
                 danmuDedupeEnable = danmuDedupeEnable,
                 danmuDedupeWindow = danmuDedupeWindow,
                 danmuDedupeStep = danmuDedupeStep,
@@ -776,7 +807,7 @@ private fun PortraitLayout(
             onToggleFollow = { viewModel.toggleFollow() },
             onRefreshClick = { viewModel.refreshPlay() },
             onSettingsClick = { activeAuxiliaryPanel = PortraitLiveRoomPanel.SETTINGS },
-            onQuickAccessClick = { showQuickAccess = true }
+            onQuickAccessClick = quickAccessAction
         )
 
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -802,6 +833,7 @@ private fun LiveRoomTabPage(
     viewModel: LiveRoomViewModel,
     navigator: Navigator,
     settingsViewModel: SettingsViewModel,
+    liveRoomPreferences: LiveRoomPreferences,
     chatTextSize: Double,
     chatTextGap: Double,
     chatBubbleStyle: Boolean,
@@ -837,6 +869,7 @@ private fun LiveRoomTabPage(
         LiveRoomTabType.SETTINGS -> {
             RoomSettingsPanel(
                 viewModel = settingsViewModel,
+                liveRoomPreferences = liveRoomPreferences,
                 isHuyaOrBilibili = viewModel.siteId == "huya" || viewModel.siteId == "bilibili",
                 siteId = viewModel.siteId,
                 onOpenShieldSettings = { navigator.navigate(Route.SettingsDanmuShield) },
@@ -856,35 +889,38 @@ private fun LandscapeLayout(
     navigator: Navigator,
     playerController: PlayerController?,
     activity: Activity?,
+    settingsViewModel: SettingsViewModel,
+    liveRoomPreferences: LiveRoomPreferences,
     onQualityClick: () -> Unit,
     isExiting: Boolean = false,
     onBack: () -> Unit = {}
 ) {
-    val settingsViewModel: SettingsViewModel = hiltViewModel()
-    val danmuEnable by settingsViewModel.danmuEnable.collectAsState()
-    val danmuSize by settingsViewModel.danmuSize.collectAsState()
-    val danmuSpeed by settingsViewModel.danmuSpeed.collectAsState()
-    val danmuArea by settingsViewModel.danmuArea.collectAsState()
-    val danmuLineCount by settingsViewModel.danmuLineCount.collectAsState()
-    val danmuDelay by settingsViewModel.danmuDelay.collectAsState()
-    val danmuDelayBySiteJson by settingsViewModel.danmuDelayBySiteJson.collectAsState()
-    val danmuOpacity by settingsViewModel.danmuOpacity.collectAsState()
-    val danmuFontWeight by settingsViewModel.danmuFontWeight.collectAsState()
-    val danmuStrokeWidth by settingsViewModel.danmuStrokeWidth.collectAsState()
-    val danmuTopMargin by settingsViewModel.danmuTopMargin.collectAsState()
-    val danmuBottomMargin by settingsViewModel.danmuBottomMargin.collectAsState()
-    val danmuHideScroll by settingsViewModel.danmuHideScroll.collectAsState()
-    val danmuDedupeEnable by settingsViewModel.danmuDedupeEnable.collectAsState()
-    val danmuDedupeWindow by settingsViewModel.danmuDedupeWindow.collectAsState()
-    val danmuDedupeStep by settingsViewModel.danmuDedupeStep.collectAsState()
-    val danmuDedupeStrictMode by settingsViewModel.danmuDedupeStrictMode.collectAsState()
-    val scaleMode by settingsViewModel.scaleMode.collectAsState()
-    val playerCompatMode by settingsViewModel.playerCompatMode.collectAsState()
-    val danmuRenderEmoji by settingsViewModel.danmuRenderEmoji.collectAsState()
-
-    val chatTextSize by settingsViewModel.chatTextSize.collectAsState()
-    val chatTextGap by settingsViewModel.chatTextGap.collectAsState()
-    val chatBubbleStyle by settingsViewModel.chatBubbleStyle.collectAsState()
+    val danmuEnable = liveRoomPreferences.danmuEnable
+    val danmuSize = liveRoomPreferences.danmuSize
+    val danmuSpeed = liveRoomPreferences.danmuSpeed
+    val danmuArea = liveRoomPreferences.danmuArea
+    val danmuLineCount = liveRoomPreferences.danmuLineCount
+    val danmuDelay = liveRoomPreferences.danmuDelay
+    val danmuDelayBySiteJson = liveRoomPreferences.danmuDelayBySiteJson
+    val danmuOpacity = liveRoomPreferences.danmuOpacity
+    val danmuFontWeight = liveRoomPreferences.danmuFontWeight
+    val danmuStrokeWidth = liveRoomPreferences.danmuStrokeWidth
+    val danmuTopMargin = liveRoomPreferences.danmuTopMargin
+    val danmuBottomMargin = liveRoomPreferences.danmuBottomMargin
+    val danmuHideScroll = liveRoomPreferences.danmuHideScroll
+    val danmuHideTop = liveRoomPreferences.danmuHideTop
+    val danmuHideBottom = liveRoomPreferences.danmuHideBottom
+    val danmuDedupeEnable = liveRoomPreferences.danmuDedupeEnable
+    val danmuDedupeWindow = liveRoomPreferences.danmuDedupeWindow
+    val danmuDedupeStep = liveRoomPreferences.danmuDedupeStep
+    val danmuDedupeStrictMode = liveRoomPreferences.danmuDedupeStrictMode
+    val scaleMode = liveRoomPreferences.scaleMode
+    val playerCompatMode = liveRoomPreferences.playerCompatMode
+    val danmuRenderEmoji = liveRoomPreferences.danmuRenderEmoji
+    val chatTextSize = liveRoomPreferences.chatTextSize
+    val chatTextGap = liveRoomPreferences.chatTextGap
+    val chatBubbleStyle = liveRoomPreferences.chatBubbleStyle
+    val liveRoomQuickAccessEnabled = liveRoomPreferences.liveRoomQuickAccessEnabled
 
     val roomTabs = remember { resolveLandscapeLiveRoomTabs() }
     val resolvedDanmuDelay = remember(danmuDelay, danmuDelayBySiteJson, viewModel.siteId) {
@@ -900,17 +936,26 @@ private fun LandscapeLayout(
     )
     var showQuickAccess by remember { mutableStateOf(false) }
     var quickAccessInitialTabKey by remember { mutableStateOf<String?>(null) }
+    val quickAccessAction = liveRoomQuickAccessAction(liveRoomQuickAccessEnabled) {
+        quickAccessInitialTabKey = "follow"
+        showQuickAccess = true
+    }
+
+    LaunchedEffect(liveRoomQuickAccessEnabled) {
+        if (!liveRoomQuickAccessEnabled) {
+            showQuickAccess = false
+        }
+    }
 
     if (showQuickAccess) {
-        MaterialTheme(
-            colorScheme = MaterialTheme.colorScheme.copy(primary = roomPlatformAccentColor)
-        ) {
+        CompositionLocalProvider(LocalRoomAccentColor provides roomPlatformAccentColor) {
             com.mylive.app.ui.screen.room.quickaccess.QuickAccessPanel(
                 currentSiteId = viewModel.siteId,
                 currentRoomId = viewModel.roomId,
                 currentCategoryId = uiState.detail?.categoryId,
                 extraTabs = landscapeQuickAccessExtraTabs(
                     settingsViewModel = settingsViewModel,
+                    liveRoomPreferences = liveRoomPreferences,
                     viewModel = viewModel,
                     navigator = navigator
                 ),
@@ -1003,6 +1048,8 @@ private fun LandscapeLayout(
                 danmuTopMargin = danmuTopMargin,
                 danmuBottomMargin = danmuBottomMargin,
                 danmuHideScroll = danmuHideScroll,
+                danmuHideTop = danmuHideTop,
+                danmuHideBottom = danmuHideBottom,
                 danmuDedupeEnable = danmuDedupeEnable,
                 danmuDedupeWindow = danmuDedupeWindow,
                 danmuDedupeStep = danmuDedupeStep,
@@ -1013,10 +1060,7 @@ private fun LandscapeLayout(
                 chatBubbleStyle = chatBubbleStyle,
                 onChatBubbleStyleChange = { settingsViewModel.setChatBubbleStyle(it) },
                 onDanmakuControllerCreated = { danmakuController = it },
-                onQuickAccessClick = {
-                    quickAccessInitialTabKey = "follow"
-                    showQuickAccess = true
-                },
+                onQuickAccessClick = quickAccessAction,
                 onFollowClick = { viewModel.toggleFollow() },
                 isFollowing = uiState.isFollowing,
                 followEnabled = uiState.detail != null && uiState.isFollowStatusKnown,
@@ -1100,6 +1144,7 @@ private fun LandscapeLayout(
 
 private fun landscapeQuickAccessExtraTabs(
     settingsViewModel: SettingsViewModel,
+    liveRoomPreferences: LiveRoomPreferences,
     viewModel: LiveRoomViewModel,
     navigator: Navigator
 ): List<QuickAccessExtraTab> {
@@ -1111,6 +1156,7 @@ private fun landscapeQuickAccessExtraTabs(
             content = {
                 RoomSettingsPanel(
                     viewModel = settingsViewModel,
+                    liveRoomPreferences = liveRoomPreferences,
                     isHuyaOrBilibili = viewModel.siteId == "huya" || viewModel.siteId == "bilibili",
                     siteId = viewModel.siteId,
                     onOpenShieldSettings = { navigator.navigate(Route.SettingsDanmuShield) },
@@ -1192,7 +1238,7 @@ private fun CompactPortraitRoomHeader(
     onToggleFollow: () -> Unit,
     onRefreshClick: () -> Unit,
     onSettingsClick: () -> Unit,
-    onQuickAccessClick: () -> Unit
+    onQuickAccessClick: (() -> Unit)?
 ) {
     val toolbarIconTint = resolveLiveRoomToolbarIconTint(MaterialTheme.colorScheme.onSurface)
 
@@ -1270,13 +1316,15 @@ private fun CompactPortraitRoomHeader(
                     modifier = Modifier.size(18.dp)
                 )
             }
-            IconButton(onClick = onQuickAccessClick, modifier = Modifier.size(36.dp)) {
-                Icon(
-                    imageVector = Icons.Default.PlaylistAdd,
-                    contentDescription = "快速入口",
-                    tint = toolbarIconTint,
-                    modifier = Modifier.size(18.dp)
-                )
+            if (onQuickAccessClick != null) {
+                IconButton(onClick = onQuickAccessClick, modifier = Modifier.size(36.dp)) {
+                    Icon(
+                        imageVector = Icons.Default.PlaylistAdd,
+                        contentDescription = "快速入口",
+                        tint = toolbarIconTint,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
             }
             val canToggleFollow = detail != null && isFollowStatusKnown
             LiveRoomFollowButton(
@@ -1329,6 +1377,7 @@ private fun PortraitAuxiliaryPanelSheet(
     viewModel: LiveRoomViewModel,
     navigator: Navigator,
     settingsViewModel: SettingsViewModel,
+    liveRoomPreferences: LiveRoomPreferences,
     superChatSortDesc: Boolean,
     onDismiss: () -> Unit
 ) {
@@ -1393,6 +1442,7 @@ private fun PortraitAuxiliaryPanelSheet(
                     PortraitLiveRoomPanel.SETTINGS -> {
                         RoomSettingsPanel(
                             viewModel = settingsViewModel,
+                            liveRoomPreferences = liveRoomPreferences,
                             isHuyaOrBilibili = viewModel.siteId == "huya" || viewModel.siteId == "bilibili",
                             siteId = viewModel.siteId,
                             onOpenShieldSettings = { navigator.navigate(Route.SettingsDanmuShield) },
@@ -1497,9 +1547,6 @@ fun ChatPanel(
             lastVisible == null || lastVisible.index >= info.totalItemsCount - 2
         }
     }
-    val firstVisibleItemIndex = listState.firstVisibleItemIndex
-    val firstVisibleItemScrollOffset = listState.firstVisibleItemScrollOffset
-
     // Key on the last message (not messages.size): once the ring buffer saturates at its cap,
     // size stays constant and a size-keyed effect would stop firing, freezing auto-scroll in
     // busy rooms. Auto-follow is controlled by user scroll state, matching dart_simple_live:
@@ -1543,9 +1590,7 @@ fun ChatPanel(
 
     LaunchedEffect(
         isAtBottomNow,
-        userTouchingChat,
-        firstVisibleItemIndex,
-        firstVisibleItemScrollOffset
+        userTouchingChat
     ) {
         autoScrollDisabled = reduceChatAutoScrollDisabled(
             currentDisabled = autoScrollDisabled,
@@ -2087,7 +2132,7 @@ fun SuperChatPanel(
     superChatSortDesc: Boolean,
     modifier: Modifier = Modifier
 ) {
-    val superChats by viewModel.superChats.collectAsState()
+    val superChats by viewModel.superChats.collectAsStateWithLifecycle()
 
     // Trigger cleanup of expired super chats every second
     LaunchedEffect(Unit) {
@@ -2270,15 +2315,8 @@ fun FollowListPanel(
     currentSiteId: String,
     modifier: Modifier = Modifier
 ) {
-    val follows by viewModel.follows.collectAsState()
-    val updating by viewModel.updatingStatus.collectAsState()
-
+    val follows by viewModel.follows.collectAsStateWithLifecycle()
     var filterIndex by remember { mutableIntStateOf(0) } // 0: 全部, 1: 直播中, 2: 未开播
-
-    // Refresh follow status on panel load
-    LaunchedEffect(Unit) {
-        viewModel.updateFollowStatus()
-    }
 
     val filteredFollows = remember(follows, filterIndex) {
         when (filterIndex) {
@@ -2328,7 +2366,11 @@ fun FollowListPanel(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 contentPadding = PaddingValues(bottom = 16.dp)
             ) {
-                items(filteredFollows) { item ->
+                items(
+                    items = filteredFollows,
+                    key = { it.id },
+                    contentType = { "room_follow" }
+                ) { item ->
                     val isPlaying = item.roomId == currentRoomId && item.siteId == currentSiteId
                     FollowUserItem(
                         item = item,
@@ -2356,37 +2398,38 @@ fun FollowListPanel(
 @Composable
 fun RoomSettingsPanel(
     viewModel: SettingsViewModel = hiltViewModel(),
+    liveRoomPreferences: LiveRoomPreferences,
     isHuyaOrBilibili: Boolean,
     siteId: String = "",
     onOpenShieldSettings: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    val chatTextSize by viewModel.chatTextSize.collectAsState()
-    val chatTextGap by viewModel.chatTextGap.collectAsState()
-    val chatBubbleStyle by viewModel.chatBubbleStyle.collectAsState()
-    val superChatSortDesc by viewModel.superChatSortDesc.collectAsState()
-    val danmuEnable by viewModel.danmuEnable.collectAsState()
-    val danmuRenderEmoji by viewModel.danmuRenderEmoji.collectAsState()
-    val danmuSize by viewModel.danmuSize.collectAsState()
-    val danmuSpeed by viewModel.danmuSpeed.collectAsState()
-    val danmuArea by viewModel.danmuArea.collectAsState()
-    val danmuLineCount by viewModel.danmuLineCount.collectAsState()
-    val danmuDelay by viewModel.danmuDelay.collectAsState()
-    val danmuDelayBySiteJson by viewModel.danmuDelayBySiteJson.collectAsState()
-    val danmuOpacity by viewModel.danmuOpacity.collectAsState()
-    val danmuStrokeWidth by viewModel.danmuStrokeWidth.collectAsState()
-    val danmuTopMargin by viewModel.danmuTopMargin.collectAsState()
-    val danmuBottomMargin by viewModel.danmuBottomMargin.collectAsState()
-    val danmuDedupeEnable by viewModel.danmuDedupeEnable.collectAsState()
-    val danmuDedupeWindow by viewModel.danmuDedupeWindow.collectAsState()
-    val danmuDedupeStep by viewModel.danmuDedupeStep.collectAsState()
-    val danmuDedupeStrictMode by viewModel.danmuDedupeStrictMode.collectAsState()
-    val danmuShieldEnable by viewModel.danmuShieldEnable.collectAsState()
-    val danmuKeywordShieldEnable by viewModel.danmuKeywordShieldEnable.collectAsState()
-    val danmuUserShieldEnable by viewModel.danmuUserShieldEnable.collectAsState()
-    val autoFullScreen by viewModel.autoFullScreen.collectAsState()
-    val autoPipOnExit by viewModel.autoPipOnExit.collectAsState()
-    val pipHideDanmu by viewModel.pipHideDanmu.collectAsState()
+    val chatTextSize = liveRoomPreferences.chatTextSize
+    val chatTextGap = liveRoomPreferences.chatTextGap
+    val chatBubbleStyle = liveRoomPreferences.chatBubbleStyle
+    val superChatSortDesc = liveRoomPreferences.superChatSortDesc
+    val danmuEnable = liveRoomPreferences.danmuEnable
+    val danmuRenderEmoji = liveRoomPreferences.danmuRenderEmoji
+    val danmuSize = liveRoomPreferences.danmuSize
+    val danmuSpeed = liveRoomPreferences.danmuSpeed
+    val danmuArea = liveRoomPreferences.danmuArea
+    val danmuLineCount = liveRoomPreferences.danmuLineCount
+    val danmuDelay = liveRoomPreferences.danmuDelay
+    val danmuDelayBySiteJson = liveRoomPreferences.danmuDelayBySiteJson
+    val danmuOpacity = liveRoomPreferences.danmuOpacity
+    val danmuStrokeWidth = liveRoomPreferences.danmuStrokeWidth
+    val danmuTopMargin = liveRoomPreferences.danmuTopMargin
+    val danmuBottomMargin = liveRoomPreferences.danmuBottomMargin
+    val danmuDedupeEnable = liveRoomPreferences.danmuDedupeEnable
+    val danmuDedupeWindow = liveRoomPreferences.danmuDedupeWindow
+    val danmuDedupeStep = liveRoomPreferences.danmuDedupeStep
+    val danmuDedupeStrictMode = liveRoomPreferences.danmuDedupeStrictMode
+    val danmuShieldEnable = liveRoomPreferences.danmuShieldEnable
+    val danmuKeywordShieldEnable = liveRoomPreferences.danmuKeywordShieldEnable
+    val danmuUserShieldEnable = liveRoomPreferences.danmuUserShieldEnable
+    val autoFullScreen = liveRoomPreferences.autoFullScreen
+    val autoPipOnExit = liveRoomPreferences.autoPipOnExit
+    val pipHideDanmu = liveRoomPreferences.pipHideDanmu
     val normalizedDanmuSize = roomSettingsNormalizedDanmuSize(danmuSize)
     val normalizedDanmuSpeed = roomSettingsNormalizedDanmuSpeed(danmuSpeed)
     val siteDanmuDelay = remember(danmuDelayBySiteJson, siteId, danmuDelay) {

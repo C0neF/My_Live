@@ -31,6 +31,7 @@ import com.google.zxing.BarcodeFormat
 import com.google.zxing.MultiFormatWriter
 import androidx.compose.foundation.border
 import com.mylive.app.R
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mylive.app.service.RemoteRoomUser
 import com.mylive.app.service.RemoteSyncConnectionState
 import com.mylive.app.ui.component.settings.SettingsMenu
@@ -65,11 +66,11 @@ fun RemoteSyncRoomScreen(
         handleBack()
     }
 
-    val connectionState by viewModel.connectionState.collectAsState()
-    val roomId by viewModel.roomId.collectAsState()
-    val roomUsers by viewModel.roomUsers.collectAsState()
-    val countDown by viewModel.countDown.collectAsState()
-    val loadingState by viewModel.loadingState.collectAsState()
+    val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
+    val roomId by viewModel.roomId.collectAsStateWithLifecycle()
+    val roomUsers by viewModel.roomUsers.collectAsStateWithLifecycle()
+    val countDown by viewModel.countDown.collectAsStateWithLifecycle()
+    val loadingState by viewModel.loadingState.collectAsStateWithLifecycle()
 
     var showOverlayDialog by remember { mutableStateOf<SyncType?>(null) }
     var showAccountDialog by remember { mutableStateOf<AccountSyncType?>(null) }

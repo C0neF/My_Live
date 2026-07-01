@@ -16,10 +16,12 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.mylive.app.ui.navigation.Navigator
 import com.mylive.app.ui.navigation.Route
 import com.mylive.app.R
+import com.mylive.app.core.common.readUtf8TextWithinLimit
 import com.mylive.app.data.local.datastore.SettingsDataStore
 import com.mylive.app.data.local.secure.SensitiveCredentialStore
 import com.mylive.app.data.repository.ProfileBackupManager
@@ -34,10 +36,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.Credentials
-import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -146,18 +146,13 @@ class WebDavViewModel @Inject constructor(
                 val backupUrl = buildWebDavBackupUrl(state.serverUrl)
                 persistConfig(state)
                 val uploadTime = withContext(Dispatchers.IO) {
-                    val body = profileBackupManager.exportProfileJson()
-                        .toRequestBody(JSON_MEDIA_TYPE)
-                    val request = Request.Builder()
-                        .url(backupUrl)
-                        .put(body)
-                        .applyAuth(state.username, state.password)
-                        .build()
-                    okHttpClient.newCall(request).execute().use { response ->
-                        if (!response.isSuccessful) {
-                            throw IOException("HTTP ${response.code}: ${response.message}")
-                        }
-                    }
+                    uploadWebDavBackup(
+                        okHttpClient = okHttpClient,
+                        backupUrl = backupUrl,
+                        username = state.username,
+                        password = state.password,
+                        backupJson = profileBackupManager.exportProfileJson()
+                    )
                     timestamp()
                 }
                 settingsDataStore.setValue(SettingsDataStore.kWebDAVLastUploadTime, uploadTime)
@@ -190,7 +185,9 @@ class WebDavViewModel @Inject constructor(
                         if (!response.isSuccessful) {
                             throw IOException("HTTP ${response.code}: ${response.message}")
                         }
-                        response.body?.string() ?: throw IOException("empty response")
+                        response.body?.byteStream()?.use { input ->
+                            input.readUtf8TextWithinLimit()
+                        } ?: throw IOException("empty response")
                     }
                     profileBackupManager.importProfileJson(body)
                     timestamp()
@@ -225,13 +222,6 @@ class WebDavViewModel @Inject constructor(
         return SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
     }
 
-    fun clearMessage() {
-        // No-op: SharedFlow doesn't need explicit clearing; UI consumes and moves on.
-    }
-
-    companion object {
-        private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
-    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -240,7 +230,7 @@ fun WebDavSyncScreen(
     navigator: Navigator,
     viewModel: WebDavViewModel = hiltViewModel()
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
 

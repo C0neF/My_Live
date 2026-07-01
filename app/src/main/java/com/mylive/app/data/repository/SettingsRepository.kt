@@ -3,6 +3,7 @@ package com.mylive.app.data.repository
 import com.mylive.app.data.local.datastore.SettingsDataStore
 import com.mylive.app.data.local.secure.SensitiveCredentialStore
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -12,6 +13,10 @@ class SettingsRepository @Inject constructor(
     private val settingsDataStore: SettingsDataStore,
     private val sensitiveCredentialStore: SensitiveCredentialStore
 ) {
+    val liveRoomPreferences: Flow<LiveRoomPreferences> = settingsDataStore.preferencesFlow()
+        .map(::toLiveRoomPreferences)
+        .distinctUntilChanged()
+
     // Theme
     val themeMode: Flow<Int> = settingsDataStore.getFlow(SettingsDataStore.ThemeMode, 0)
     suspend fun setThemeMode(value: Int) = settingsDataStore.setValue(SettingsDataStore.ThemeMode, value)
@@ -129,7 +134,7 @@ class SettingsRepository @Inject constructor(
     val autoExitDuration: Flow<Int> = settingsDataStore.getFlow(SettingsDataStore.AutoExitDuration, 60)
     suspend fun setAutoExitDuration(value: Int) = settingsDataStore.setValue(SettingsDataStore.AutoExitDuration, value)
 
-    val roomAutoExitDuration: Flow<Int> = settingsDataStore.getFlow(SettingsDataStore.RoomAutoExitDuration, 60)
+    val roomAutoExitDuration: Flow<Int> = settingsDataStore.getFlow(SettingsDataStore.RoomAutoExitDuration, 0)
     suspend fun setRoomAutoExitDuration(value: Int) = settingsDataStore.setValue(SettingsDataStore.RoomAutoExitDuration, value)
 
     // Debug / Log
@@ -140,9 +145,6 @@ class SettingsRepository @Inject constructor(
     suspend fun setLogEnable(value: Boolean) = settingsDataStore.setValue(SettingsDataStore.LogEnable, value)
 
     // Chat / SC
-    val contributionRankEnable: Flow<Boolean> = settingsDataStore.getFlow(SettingsDataStore.ContributionRankEnable, true)
-    suspend fun setContributionRankEnable(value: Boolean) = settingsDataStore.setValue(SettingsDataStore.ContributionRankEnable, value)
-
     val superChatSortDesc: Flow<Boolean> = settingsDataStore.getFlow(SettingsDataStore.SuperChatSortDesc, false)
     suspend fun setSuperChatSortDesc(value: Boolean) = settingsDataStore.setValue(SettingsDataStore.SuperChatSortDesc, value)
 
@@ -184,10 +186,6 @@ class SettingsRepository @Inject constructor(
         .map { it.ifBlank { "recommend,follow,category,user" } }
     suspend fun setHomeSort(value: String) = settingsDataStore.setValue(SettingsDataStore.HomeSort, value)
 
-    val liveRoomTabSort: Flow<String> = settingsDataStore.getFlow(SettingsDataStore.LiveRoomTabSort, "chat,super_chat,follow,settings")
-        .map { it.ifBlank { "chat,super_chat,follow,settings" } }
-    suspend fun setLiveRoomTabSort(value: String) = settingsDataStore.setValue(SettingsDataStore.LiveRoomTabSort, value)
-
     val liveRoomQuickAccessSort: Flow<String> = settingsDataStore.getFlow(SettingsDataStore.LiveRoomQuickAccessSort, "follow,history,recommendation")
         .map { it.ifBlank { "follow,history,recommendation" } }
     suspend fun setLiveRoomQuickAccessSort(value: String) = settingsDataStore.setValue(SettingsDataStore.LiveRoomQuickAccessSort, value)
@@ -213,4 +211,3 @@ class SettingsRepository @Inject constructor(
     val syncProxyUrl: Flow<String> = settingsDataStore.getFlow(SettingsDataStore.SyncProxyUrl, "")
     suspend fun setSyncProxyUrl(value: String) = settingsDataStore.setValue(SettingsDataStore.SyncProxyUrl, value)
 }
-

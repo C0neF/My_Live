@@ -1,38 +1,23 @@
 package com.mylive.app.core.common
 
+import android.util.Log
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import timber.log.Timber
-import java.text.SimpleDateFormat
-import java.util.Collections
-import java.util.Date
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.Locale
 
-/**
- * Request log level type, mirroring the Dart RequestLogType enum.
- */
-enum class RequestLogType {
-    /** Output all request information including URL, parameters, headers, body, response headers, content, and time */
-    ALL,
-    /** Short output: only URL and response status code */
-    SHORT,
-    /** No request logging */
-    NONE
-}
-
-/**
- * Core logging utility wrapping Timber.
- *
- * Provides static-style logging methods with a global enable/disable switch
- * and an optional callback for external log handling.
- */
 object CoreLog {
 
-    /** Whether logging is enabled */
-    var enableLog: Boolean = true
+    @Volatile
+    var enableLog: Boolean = false
 
-    /** Request log mode */
-    var requestLogType: RequestLogType = RequestLogType.ALL
+    @Volatile
+    private var debugEnabled: Boolean = false
 
-    /** Optional external log callback */
     var onPrintLog: ((level: LogLevel, message: String) -> Unit)? = null
 
     enum class LogLevel {
@@ -40,42 +25,44 @@ object CoreLog {
     }
 
     data class LogEntry(val time: String, val level: LogLevel, val message: String)
-    val logHistory: MutableList<LogEntry> = Collections.synchronizedList(mutableListOf<LogEntry>())
-    private val timeFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault())
 
-    private fun addEntry(level: LogLevel, message: String) {
-        val time = timeFormat.format(Date())
-        synchronized(logHistory) {
-            if (logHistory.size >= 500) {
-                logHistory.removeAt(0)
-            }
-            logHistory.add(LogEntry(time, level, message))
+    private const val MAX_ENTRIES = 500
+    private val forwardingToTimber = ThreadLocal<Boolean>()
+    private val timeFormatter = DateTimeFormatter
+        .ofPattern("yyyy-MM-dd HH:mm:ss.SSS", Locale.ROOT)
+        .withZone(ZoneId.systemDefault())
+    private val history = mutableListOf<LogEntry>()
+    private val _entries = MutableStateFlow<List<LogEntry>>(emptyList())
+
+    val entries: StateFlow<List<LogEntry>> = _entries.asStateFlow()
+
+    fun configure(enabled: Boolean, debugEnabled: Boolean) {
+        val shouldAnnounce = enabled && !enableLog
+        enableLog = enabled
+        this.debugEnabled = debugEnabled
+        if (shouldAnnounce) {
+            append(LogLevel.INFO, "运行日志已开启")
+        }
+    }
+
+    fun clear() {
+        synchronized(history) {
+            history.clear()
+            _entries.value = history.toList()
         }
     }
 
     fun d(message: String) {
-        if (!enableLog) return
-        addEntry(LogLevel.DEBUG, message)
-        onPrintLog?.invoke(LogLevel.DEBUG, message)
-        if (onPrintLog == null) {
-            Timber.d(message)
-        }
+        recordAndForward(LogLevel.DEBUG, message) { Timber.d(message) }
     }
 
     fun i(message: String) {
-        if (!enableLog) return
-        addEntry(LogLevel.INFO, message)
-        onPrintLog?.invoke(LogLevel.INFO, message)
-        if (onPrintLog == null) {
-            Timber.i(message)
-        }
+        recordAndForward(LogLevel.INFO, message) { Timber.i(message) }
     }
 
     fun e(message: String, throwable: Throwable? = null) {
-        if (!enableLog) return
-        addEntry(LogLevel.ERROR, message)
-        onPrintLog?.invoke(LogLevel.ERROR, message)
-        if (onPrintLog == null) {
+        val historyMessage = formatThrowable(message, throwable)
+        recordAndForward(LogLevel.ERROR, historyMessage) {
             if (throwable != null) {
                 Timber.e(throwable, message)
             } else {
@@ -85,22 +72,78 @@ object CoreLog {
     }
 
     fun error(e: Throwable) {
-        if (!enableLog) return
-        val msg = e.stackTraceToString()
-        addEntry(LogLevel.ERROR, msg)
-        onPrintLog?.invoke(LogLevel.ERROR, msg)
-        if (onPrintLog == null) {
+        val message = e.stackTraceToString()
+        recordAndForward(LogLevel.ERROR, message) {
             Timber.e(e, e.message ?: "Unknown error")
         }
     }
 
     fun w(message: String) {
-        if (!enableLog) return
-        addEntry(LogLevel.WARNING, message)
-        onPrintLog?.invoke(LogLevel.WARNING, message)
-        if (onPrintLog == null) {
-            Timber.w(message)
+        recordAndForward(LogLevel.WARNING, message) { Timber.w(message) }
+    }
+
+    internal fun recordFromTimber(
+        priority: Int,
+        tag: String?,
+        message: String
+    ) {
+        if (forwardingToTimber.get() == true) return
+        val level = priority.toLogLevel()
+        if (!shouldRecord(level)) return
+
+        val taggedMessage = if (tag.isNullOrBlank()) message else "[$tag] $message"
+        append(level, taggedMessage)
+        onPrintLog?.invoke(level, taggedMessage)
+    }
+
+    private inline fun recordAndForward(
+        level: LogLevel,
+        message: String,
+        timberCall: () -> Unit
+    ) {
+        if (!shouldRecord(level)) return
+        append(level, message)
+        onPrintLog?.invoke(level, message)
+        if (onPrintLog != null) return
+
+        forwardingToTimber.set(true)
+        try {
+            timberCall()
+        } finally {
+            forwardingToTimber.remove()
+        }
+    }
+
+    private fun shouldRecord(level: LogLevel): Boolean {
+        return enableLog || (level == LogLevel.DEBUG && debugEnabled)
+    }
+
+    private fun append(level: LogLevel, message: String) {
+        val entry = LogEntry(
+            time = timeFormatter.format(Instant.now()),
+            level = level,
+            message = message
+        )
+        synchronized(history) {
+            if (history.size >= MAX_ENTRIES) {
+                history.removeAt(0)
+            }
+            history.add(entry)
+            _entries.value = history.toList()
+        }
+    }
+
+    private fun formatThrowable(message: String, throwable: Throwable?): String {
+        if (throwable == null) return message
+        return "$message\n${throwable.stackTraceToString()}"
+    }
+
+    private fun Int.toLogLevel(): LogLevel {
+        return when (this) {
+            Log.VERBOSE, Log.DEBUG -> LogLevel.DEBUG
+            Log.INFO -> LogLevel.INFO
+            Log.WARN -> LogLevel.WARNING
+            else -> LogLevel.ERROR
         }
     }
 }
-

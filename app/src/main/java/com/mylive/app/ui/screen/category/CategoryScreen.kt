@@ -65,11 +65,11 @@ fun CategoryScreen(
     viewModel: CategoryViewModel = hiltViewModel()
 ) {
     val siteTabs by viewModel.siteList.collectAsStateWithLifecycle()
-    val selectedSiteIndex by viewModel.selectedSiteIndex.collectAsState()
-    val categories by viewModel.categories.collectAsState()
-    val loading by viewModel.loading.collectAsState()
-    val isRefreshing by viewModel.isRefreshing.collectAsState()
-    val error by viewModel.error.collectAsState()
+    val selectedSiteIndex by viewModel.selectedSiteIndex.collectAsStateWithLifecycle()
+    val categories by viewModel.categories.collectAsStateWithLifecycle()
+    val loading by viewModel.loading.collectAsStateWithLifecycle()
+    val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
+    val error by viewModel.error.collectAsStateWithLifecycle()
 
     val selectedTab = selectedSiteIndex.coerceIn(0, siteTabs.lastIndex.coerceAtLeast(0))
     val latestSelectedTab by rememberUpdatedState(selectedTab)
@@ -310,7 +310,11 @@ private fun CategoryList(
                 .fillMaxHeight()
                 .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.12f))
         ) {
-            itemsIndexed(categories) { index, category ->
+            itemsIndexed(
+                items = categories,
+                key = { _, category -> category.id },
+                contentType = { _, _ -> "category_parent" }
+            ) { index, category ->
                 val isSelected = selectedParentIndex == index
 
                 val textColor by animateColorAsState(
@@ -385,7 +389,10 @@ private fun CategoryList(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                item {
+                item(
+                    key = currentCategory.id,
+                    contentType = "category_current"
+                ) {
                     CategoryCard(
                         name = currentCategory.name,
                         imageUrl = null,
@@ -416,7 +423,11 @@ private fun CategoryList(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(subCategories) { subCategory ->
+                items(
+                    items = subCategories,
+                    key = { it.id },
+                    contentType = { "category_subcategory" }
+                ) { subCategory ->
                     CategoryCard(
                         name = subCategory.name,
                         imageUrl = subCategory.pic,

@@ -67,7 +67,7 @@ fun HomeScreen(
     homeLiveRoomGridColumns: Int? = null,
     viewModel: HomeViewModel = hiltViewModel()
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val siteTabs by viewModel.siteTabs.collectAsStateWithLifecycle()
     val selectedTab = homeSelectedPlatformIndex(siteTabs = siteTabs, siteId = uiState.siteId)
     val activePlatformAccentColor = homePlatformAccentColor(siteTabs.getOrNull(selectedTab)?.id.orEmpty())
@@ -348,7 +348,11 @@ private fun HomeRoomsPage(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    items(uiState.rooms, key = { it.roomId }) { room ->
+                    items(
+                        items = uiState.rooms,
+                        key = { it.roomId },
+                        contentType = { "home_room" }
+                    ) { room ->
                         LiveRoomCard(
                             title = room.title,
                             userName = room.userName,
@@ -360,7 +364,7 @@ private fun HomeRoomsPage(
                         )
                     }
                     if (uiState.hasMore && !uiState.isLoading) {
-                        item {
+                        item(contentType = "home_load_more_trigger") {
                             LaunchedEffect(uiState.currentPage, uiState.rooms.size) {
                                 onLoadMore()
                             }
@@ -370,7 +374,8 @@ private fun HomeRoomsPage(
                     if (loadMoreSkeletonItemCount > 0) {
                         items(
                             count = loadMoreSkeletonItemCount,
-                            key = { "home-load-more-skeleton-$it" }
+                            key = { "home-load-more-skeleton-$it" },
+                            contentType = { "home_load_more_skeleton" }
                         ) {
                             LiveRoomCardSkeleton()
                         }

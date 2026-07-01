@@ -13,6 +13,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 import org.robolectric.RobolectricTestRunner
+import java.io.File
 import java.util.concurrent.TimeUnit
 
 @RunWith(RobolectricTestRunner::class)
@@ -166,5 +167,23 @@ class RemoteSyncServiceTest {
             service.disconnect()
             server.shutdown()
         }
+    }
+
+    @Test
+    fun sendContentRejectsOversizedPayloadBeforeConnecting() = runBlocking {
+        val service = RemoteSyncService()
+        val content = "x".repeat(RemoteSyncService.K_MAX_SYNC_CONTENT_BYTES + 1)
+
+        val response = service.sendContent("SendFavorite", overlay = false, content = content)
+
+        assertFalse(response.isSuccess)
+        assertEquals("同步内容不能超过 5 MB", response.message)
+    }
+
+    @Test
+    fun connectionErrorsDoNotReferenceRetiredWorkersDomain() {
+        val source = File("src/main/java/com/mylive/app/service/RemoteSyncService.kt").readText()
+
+        assertFalse(source.contains("workers.dev"))
     }
 }

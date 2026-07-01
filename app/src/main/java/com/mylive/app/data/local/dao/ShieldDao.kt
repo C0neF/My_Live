@@ -17,6 +17,9 @@ interface ShieldDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertShield(shield: ShieldEntity)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertShields(shields: List<ShieldEntity>)
+
     @Query("DELETE FROM shields WHERE id = :id")
     suspend fun deleteShield(id: Long)
 
@@ -34,6 +37,9 @@ interface ShieldDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertPreset(preset: ShieldPresetEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertPresets(presets: List<ShieldPresetEntity>)
 
     @Query("DELETE FROM shield_presets WHERE name = :name")
     suspend fun deletePreset(name: String)

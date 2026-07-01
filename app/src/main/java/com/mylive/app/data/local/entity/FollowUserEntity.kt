@@ -1,9 +1,13 @@
 package com.mylive.app.data.local.entity
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
-@Entity(tableName = "follow_users")
+@Entity(
+    tableName = "follow_users",
+    indices = [Index(value = ["siteId", "roomId"])]
+)
 data class FollowUserEntity(
     @PrimaryKey
     val id: String, // 格式: siteId_roomId

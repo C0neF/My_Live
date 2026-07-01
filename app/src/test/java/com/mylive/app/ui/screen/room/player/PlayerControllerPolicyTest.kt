@@ -35,11 +35,10 @@ class PlayerControllerPolicyTest {
     }
 
     @Test
-    fun forceHttpsKeepsOriginalHttpUrlAsFallback() {
+    fun forceHttpsExcludesOriginalHttpUrl() {
         assertEquals(
             listOf(
                 "https://example.com/live.flv",
-                "http://example.com/live.flv",
                 "https://cdn.example.com/live.m3u8"
             ),
             buildPlaybackUrlCandidates(
@@ -86,6 +85,17 @@ class PlayerControllerPolicyTest {
         val manifest = File("src/main/AndroidManifest.xml").readText()
 
         assertTrue(manifest.contains("android.permission.MODIFY_AUDIO_SETTINGS"))
+    }
+
+    @Test
+    fun idlePlaybackStateClearsLoadingAndPlayingFlags() {
+        val source = readMainSource("com/mylive/app/ui/screen/room/player/PlayerController.kt")
+        val stateHandler = source.substringAfter("override fun onPlaybackStateChanged")
+            .substringBefore("override fun onIsPlayingChanged")
+
+        assertTrue(stateHandler.contains("Player.STATE_IDLE"))
+        assertTrue(stateHandler.contains("isLoading = false"))
+        assertTrue(stateHandler.contains("isPlaying = false"))
     }
 
     private fun readMainSource(relativePath: String): String {

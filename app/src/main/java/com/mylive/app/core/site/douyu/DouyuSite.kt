@@ -5,7 +5,6 @@ import com.mylive.app.core.common.HttpClient
 import com.mylive.app.core.model.LiveAnchorItem
 import com.mylive.app.core.model.LiveCategory
 import com.mylive.app.core.model.LiveCategoryResult
-import com.mylive.app.core.model.LiveContributionRankItem
 import com.mylive.app.core.model.LivePlayQuality
 import com.mylive.app.core.model.LivePlayUrl
 import com.mylive.app.core.model.LiveRoomDetail
@@ -523,40 +522,6 @@ class DouyuSite @Inject constructor(
     ): List<LiveSuperChatMessage> {
         // Not supported for Douyu
         return emptyList()
-    }
-
-    // ── Contribution rank ───────────────────────────────────────────────
-
-    override suspend fun getContributionRank(
-        roomId: String,
-        detail: LiveRoomDetail?
-    ): List<LiveContributionRankItem> {
-        val result = httpClient.getJson(
-            "https://www.douyu.com/japi/interact/comm/fanshome/rank/top10",
-            queryParameters = mapOf("rid" to roomId),
-            header = mapOf(
-                "referer" to "https://www.douyu.com/$roomId",
-                "user-agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
-            )
-        ) as JSONObject
-
-        val data = result.optJSONObject("data")
-        val intimacyRank = data?.optJSONArray("intimacyRank")
-
-        if (intimacyRank == null || intimacyRank.length() == 0) {
-            return emptyList()
-        }
-
-        return (0 until intimacyRank.length()).map { i ->
-            val item = intimacyRank.getJSONObject(i)
-            LiveContributionRankItem(
-                rank = item.optStringValue("rank").toIntOrNull() ?: 0,
-                userName = item.optString("nickname", ""),
-                avatar = item.optString("avatar", ""),
-                scoreText = item.optStringValue("value", "0"),
-                scoreDetail = "亲密度"
-            )
-        }
     }
 
     // ── Private helpers ─────────────────────────────────────────────────

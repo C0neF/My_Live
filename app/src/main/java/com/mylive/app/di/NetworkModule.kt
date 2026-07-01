@@ -1,15 +1,18 @@
 package com.mylive.app.di
 
-import com.mylive.app.BuildConfig
+import com.mylive.app.core.common.RuntimeNetworkLogInterceptor
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import okhttp3.Interceptor
+import okhttp3.MediaType
 import okhttp3.OkHttpClient
-import okhttp3.logging.HttpLoggingInterceptor
-import okhttp3.ResponseBody.Companion.toResponseBody
+import okhttp3.ResponseBody
 import org.brotli.dec.BrotliInputStream
+import okio.BufferedSource
+import okio.buffer
+import okio.source
 import java.util.concurrent.TimeUnit
 import javax.inject.Singleton
 
@@ -30,25 +33,31 @@ object NetworkModule {
             val response = chain.proceed(chain.request())
             if (response.header("Content-Encoding") == "br") {
                 val body = response.body ?: return@Interceptor response
-                val decompressed = BrotliInputStream(body.byteStream()).readBytes()
                 response.newBuilder()
                     .removeHeader("Content-Encoding")
-                    .body(decompressed.toResponseBody(body.contentType()))
+                    .removeHeader("Content-Length")
+                    .body(BrotliResponseBody(body))
                     .build()
             } else {
                 response
             }
         })
-
-        // Only enable HTTP logging in debug builds
-        if (BuildConfig.DEBUG) {
-            builder.addInterceptor(
-                HttpLoggingInterceptor().apply {
-                    level = HttpLoggingInterceptor.Level.BASIC
-                }
-            )
-        }
+        builder.addInterceptor(RuntimeNetworkLogInterceptor())
 
         return builder.build()
     }
+}
+
+private class BrotliResponseBody(
+    private val compressedBody: ResponseBody
+) : ResponseBody() {
+    private val decompressedSource: BufferedSource by lazy {
+        BrotliInputStream(compressedBody.byteStream()).source().buffer()
+    }
+
+    override fun contentType(): MediaType? = compressedBody.contentType()
+
+    override fun contentLength() = -1L
+
+    override fun source(): BufferedSource = decompressedSource
 }

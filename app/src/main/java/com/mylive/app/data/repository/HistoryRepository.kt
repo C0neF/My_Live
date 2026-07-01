@@ -14,6 +14,10 @@ class HistoryRepository @Inject constructor(
 
     suspend fun addHistory(history: HistoryEntity) = historyDao.insert(history)
 
+    suspend fun addHistories(histories: List<HistoryEntity>) {
+        if (histories.isNotEmpty()) historyDao.insertAll(histories)
+    }
+
     suspend fun removeHistory(id: String) = historyDao.delete(id)
 
     suspend fun getHistoryById(id: String): HistoryEntity? = historyDao.getById(id)

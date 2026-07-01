@@ -1,5 +1,6 @@
 package com.mylive.app.ui.screen.room.quickaccess
 
+import com.mylive.app.ui.screen.room.LocalRoomAccentColor
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -130,10 +131,10 @@ fun QuickAccessPanel(
     val sortStr by viewModel.quickAccessSort.collectAsStateWithLifecycle()
     val enabled by viewModel.quickAccessEnabled.collectAsStateWithLifecycle()
 
-    if (!enabled) {
-        onDismiss()
-        return
+    LaunchedEffect(enabled) {
+        if (!enabled) onDismiss()
     }
+    if (!enabled) return
 
     val extraTabsByKey = remember(extraTabs) {
         extraTabs.associateBy { it.key }
@@ -147,26 +148,26 @@ fun QuickAccessPanel(
         (extraKeys + defaultKeys.filterNot { it in extraKeys }).distinct()
     }
 
-    val initialPage = remember(orderedKeys, initialSelectedKey) {
-        orderedKeys.indexOf(initialSelectedKey).takeIf { it >= 0 } ?: 0
-    }
-
     val tabLabels = mapOf(
         "follow" to "关注",
         "history" to "历史",
         "recommendation" to "推荐"
     )
 
+    val initialPage = remember(orderedKeys, initialSelectedKey) {
+        orderedKeys.indexOf(initialSelectedKey).takeIf { it >= 0 } ?: 0
+    }
     val pagerState = rememberPagerState(initialPage = initialPage, pageCount = { orderedKeys.size })
     val coroutineScope = rememberCoroutineScope()
-
-    LaunchedEffect(initialPage, orderedKeys) {
-        pagerState.scrollToPage(initialPage)
-    }
 
     LaunchedEffect(orderedKeys.size) {
         if (pagerState.currentPage > orderedKeys.lastIndex) {
             pagerState.scrollToPage(orderedKeys.lastIndex.coerceAtLeast(0))
+        }
+    }
+    LaunchedEffect(initialPage, orderedKeys) {
+        if (orderedKeys.isNotEmpty() && pagerState.currentPage != initialPage) {
+            pagerState.scrollToPage(initialPage)
         }
     }
 
@@ -286,14 +287,14 @@ private fun QuickAccessIslandTab(
 ) {
     val containerColor by animateColorAsState(
         targetValue = if (selected) {
-            MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
+            LocalRoomAccentColor.current.copy(alpha = 0.16f)
         } else {
             Color.Transparent
         }
     )
     val contentColor by animateColorAsState(
         targetValue = if (selected) {
-            MaterialTheme.colorScheme.primary
+            LocalRoomAccentColor.current
         } else {
             MaterialTheme.colorScheme.onSurfaceVariant
         }
@@ -411,7 +412,7 @@ private fun FollowQuickItem(user: FollowUserEntity, onClick: () -> Unit) {
             )
         }
         val statusColor = when (user.liveStatus) {
-            1 -> MaterialTheme.colorScheme.primary
+            1 -> LocalRoomAccentColor.current
             2 -> MaterialTheme.colorScheme.onSurfaceVariant
             else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
         }
@@ -619,7 +620,7 @@ private fun RecommendationQuickItem(room: LiveRoomItem, onClick: () -> Unit) {
                     Text(
                         text = "${room.online}人观看",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary
+                        color = LocalRoomAccentColor.current
                     )
                 }
             }

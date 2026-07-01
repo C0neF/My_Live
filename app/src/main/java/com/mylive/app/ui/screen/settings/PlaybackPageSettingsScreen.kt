@@ -27,7 +27,6 @@ fun PlaybackPageSettingsScreen(
     navigator: Navigator,
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
-    val liveRoomTabSortStr by viewModel.liveRoomTabSort.collectAsStateWithLifecycle()
     val liveRoomQuickAccessSortStr by viewModel.liveRoomQuickAccessSort.collectAsStateWithLifecycle()
     val liveRoomQuickAccessEnabled by viewModel.liveRoomQuickAccessEnabled.collectAsStateWithLifecycle()
 
@@ -44,22 +43,11 @@ fun PlaybackPageSettingsScreen(
         handleBack()
     }
 
-    val tabNames = mapOf(
-        "chat" to "聊天",
-        "super_chat" to "SC/头条",
-        "follow" to "关注",
-        "settings" to "设置"
-    )
-
     val quickAccessNames = mapOf(
         "follow" to ("关注列表" to "快速切到已关注的直播间"),
         "history" to ("观看历史" to "打开已经看过的直播间记录"),
         "recommendation" to ("同类推荐" to "按当前分区查找相似直播间")
     )
-
-    val tabList = remember(liveRoomTabSortStr) {
-        liveRoomTabSortStr.split(",").filter { it.isNotBlank() }
-    }
 
     val quickAccessList = remember(liveRoomQuickAccessSortStr) {
         liveRoomQuickAccessSortStr.split(",").filter { it.isNotBlank() }
@@ -89,68 +77,7 @@ fun PlaybackPageSettingsScreen(
                 .padding(16.dp)
         ) {
             Text(
-                text = "播放页标签顺序 (重启后生效)",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
-
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Column(modifier = Modifier.padding(8.dp)) {
-                    tabList.forEachIndexed { index, key ->
-                        val name = tabNames[key] ?: key
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 8.dp, horizontal = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = name,
-                                style = MaterialTheme.typography.bodyLarge,
-                                modifier = Modifier.weight(1f)
-                            )
-                            Row {
-                                IconButton(
-                                    onClick = {
-                                        val mutable = tabList.toMutableList()
-                                        val temp = mutable[index]
-                                        mutable[index] = mutable[index - 1]
-                                        mutable[index - 1] = temp
-                                        viewModel.setLiveRoomTabSort(mutable.joinToString(","))
-                                    },
-                                    enabled = index > 0
-                                ) {
-                                    Icon(Icons.Default.KeyboardArrowUp, contentDescription = "上移")
-                                }
-                                IconButton(
-                                    onClick = {
-                                        val mutable = tabList.toMutableList()
-                                        val temp = mutable[index]
-                                        mutable[index] = mutable[index + 1]
-                                        mutable[index + 1] = temp
-                                        viewModel.setLiveRoomTabSort(mutable.joinToString(","))
-                                    },
-                                    enabled = index < tabList.lastIndex
-                                ) {
-                                    Icon(Icons.Default.KeyboardArrowDown, contentDescription = "下移")
-                                }
-                            }
-                        }
-                        if (index < tabList.lastIndex) {
-                            HorizontalDivider(modifier = Modifier.padding(horizontal = 8.dp))
-                        }
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            Text(
-                text = "全屏长按快捷入口",
+                text = "播放器快捷入口",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(bottom = 8.dp)
@@ -162,8 +89,8 @@ fun PlaybackPageSettingsScreen(
             ) {
                 Column(modifier = Modifier.padding(8.dp)) {
                     SettingsSwitch(
-                        title = "启用全屏快捷入口",
-                        subtitle = "全屏长按屏幕调出快捷菜单",
+                        title = "显示播放器快捷入口",
+                        subtitle = "在播放器控制栏和直播间工具栏显示关注、历史和推荐入口",
                         checked = liveRoomQuickAccessEnabled,
                         onCheckedChange = { viewModel.setLiveRoomQuickAccessEnabled(it) }
                     )

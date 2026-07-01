@@ -67,16 +67,27 @@ class DanmakuSurfaceView @JvmOverloads constructor(
 
     private fun stopRenderThread() {
         Choreographer.getInstance().removeFrameCallback(frameCallback)
-        renderThread?.let {
+        val stoppedThread = renderThread
+        renderThread = null
+        stoppedThread?.let {
             it.running = false
             it.wake()
+            joinStoppedRenderThread(it)
+        }
+    }
+
+    private fun joinStoppedRenderThread(thread: Thread) {
+        Thread({
             try {
-                it.join(1000)
+                thread.join(1000)
             } catch (e: InterruptedException) {
+                Thread.currentThread().interrupt()
                 Timber.e(e, "Failed to stop danmaku thread")
             }
+        }, "DanmakuRenderThreadStopper").apply {
+            isDaemon = true
+            start()
         }
-        renderThread = null
     }
 
     private class RenderThread(

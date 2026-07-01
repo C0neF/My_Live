@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.mylive.app.core.model.LiveRoomItem
 import com.mylive.app.core.site.LiveSite
+import com.mylive.app.core.site.preserveSelectedSiteIndex
 import com.mylive.app.core.site.sortedByDefaultOrder
 import com.mylive.app.core.site.sortedByUserOrder
 import com.mylive.app.data.repository.SettingsRepository
@@ -46,6 +47,7 @@ class HomeViewModel @Inject constructor(
 
     private var currentSiteIndex = 0
     private var loadJob: Job? = null
+    private var previousSiteIds = sites.sortedByDefaultOrder().map { it.id }
 
     fun selectSite(index: Int) {
         currentSiteIndex = index
@@ -116,15 +118,20 @@ class HomeViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             siteTabs.collect { tabs ->
-                if (tabs.isNotEmpty()) {
-                    val currentSite = tabs.getOrNull(currentSiteIndex)
-                    if (currentSite != null && _uiState.value.siteId != currentSite.id) {
-                        val restoredState = HomeStateCache.get(currentSite.id)
-                        if (restoredState != null) {
-                            _uiState.value = restoredState
-                        } else {
-                            selectSite(currentSiteIndex)
-                        }
+                val reorderedSiteIds = tabs.map { it.id }
+                currentSiteIndex = preserveSelectedSiteIndex(
+                    previousSiteIds = previousSiteIds,
+                    reorderedSiteIds = reorderedSiteIds,
+                    selectedIndex = currentSiteIndex
+                )
+                previousSiteIds = reorderedSiteIds
+                val currentSite = tabs.getOrNull(currentSiteIndex)
+                if (currentSite != null && _uiState.value.siteId != currentSite.id) {
+                    val restoredState = HomeStateCache.get(currentSite.id)
+                    if (restoredState != null) {
+                        _uiState.value = restoredState
+                    } else {
+                        selectSite(currentSiteIndex)
                     }
                 }
             }

@@ -6,6 +6,8 @@ import com.mylive.app.core.model.LiveRoomItem
 import com.mylive.app.core.model.LiveSubCategory
 import com.mylive.app.core.site.LiveSite
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -46,6 +48,8 @@ class CategoryDetailViewModel @Inject constructor(
     private var currentPage = 1
     private var currentSite: LiveSite? = null
     private var initialized = false
+    private var loadJob: Job? = null
+    private var activeLoadRequestId = 0L
 
     fun init(siteId: String, categoryId: String, categoryName: String) {
         if (initialized) return
@@ -57,10 +61,7 @@ class CategoryDetailViewModel @Inject constructor(
 
         currentSite = sites.find { it.id == siteId }
         if (currentSite != null && categoryId.isNotEmpty()) {
-            viewModelScope.launch {
-                kotlinx.coroutines.delay(250)
-                loadRooms(isRefresh = false)
-            }
+            loadRooms(isRefresh = false)
         } else {
             _error.value = "未找到对应平台或分类"
         }
@@ -84,27 +85,36 @@ class CategoryDetailViewModel @Inject constructor(
         }
         _error.value = null
 
-        viewModelScope.launch {
+        val pageToLoad = currentPage
+        val requestId = nextLoadRequestId()
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch {
             try {
                 val subCategory = LiveSubCategory(
                     name = categoryName,
                     id = categoryId
                 )
-                val result = site.getCategoryRooms(subCategory, page = currentPage)
-                if (isRefresh || currentPage == 1) {
+                val result = site.getCategoryRooms(subCategory, page = pageToLoad)
+                if (!isActiveLoadRequest(requestId)) return@launch
+                if (isRefresh || pageToLoad == 1) {
                     _rooms.value = result.items
                 } else {
-                    _rooms.value = _rooms.value + result.items
+                    _rooms.value = (_rooms.value + result.items).distinctBy { it.roomId }
                 }
                 _hasMore.value = result.hasMore
-                currentPage++
+                currentPage = pageToLoad + 1
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
+                if (!isActiveLoadRequest(requestId)) return@launch
                 Timber.e(e, "Failed to load category rooms")
                 _error.value = e.message ?: "加载失败"
             } finally {
-                _loading.value = false
-                _loadingMore.value = false
-                _refreshing.value = false
+                if (isActiveLoadRequest(requestId)) {
+                    _loading.value = false
+                    _loadingMore.value = false
+                    _refreshing.value = false
+                }
             }
         }
     }
@@ -121,5 +131,14 @@ class CategoryDetailViewModel @Inject constructor(
 
     fun retry() {
         loadRooms(isRefresh = false)
+    }
+
+    private fun nextLoadRequestId(): Long {
+        activeLoadRequestId += 1
+        return activeLoadRequestId
+    }
+
+    private fun isActiveLoadRequest(requestId: Long): Boolean {
+        return requestId == activeLoadRequestId
     }
 }

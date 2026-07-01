@@ -3,6 +3,7 @@ package com.mylive.app.update
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -20,32 +21,39 @@ data class AppUpdateInfo(
 )
 
 fun parseGitHubReleaseForUpdate(json: String): AppUpdateInfo? {
-    val obj = Json.parseToJsonElement(json).jsonObject
-    if (obj.boolean("prerelease")) return null
+    return parseGitHubReleaseObject(Json.parseToJsonElement(json).jsonObject)
+}
 
-    val tagName = obj.string("tag_name").trim()
-    val versionName = normalizeReleaseVersionName(tagName)
-    if (versionName.isBlank()) return null
-
-    val assets = obj["assets"]?.jsonArray ?: return null
-    for (assetElement in assets) {
-        val asset = assetElement.jsonObject
-        val name = asset.string("name").trim()
-        val downloadUrl = asset.string("browser_download_url").trim()
-        if (isApkAsset(name, downloadUrl)) {
-            return AppUpdateInfo(
-                tagName = tagName,
-                versionName = versionName,
-                releaseName = obj.string("name").ifBlank { tagName },
-                releaseNotes = obj.string("body"),
-                releasePageUrl = obj.string("html_url"),
-                apkName = name,
-                apkDownloadUrl = downloadUrl,
-                apkSizeBytes = asset.long("size")
-            )
+fun selectLatestStableReleaseForMajor(
+    releasesJson: String,
+    currentVersionName: String,
+    majorVersion: Int
+): AppUpdateInfo? {
+    return Json.parseToJsonElement(releasesJson)
+        .jsonArray
+        .mapNotNull { element -> parseGitHubReleaseObject(element.jsonObject) }
+        .filter { release ->
+            release.versionName.versionSegments().firstOrNull() == majorVersion &&
+                isReleaseNewer(
+                    candidateVersionName = release.versionName,
+                    currentVersionName = currentVersionName
+                )
         }
-    }
-    return null
+        .maxWithOrNull { left, right ->
+            compareVersionNames(left.versionName, right.versionName)
+        }
+}
+
+fun selectLatestStableReleaseForCurrentMajor(
+    releasesJson: String,
+    currentVersionName: String
+): AppUpdateInfo? {
+    val currentMajorVersion = currentVersionName.versionSegments().firstOrNull() ?: return null
+    return selectLatestStableReleaseForMajor(
+        releasesJson = releasesJson,
+        currentVersionName = currentVersionName,
+        majorVersion = currentMajorVersion
+    )
 }
 
 fun isReleaseNewer(candidateVersionName: String, currentVersionName: String): Boolean {
@@ -73,14 +81,42 @@ internal fun compareVersionNames(left: String, right: String): Int {
     return 0
 }
 
+private fun parseGitHubReleaseObject(obj: JsonObject): AppUpdateInfo? {
+    if (obj.boolean("draft") || obj.boolean("prerelease")) return null
+
+    val tagName = obj.string("tag_name").trim()
+    val versionName = normalizeReleaseVersionName(tagName)
+    if (versionName.versionSegments().isEmpty()) return null
+
+    val assets = obj["assets"]?.jsonArray ?: return null
+    for (assetElement in assets) {
+        val asset = assetElement.jsonObject
+        val name = asset.string("name").trim()
+        val downloadUrl = asset.string("browser_download_url").trim()
+        if (isApkAsset(name, downloadUrl)) {
+            return AppUpdateInfo(
+                tagName = tagName,
+                versionName = versionName,
+                releaseName = obj.string("name").ifBlank { tagName },
+                releaseNotes = obj.string("body"),
+                releasePageUrl = obj.string("html_url"),
+                apkName = name,
+                apkDownloadUrl = downloadUrl,
+                apkSizeBytes = asset.long("size")
+            )
+        }
+    }
+    return null
+}
+
 private fun String.versionSegments(): List<Int> {
-    return trim()
+    val normalized = trim()
         .removePrefix("v")
         .removePrefix("V")
-        .split('.', '-', '_')
-        .mapNotNull { segment ->
-            segment.takeWhile { it.isDigit() }.takeIf { it.isNotBlank() }?.toIntOrNull()
-        }
+    if (!normalized.matches(Regex("""\d+(?:[._-]\d+)*"""))) {
+        return emptyList()
+    }
+    return normalized.split('.', '-', '_').mapNotNull(String::toIntOrNull)
 }
 
 private fun isApkAsset(name: String, downloadUrl: String): Boolean {
@@ -89,7 +125,7 @@ private fun isApkAsset(name: String, downloadUrl: String): Boolean {
 }
 
 private fun JsonObject.string(key: String): String {
-    return this[key]?.jsonPrimitive?.content.orEmpty()
+    return this[key]?.jsonPrimitive?.contentOrNull.orEmpty()
 }
 
 private fun JsonObject.long(key: String): Long {

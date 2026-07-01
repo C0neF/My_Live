@@ -31,6 +31,12 @@ class BaseTarsHttp(
     private val okHttpClient: OkHttpClient
 ) {
 
+    private val requestClient: OkHttpClient = okHttpClient.newBuilder()
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(20, TimeUnit.SECONDS)
+        .writeTimeout(15, TimeUnit.SECONDS)
+        .build()
+
     companion object {
         const val PACKET_TYPE_TARSNORMAL = 0
         const val PACKET_TYPE_TUP3 = 3
@@ -82,12 +88,7 @@ class BaseTarsHttp(
             .post(data.toRequestBody(CONTENT_TYPE))
             .build()
 
-        val responseBody = okHttpClient.newBuilder()
-            .connectTimeout(15, TimeUnit.SECONDS)
-            .readTimeout(20, TimeUnit.SECONDS)
-            .writeTimeout(15, TimeUnit.SECONDS)
-            .build()
-            .newCall(request).execute().use { response ->
+        val responseBody = requestClient.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
                     throw IOException("HTTP ${response.code}: ${response.message}")
                 }

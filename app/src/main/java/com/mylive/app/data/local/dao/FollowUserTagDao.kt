@@ -17,6 +17,9 @@ interface FollowUserTagDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(tag: FollowUserTagEntity)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(tags: List<FollowUserTagEntity>)
+
     @Query("DELETE FROM follow_user_tags WHERE id = :id")
     suspend fun delete(id: String)
 

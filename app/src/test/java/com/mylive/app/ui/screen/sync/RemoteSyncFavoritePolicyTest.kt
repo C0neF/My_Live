@@ -37,6 +37,24 @@ class RemoteSyncFavoritePolicyTest {
     }
 
     @Test
+    fun remoteCollectionReceiversUseBatchRepositoryOperations() {
+        val source = File(
+            "src/main/java/com/mylive/app/ui/screen/sync/RemoteSyncRoomViewModel.kt"
+        ).readText()
+        val historyBlock = source.substringAfter("remoteSyncService.onHistoryReceived")
+            .substringBefore("remoteSyncService.onShieldWordReceived")
+        val shieldBlock = source.substringAfter("remoteSyncService.onShieldWordReceived")
+            .substringBefore("remoteSyncService.onBiliAccountReceived")
+
+        assertTrue(historyBlock.contains("val existingHistoriesById = historyRepository.getAllHistory().first().associateBy { it.id }"))
+        assertTrue(historyBlock.contains("historyRepository.addHistories(histories)"))
+        assertFalse(historyBlock.contains("historyRepository.getHistoryById("))
+        assertFalse(historyBlock.contains("historyRepository.addHistory("))
+        assertTrue(shieldBlock.contains("shieldRepository.addShields(shields)"))
+        assertFalse(shieldBlock.contains("shieldRepository.addShield("))
+    }
+
+    @Test
     fun remoteAccountCookieSyncRequiresExplicitConfirmationDialog() {
         val source = File(
             "src/main/java/com/mylive/app/ui/screen/sync/RemoteSyncRoomScreen.kt"

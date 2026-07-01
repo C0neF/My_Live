@@ -1,6 +1,5 @@
 package com.mylive.app.ui.screen.sync
 
-import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
@@ -34,6 +33,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
 import java.net.URI
+import timber.log.Timber
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -442,7 +442,7 @@ private fun connectToManualAddress(
                 }
             }
         } catch (e: Exception) {
-            Log.e("LocalSyncScreen", "Manual connect failed", e)
+            Timber.e(e, "LocalSyncScreen: Manual connect failed")
             android.os.Handler(android.os.Looper.getMainLooper()).post {
                 setLoading(false)
                 Toast.makeText(context, "连接设备失败: ${e.localizedMessage}", Toast.LENGTH_LONG).show()

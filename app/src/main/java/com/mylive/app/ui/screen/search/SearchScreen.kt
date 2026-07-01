@@ -32,6 +32,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mylive.app.ui.navigation.Navigator
 import com.mylive.app.R
 import com.mylive.app.ui.component.LiveRoomCard
@@ -54,10 +55,11 @@ fun SearchScreen(
     navigator: Navigator,
     viewModel: SearchViewModel = hiltViewModel()
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val siteTabs by viewModel.siteTabs.collectAsStateWithLifecycle()
     var searchText by remember { mutableStateOf("") }
     val selectedTab = uiState.selectedSiteIndex
-    val selectedPlatformId = viewModel.siteTabs.getOrNull(selectedTab)?.id
+    val selectedPlatformId = siteTabs.getOrNull(selectedTab)?.id
     var showSearchTypeMenu by remember { mutableStateOf(false) }
 
     var isExiting by remember { mutableStateOf(false) }
@@ -89,7 +91,7 @@ fun SearchScreen(
                     searchType = uiState.searchType,
                     showSearchTypeMenu = showSearchTypeMenu,
                     onSearchTypeMenuChange = { showSearchTypeMenu = it },
-                    siteTabs = viewModel.siteTabs,
+                    siteTabs = siteTabs,
                     onBack = handleBack,
                     onClearSearch = {
                         searchText = ""
@@ -104,7 +106,7 @@ fun SearchScreen(
                 SearchResultsContent(
                     uiState = uiState,
                     selectedTab = selectedTab,
-                    siteTabs = viewModel.siteTabs,
+                    siteTabs = siteTabs,
                     searchText = searchText,
                     navigator = navigator,
                     onSearch = { keyword -> viewModel.search(keyword) },
@@ -133,14 +135,14 @@ fun SearchScreen(
                     searchType = uiState.searchType,
                     showSearchTypeMenu = showSearchTypeMenu,
                     onSearchTypeMenuChange = { showSearchTypeMenu = it },
-                    siteTabs = viewModel.siteTabs,
+                    siteTabs = siteTabs,
                     onTypeSelected = viewModel::setSearchType,
                     onSiteSelected = viewModel::selectSite
                 )
                 SearchResultsContent(
                     uiState = uiState,
                     selectedTab = selectedTab,
-                    siteTabs = viewModel.siteTabs,
+                    siteTabs = siteTabs,
                     searchText = searchText,
                     navigator = navigator,
                     onSearch = { keyword -> viewModel.search(keyword) },
@@ -435,7 +437,11 @@ private fun SearchResultsContent(
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        items(uiState.rooms) { room ->
+                        items(
+                            items = uiState.rooms,
+                            key = { it.roomId },
+                            contentType = { "search_room" }
+                        ) { room ->
                             LiveRoomCard(
                                 title = room.title,
                                 userName = room.userName,
@@ -475,7 +481,11 @@ private fun SearchResultsContent(
                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        items(uiState.anchors) { anchor ->
+                        items(
+                            items = uiState.anchors,
+                            key = { it.roomId },
+                            contentType = { "search_anchor" }
+                        ) { anchor ->
                             Card(
                                 modifier = Modifier
                                     .fillMaxWidth()

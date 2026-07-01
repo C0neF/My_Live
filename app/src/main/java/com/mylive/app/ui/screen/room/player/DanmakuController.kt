@@ -16,6 +16,7 @@ import coil.Coil
 import coil.request.ImageRequest
 import com.mylive.app.core.common.buildPlayerDanmakuDisplaySpans
 import com.mylive.app.core.model.LiveMessage
+import com.mylive.app.core.model.LiveMessageDanmakuPosition
 import com.mylive.app.core.model.LiveMessageSpan
 import com.mylive.app.core.model.LiveMessageType
 import com.mylive.app.ui.emoji.EmojiAtlasRepository
@@ -39,14 +40,25 @@ class DanmakuItem(
     val speedPxPerMs: Float,
     var width: Float,
     val track: Int,
-    val type: LiveMessageType
+    val position: LiveMessageDanmakuPosition,
+    val expiresAtMs: Long? = null
 )
 
 private class PendingDanmaku(
     val parts: List<DanmakuPart>,
-    val type: LiveMessageType,
+    val position: LiveMessageDanmakuPosition,
     val releaseTimeMs: Long
 )
+
+internal fun normalizeDanmakuFontWeight(weight: Int): Int {
+    return when (weight) {
+        2, 200 -> 2
+        6, 600 -> 6
+        8, 800 -> 8
+        4, 400 -> 4
+        else -> 4
+    }
+}
 
 /**
  * Renders scrolling danmaku onto a SurfaceView canvas.
@@ -75,6 +87,8 @@ class DanmakuController(private val context: Context) {
     // Render-thread-only state.
     private val activeDanmakus = ArrayList<DanmakuItem>()
     private val lastDanmakusOnTrack = arrayOfNulls<DanmakuItem>(MAX_TRACKS)
+    private val lastTopDanmakusOnTrack = arrayOfNulls<DanmakuItem>(MAX_TRACKS)
+    private val lastBottomDanmakusOnTrack = arrayOfNulls<DanmakuItem>(MAX_TRACKS)
     private var lastFrameNanos = 0L
 
     // De-duplication window (touched on addDanmaku threads, guarded by its own lock).
@@ -88,11 +102,13 @@ class DanmakuController(private val context: Context) {
     @Volatile var danmuLineCount = 8
     @Volatile var danmuDelayMs = 0
     @Volatile var danmuOpacity = 1.0f
-    @Volatile var danmuFontWeight = 4 // 2=Light, 4=Normal, 6=Bold, 8=ExtraBold
+    @Volatile var danmuFontWeight = 4
     @Volatile var danmuStrokeWidth = 2.0f
     @Volatile var danmuTopMargin = 0.0f
     @Volatile var danmuBottomMargin = 0.0f
     @Volatile var danmuHideScroll = false
+    @Volatile var danmuHideTop = false
+    @Volatile var danmuHideBottom = false
     @Volatile var dedupeEnabled = false
     @Volatile var dedupeWindowSize = 20
     @Volatile var dedupeStepSize = 2
@@ -128,7 +144,13 @@ class DanmakuController(private val context: Context) {
      */
     fun addDanmaku(msg: LiveMessage) {
         if (msg.type != LiveMessageType.CHAT) return
-        if (danmuHideScroll) return
+        if (!shouldDisplayDanmakuPosition(
+                position = msg.danmakuPosition,
+                hideScroll = danmuHideScroll,
+                hideTop = danmuHideTop,
+                hideBottom = danmuHideBottom
+            )
+        ) return
         if (danmuLineCount <= 0) return
 
         // Repeat filter (de-duplication).
@@ -145,7 +167,7 @@ class DanmakuController(private val context: Context) {
         val parts = buildParts(msg)
         preloadImages(parts)
         val releaseTimeMs = SystemClock.uptimeMillis() + danmuDelayMs.coerceIn(0, 5000)
-        pending.add(PendingDanmaku(parts, msg.type, releaseTimeMs))
+        pending.add(PendingDanmaku(parts, msg.danmakuPosition, releaseTimeMs))
     }
 
     private fun buildParts(msg: LiveMessage): List<DanmakuPart> {
@@ -232,15 +254,20 @@ class DanmakuController(private val context: Context) {
             clearRequested = false
             activeDanmakus.clear()
             lastDanmakusOnTrack.fill(null)
+            lastTopDanmakusOnTrack.fill(null)
+            lastBottomDanmakusOnTrack.fill(null)
         }
 
         configurePaintsIfNeeded()
-        if (danmuHideScroll || danmuLineCount <= 0) {
+        if (danmuLineCount <= 0) {
             pending.clear()
             activeDanmakus.clear()
             lastDanmakusOnTrack.fill(null)
+            lastTopDanmakusOnTrack.fill(null)
+            lastBottomDanmakusOnTrack.fill(null)
             return
         }
+        removeHiddenDanmakus()
         drainPending()
 
         val dtMs = if (lastFrameNanos == 0L) {
@@ -255,12 +282,30 @@ class DanmakuController(private val context: Context) {
         val drawStroke = danmuStrokeWidth > 0f
 
         val iterator = activeDanmakus.iterator()
+        val nowMs = frameTimeNanos / 1_000_000L
         while (iterator.hasNext()) {
             val item = iterator.next()
-            item.x -= item.speedPxPerMs * dtMs
+            if (!shouldDisplayDanmakuPosition(
+                    position = item.position,
+                    hideScroll = danmuHideScroll,
+                    hideTop = danmuHideTop,
+                    hideBottom = danmuHideBottom
+                )
+            ) {
+                releaseTrack(item)
+                iterator.remove()
+                continue
+            }
 
-            if (item.x + item.width < 0) {
-                if (lastDanmakusOnTrack[item.track] === item) lastDanmakusOnTrack[item.track] = null
+            if (item.position == LiveMessageDanmakuPosition.SCROLL) {
+                item.x -= item.speedPxPerMs * dtMs
+                if (item.x + item.width < 0) {
+                    releaseTrack(item)
+                    iterator.remove()
+                    continue
+                }
+            } else if (nowMs >= (item.expiresAtMs ?: Long.MAX_VALUE)) {
+                releaseTrack(item)
                 iterator.remove()
                 continue
             }
@@ -307,7 +352,7 @@ class DanmakuController(private val context: Context) {
     private fun configurePaintsIfNeeded() {
         val d = density
         val size = danmuSize
-        val weight = danmuFontWeight
+        val weight = normalizeDanmakuFontWeight(danmuFontWeight)
         val stroke = danmuStrokeWidth
         if (size == cfgSize && weight == cfgWeight && stroke == cfgStroke && d == cfgDensity) return
         cfgSize = size; cfgWeight = weight; cfgStroke = stroke; cfgDensity = d
@@ -362,30 +407,117 @@ class DanmakuController(private val context: Context) {
         while (p != null) {
             if (p.releaseTimeMs > nowMs) return
             pending.poll()
+            if (!shouldDisplayDanmakuPosition(
+                    position = p.position,
+                    hideScroll = danmuHideScroll,
+                    hideTop = danmuHideTop,
+                    hideBottom = danmuHideBottom
+                )
+            ) {
+                p = pending.peek()
+                continue
+            }
             val itemWidth = measureWidth(p.parts, fontHeight)
 
-            var track = -1
-            for (t in 0 until maxTracks) {
-                val last = lastDanmakusOnTrack[t]
-                if (last == null || last.x + last.width < w - pad) {
-                    track = t
-                    break
+            if (p.position == LiveMessageDanmakuPosition.SCROLL) {
+                var track = -1
+                for (t in 0 until maxTracks) {
+                    val last = lastDanmakusOnTrack[t]
+                    if (last == null || last.x + last.width < w - pad) {
+                        track = t
+                        break
+                    }
+                }
+                if (track == -1) track = (0 until maxTracks).random()
+
+                val item = DanmakuItem(
+                    parts = p.parts,
+                    x = w.toFloat(),
+                    y = layout.topOffsetPx + (track + 1) * trackHeight,
+                    speedPxPerMs = (w + itemWidth) / durationMs,
+                    width = itemWidth,
+                    track = track,
+                    position = p.position
+                )
+                lastDanmakusOnTrack[track] = item
+                activeDanmakus.add(item)
+            } else {
+                val trackSlots = when (p.position) {
+                    LiveMessageDanmakuPosition.TOP -> lastTopDanmakusOnTrack
+                    LiveMessageDanmakuPosition.BOTTOM -> lastBottomDanmakusOnTrack
+                    LiveMessageDanmakuPosition.SCROLL -> error("Handled above")
+                }
+                val occupiedBaselines = activeDanmakus
+                    .asSequence()
+                    .filter { it.position != LiveMessageDanmakuPosition.SCROLL }
+                    .map { it.y }
+                    .toList()
+                var track = -1
+                var baseline = 0f
+                for (t in 0 until maxTracks) {
+                    val candidateBaseline = resolveFixedDanmakuBaseline(
+                        position = p.position,
+                        track = t,
+                        viewportHeightPx = h,
+                        fontHeightPx = fontHeight,
+                        layout = layout
+                    )
+                    if (trackSlots[t] == null &&
+                        isFixedDanmakuTrackAvailable(
+                            candidateBaselinePx = candidateBaseline,
+                            occupiedBaselinesPx = occupiedBaselines,
+                            trackHeightPx = trackHeight
+                        )
+                    ) {
+                        track = t
+                        baseline = candidateBaseline
+                        break
+                    }
+                }
+                if (track >= 0) {
+                    val item = DanmakuItem(
+                        parts = p.parts,
+                        x = ((w - itemWidth) / 2f).coerceAtLeast(0f),
+                        y = baseline,
+                        speedPxPerMs = 0f,
+                        width = itemWidth,
+                        track = track,
+                        position = p.position,
+                        expiresAtMs = nowMs + FIXED_DANMAKU_DURATION_MS
+                    )
+                    trackSlots[track] = item
+                    activeDanmakus.add(item)
                 }
             }
-            if (track == -1) track = (0 until maxTracks).random()
-
-            val item = DanmakuItem(
-                parts = p.parts,
-                x = w.toFloat(),
-                y = layout.topOffsetPx + (track + 1) * trackHeight,
-                speedPxPerMs = (w + itemWidth) / durationMs,
-                width = itemWidth,
-                track = track,
-                type = p.type
-            )
-            lastDanmakusOnTrack[track] = item
-            activeDanmakus.add(item)
             p = pending.peek()
+        }
+    }
+
+    private fun removeHiddenDanmakus() {
+        val iterator = activeDanmakus.iterator()
+        while (iterator.hasNext()) {
+            val item = iterator.next()
+            if (!shouldDisplayDanmakuPosition(
+                    position = item.position,
+                    hideScroll = danmuHideScroll,
+                    hideTop = danmuHideTop,
+                    hideBottom = danmuHideBottom
+                )
+            ) {
+                releaseTrack(item)
+                iterator.remove()
+            }
+        }
+    }
+
+    private fun releaseTrack(item: DanmakuItem) {
+        val tracks = when (item.position) {
+            LiveMessageDanmakuPosition.SCROLL -> lastDanmakusOnTrack
+            LiveMessageDanmakuPosition.TOP -> lastTopDanmakusOnTrack
+            LiveMessageDanmakuPosition.BOTTOM -> lastBottomDanmakusOnTrack
+        }
+        if (tracks[item.track] === item) {
+            tracks[item.track] = null
         }
     }
 
@@ -405,5 +537,6 @@ class DanmakuController(private val context: Context) {
 
     companion object {
         private const val MAX_TRACKS = 32
+        private const val FIXED_DANMAKU_DURATION_MS = 5_000L
     }
 }

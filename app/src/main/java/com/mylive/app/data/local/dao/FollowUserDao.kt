@@ -21,6 +21,9 @@ interface FollowUserDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(user: FollowUserEntity)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(users: List<FollowUserEntity>)
+
     @Query("DELETE FROM follow_users WHERE id = :id")
     suspend fun delete(id: String)
 

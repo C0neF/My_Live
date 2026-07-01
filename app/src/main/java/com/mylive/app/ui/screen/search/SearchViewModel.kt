@@ -5,13 +5,19 @@ import androidx.lifecycle.viewModelScope
 import com.mylive.app.core.model.LiveRoomItem
 import com.mylive.app.core.model.LiveAnchorItem
 import com.mylive.app.core.site.LiveSite
+import com.mylive.app.core.site.preserveSelectedSiteIndex
 import com.mylive.app.core.site.sortedByDefaultOrder
+import com.mylive.app.core.site.sortedByUserOrder
+import com.mylive.app.data.repository.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import javax.inject.Inject
@@ -29,23 +35,57 @@ data class SearchUiState(
 
 @HiltViewModel
 class SearchViewModel @Inject constructor(
-    private val sites: Set<@JvmSuppressWildcards LiveSite>
+    private val sites: Set<@JvmSuppressWildcards LiveSite>,
+    private val settingsRepository: SettingsRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SearchUiState())
     val uiState: StateFlow<SearchUiState> = _uiState.asStateFlow()
 
-    val siteTabs: List<LiveSite> = sites.sortedByDefaultOrder()
+    val siteTabs: StateFlow<List<LiveSite>> = settingsRepository.siteSort
+        .map { sortStr -> sites.sortedByUserOrder(sortStr) }
+        .stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5000),
+            sites.sortedByDefaultOrder()
+        )
     private var currentKeyword = ""
     private var activeSearchRequestId = 0L
     private var searchJob: Job? = null
     private var loadMoreJob: Job? = null
+    private var previousSiteIds = sites.sortedByDefaultOrder().map { it.id }
+
+    init {
+        viewModelScope.launch {
+            siteTabs.collect { reorderedSites ->
+                val reorderedSiteIds = reorderedSites.map { it.id }
+                val state = _uiState.value
+                val previousSelectedSiteId = previousSiteIds.getOrNull(state.selectedSiteIndex)
+                val nextIndex = preserveSelectedSiteIndex(
+                    previousSiteIds = previousSiteIds,
+                    reorderedSiteIds = reorderedSiteIds,
+                    selectedIndex = state.selectedSiteIndex
+                )
+                val selectedSiteChanged =
+                    previousSelectedSiteId != reorderedSiteIds.getOrNull(nextIndex)
+                val selectedIndexChanged = nextIndex != state.selectedSiteIndex
+                previousSiteIds = reorderedSiteIds
+                if (selectedIndexChanged) {
+                    _uiState.value = state.copy(selectedSiteIndex = nextIndex)
+                }
+                if ((selectedSiteChanged || selectedIndexChanged) && currentKeyword.isNotEmpty()) {
+                    search(currentKeyword)
+                }
+            }
+        }
+    }
 
     fun selectSite(index: Int) {
-        val nextIndex = if (siteTabs.isEmpty()) {
+        val tabs = siteTabs.value
+        val nextIndex = if (tabs.isEmpty()) {
             0
         } else {
-            index.coerceIn(0, siteTabs.lastIndex)
+            index.coerceIn(0, tabs.lastIndex)
         }
         _uiState.value = _uiState.value.copy(selectedSiteIndex = nextIndex)
         if (currentKeyword.isNotEmpty()) {
@@ -72,7 +112,7 @@ class SearchViewModel @Inject constructor(
         val state = _uiState.value
         val siteIndex = state.selectedSiteIndex
         val searchType = state.searchType
-        val site = siteTabs.getOrNull(siteIndex) ?: return
+        val site = siteTabs.value.getOrNull(siteIndex) ?: return
         val requestId = nextSearchRequestId()
 
         searchJob?.cancel()
@@ -137,7 +177,7 @@ class SearchViewModel @Inject constructor(
         val searchType = state.searchType
         val requestId = activeSearchRequestId
         val keyword = currentKeyword
-        val site = siteTabs.getOrNull(siteIndex) ?: return
+        val site = siteTabs.value.getOrNull(siteIndex) ?: return
         val nextPage = state.currentPage + 1
 
         loadMoreJob = viewModelScope.launch {

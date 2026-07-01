@@ -99,4 +99,16 @@ class CategoryPlatformColorPolicyTest {
         assertFalse(source.contains("label = \"parentTabBgColor\""))
         assertTrue(source.contains("categoryParentTabBackgroundColor("))
     }
+
+    @Test
+    fun categoryListsUseStableKeysAndContentTypes() {
+        val source = File("src/main/java/com/mylive/app/ui/screen/category/CategoryScreen.kt").readText()
+
+        assertTrue(source.contains("itemsIndexed(\n                items = categories,"))
+        assertTrue(source.contains("key = { _, category -> category.id }"))
+        assertTrue(source.contains("contentType = { _, _ -> \"category_parent\" }"))
+        assertTrue(source.contains("items(\n                    items = subCategories,"))
+        assertTrue(source.contains("key = { it.id }"))
+        assertTrue(source.contains("contentType = { \"category_subcategory\" }"))
+    }
 }

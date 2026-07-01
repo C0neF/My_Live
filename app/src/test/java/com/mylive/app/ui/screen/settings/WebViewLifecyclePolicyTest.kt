@@ -35,4 +35,18 @@ class WebViewLifecyclePolicyTest {
         assertTrue(source.contains("pair.indexOf('=')"))
         assertFalse(source.contains("pair.split(\"=\")"))
     }
+
+    @Test
+    fun loginWebViewsRejectNonHttpsNavigationAndLocalContentAccess() {
+        val bilibili = File("src/main/java/com/mylive/app/ui/screen/settings/LoginWebViewScreen.kt").readText()
+        val douyin = File("src/main/java/com/mylive/app/ui/screen/settings/DouyinWebLoginScreen.kt").readText()
+
+        listOf(bilibili, douyin).forEach { source ->
+            assertTrue(source.contains("settings.allowFileAccess = false"))
+            assertTrue(source.contains("settings.allowContentAccess = false"))
+            assertTrue(source.contains("settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW"))
+            assertTrue(source.contains("if (!isSafeLoginWebUrl(url)) return true"))
+        }
+        assertTrue(bilibili.contains("internal fun isSafeLoginWebUrl("))
+    }
 }

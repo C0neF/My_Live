@@ -40,8 +40,8 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mylive.app.BuildConfig
 import com.mylive.app.R
 import com.mylive.app.ui.navigation.Navigator
@@ -62,6 +62,8 @@ fun AppUpdateScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     var launchedInstallFile by remember { mutableStateOf<File?>(null) }
     var isExiting by remember { mutableStateOf(false) }
+    val updateMajorVersion = BuildConfig.VERSION_NAME.substringBefore('.')
+    val updateChannelName = "v$updateMajorVersion 稳定版"
 
     val handleBack: () -> Unit = {
         if (!isExiting) {
@@ -85,11 +87,21 @@ fun AppUpdateScreen(
                     launchedInstallFile = file
                     context.startActivity(AppUpdateInstaller.createInstallIntent(context, file))
                 } else {
-                    Toast.makeText(context, "请允许 My Live 安装未知应用后再安装更新", Toast.LENGTH_LONG).show()
-                    context.startActivity(AppUpdateInstaller.createInstallPermissionIntent(context))
+                    Toast.makeText(
+                        context,
+                        "请允许 My Live 安装未知应用后再安装更新",
+                        Toast.LENGTH_LONG
+                    ).show()
+                    context.startActivity(
+                        AppUpdateInstaller.createInstallPermissionIntent(context)
+                    )
                 }
             }.onFailure {
-                Toast.makeText(context, it.message ?: "无法打开安装器", Toast.LENGTH_LONG).show()
+                Toast.makeText(
+                    context,
+                    it.message ?: "无法打开安装器",
+                    Toast.LENGTH_LONG
+                ).show()
             }
         }
     }
@@ -150,6 +162,12 @@ fun AppUpdateScreen(
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                 color = MaterialTheme.colorScheme.onSurface
             )
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = "更新通道：$updateChannelName",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
 
             Spacer(modifier = Modifier.height(16.dp))
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -159,7 +177,7 @@ fun AppUpdateScreen(
             when {
                 uiState.checking -> {
                     Text(
-                        text = "正在检查 GitHub Release...",
+                        text = "正在检查 GitHub $updateChannelName...",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -171,12 +189,13 @@ fun AppUpdateScreen(
                         updateInfo = updateInfo,
                         downloading = uiState.downloading,
                         progress = uiState.downloadProgress,
-                        onDownloadClick = { viewModel.downloadUpdate() }
+                        onDownloadClick = viewModel::downloadUpdate
                     )
                 }
                 else -> {
                     Text(
-                        text = uiState.message ?: "点击按钮检查 GitHub Release 是否有新版本。",
+                        text = uiState.message
+                            ?: "点击按钮检查 GitHub 是否有新的 $updateChannelName。",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -186,7 +205,7 @@ fun AppUpdateScreen(
             if (uiState.error != null) {
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(
-                    text = uiState.error ?: "",
+                    text = uiState.error.orEmpty(),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.error
                 )
@@ -195,7 +214,7 @@ fun AppUpdateScreen(
             Spacer(modifier = Modifier.height(20.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 OutlinedButton(
-                    onClick = { viewModel.checkForUpdate() },
+                    onClick = viewModel::checkForUpdate,
                     enabled = !uiState.checking && !uiState.downloading
                 ) {
                     Text("重新检查")

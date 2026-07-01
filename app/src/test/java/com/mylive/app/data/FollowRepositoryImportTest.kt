@@ -90,4 +90,30 @@ class FollowRepositoryImportTest {
 
         assertEquals(1, repository.getAllFollows().first().size)
     }
+
+    @Test
+    fun exportImportRoundTripPreservesLiveMetadata() = runBlocking {
+        repository.addFollow(
+            FollowUserEntity(
+                id = "bilibili_100",
+                roomId = "100",
+                siteId = "bilibili",
+                userName = "streamer",
+                face = "https://example.com/avatar.jpg",
+                addTime = 123L,
+                liveStatus = 1,
+                liveStartTime = 456L,
+                showTime = "789"
+            )
+        )
+
+        val backup = repository.exportToJson()
+        repository.clearAllFollows()
+        repository.importFromJson(backup)
+
+        val restored = repository.getAllFollows().first().single()
+        assertEquals(1, restored.liveStatus)
+        assertEquals(456L, restored.liveStartTime)
+        assertEquals("789", restored.showTime)
+    }
 }

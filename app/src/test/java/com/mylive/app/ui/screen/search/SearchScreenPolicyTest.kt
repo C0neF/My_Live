@@ -50,7 +50,8 @@ class SearchScreenPolicyTest {
         val filterSource = source.substringAfter("private fun SearchFilterRow(")
             .substringBefore("@Composable\nprivate fun SearchResultsContent(")
 
-        assertTrue(source.contains("val selectedPlatformId = viewModel.siteTabs.getOrNull(selectedTab)?.id"))
+        assertTrue(source.contains("val siteTabs by viewModel.siteTabs.collectAsStateWithLifecycle()"))
+        assertTrue(source.contains("val selectedPlatformId = siteTabs.getOrNull(selectedTab)?.id"))
         assertTrue(filterSource.contains("CompactSearchTypeMenu("))
         assertTrue(filterSource.contains("platformId = selectedPlatformId"))
         assertTrue(filterSource.contains("siteTabs.forEachIndexed"))
@@ -195,6 +196,17 @@ class SearchScreenPolicyTest {
         assertTrue(loadingSource.contains("modifier = Modifier.fillMaxSize()"))
         assertFalse(loadingSource.contains("LiveRoomGridSkeleton("))
         assertFalse(loadingSource.contains("Alignment.Center"))
+    }
+
+    @Test
+    fun searchResultListsUseStableKeysAndContentTypes() {
+        val source = File("src/main/java/com/mylive/app/ui/screen/search/SearchScreen.kt").readText()
+
+        assertTrue(source.contains("items(\n                            items = uiState.rooms,"))
+        assertTrue(source.contains("key = { it.roomId }"))
+        assertTrue(source.contains("contentType = { \"search_room\" }"))
+        assertTrue(source.contains("items(\n                            items = uiState.anchors,"))
+        assertTrue(source.contains("contentType = { \"search_anchor\" }"))
     }
 
     @Test

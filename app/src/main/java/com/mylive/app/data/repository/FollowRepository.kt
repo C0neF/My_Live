@@ -23,6 +23,10 @@ class FollowRepository @Inject constructor(
 
     suspend fun addFollow(user: FollowUserEntity) = followUserDao.insert(user)
 
+    suspend fun addFollows(users: List<FollowUserEntity>) {
+        if (users.isNotEmpty()) followUserDao.insertAll(users)
+    }
+
     suspend fun removeFollow(id: String) = followUserDao.delete(id)
 
     suspend fun getFollow(siteId: String, roomId: String): FollowUserEntity? =
@@ -44,6 +48,10 @@ class FollowRepository @Inject constructor(
     fun getAllTags(): Flow<List<FollowUserTagEntity>> = followUserTagDao.getAll()
 
     suspend fun addTag(tag: FollowUserTagEntity) = followUserTagDao.insert(tag)
+
+    suspend fun addTags(tags: List<FollowUserTagEntity>) {
+        if (tags.isNotEmpty()) followUserTagDao.insertAll(tags)
+    }
 
     suspend fun removeTag(id: String) = followUserTagDao.delete(id)
 
@@ -74,6 +82,9 @@ class FollowRepository @Inject constructor(
                 put("addTime", f.addTime.toString())
                 put("tag", f.tag)
                 put("isSpecialFollow", f.isSpecialFollow)
+                put("liveStatus", f.liveStatus)
+                put("liveStartTime", f.liveStartTime ?: JSONObject.NULL)
+                put("showTime", f.showTime ?: JSONObject.NULL)
             })
         }
 
@@ -106,8 +117,8 @@ class FollowRepository @Inject constructor(
             clearAllTags()
         }
 
-        payload.follows.forEach { addFollow(it) }
-        payload.tags.forEach { addTag(it) }
+        addFollows(payload.follows)
+        addTags(payload.tags)
     }
 
     private fun parseImportPayload(json: String): FollowImportPayload {
@@ -151,7 +162,10 @@ class FollowRepository @Inject constructor(
                 face = obj.optString("face", ""),
                 addTime = obj.optString("addTime", System.currentTimeMillis().toString()).toLongOrNull() ?: System.currentTimeMillis(),
                 tag = obj.optString("tag", ""),
-                isSpecialFollow = obj.optBoolean("isSpecialFollow", false)
+                isSpecialFollow = obj.optBoolean("isSpecialFollow", false),
+                liveStatus = obj.optInt("liveStatus", 0),
+                liveStartTime = obj.optNullableLong("liveStartTime"),
+                showTime = obj.optNullableString("showTime")
             )
             follows.add(follow)
         }
@@ -179,6 +193,17 @@ class FollowRepository @Inject constructor(
         }
         return tags
     }
+
+    private fun JSONObject.optNullableLong(name: String): Long? =
+        opt(name)
+            ?.takeUnless { it == JSONObject.NULL }
+            ?.toString()
+            ?.toLongOrNull()
+
+    private fun JSONObject.optNullableString(name: String): String? =
+        opt(name)
+            ?.takeUnless { it == JSONObject.NULL }
+            ?.toString()
 }
 
 private data class FollowImportPayload(

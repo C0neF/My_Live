@@ -19,7 +19,6 @@ class SettingsDataStore(private val context: Context) {
 
     companion object {
         // === 通用 ===
-        val FirstRun = booleanPreferencesKey("FirstRun")
         val ThemeMode = intPreferencesKey("ThemeMode")
         val DebugMode = booleanPreferencesKey("DebugMode")
         val LogEnable = booleanPreferencesKey("LogEnable")
@@ -29,7 +28,6 @@ class SettingsDataStore(private val context: Context) {
         // === 排序 ===
         val SiteSort = stringPreferencesKey("SiteSort")
         val HomeSort = stringPreferencesKey("HomeSort")
-        val LiveRoomTabSort = stringPreferencesKey("LiveRoomTabSort")
         val LiveRoomQuickAccessSort = stringPreferencesKey("LiveRoomQuickAccessSort")
         val LiveRoomQuickAccessEnabled = booleanPreferencesKey("LiveRoomQuickAccessEnabled")
 
@@ -71,16 +69,9 @@ class SettingsDataStore(private val context: Context) {
         val PlayerCompatMode = booleanPreferencesKey("PlayerCompatMode")
         val PlayerAutoPause = booleanPreferencesKey("PlayerAutoPause")
         val AllowBackgroundPlayback = booleanPreferencesKey("AllowBackgroundPlayback")
-        val PlayerBufferSize = intPreferencesKey("PlayerBufferSize")
         val PlayerForceHttps = booleanPreferencesKey("PlayerForceHttps")
-        val PlayerVolume = doublePreferencesKey("PlayerVolume")
-        val PlayerShowSuperChat = booleanPreferencesKey("PlayerShowSuperChat")
         val AutoFullScreen = booleanPreferencesKey("AutoFullScreen")
         val AutoPipOnExit = booleanPreferencesKey("AutoPipOnExit")
-        val CustomPlayerOutput = booleanPreferencesKey("CustomPlayerOutput")
-        val VideoOutputDriver = stringPreferencesKey("VideoOutputDriver")
-        val VideoHardwareDecoder = stringPreferencesKey("VideoHardwareDecoder")
-        val AudioOutputDriver = stringPreferencesKey("AudioOutputDriver")
 
         // === 定时退出 ===
         val AutoExitEnable = booleanPreferencesKey("AutoExitEnable")
@@ -91,11 +82,9 @@ class SettingsDataStore(private val context: Context) {
         val ChatTextSize = doublePreferencesKey("ChatTextSize")
         val ChatTextGap = doublePreferencesKey("ChatTextGap")
         val ChatBubbleStyle = booleanPreferencesKey("ChatBubbleStyle")
-        val ContributionRankEnable = booleanPreferencesKey("ContributionRankEnable")
 
         // === PiP ===
         val PIPHideDanmu = booleanPreferencesKey("PIPHideDanmu")
-        val PIPHideDanmuDefaultMigrated = booleanPreferencesKey("PIPHideDanmuDefaultMigrated")
 
         // === SC ===
         val SuperChatSortDesc = booleanPreferencesKey("SuperChatSortDesc")
@@ -110,7 +99,6 @@ class SettingsDataStore(private val context: Context) {
         val DouyinCookie = stringPreferencesKey("DouyinCookie")
         val EncryptedBilibiliCookie = stringPreferencesKey("EncryptedBilibiliCookie")
         val EncryptedDouyinCookie = stringPreferencesKey("EncryptedDouyinCookie")
-        val BilibiliLoginTip = booleanPreferencesKey("BilibiliLoginTip")
 
         // === WebDAV (不导出) ===
         val WebDAVUri = stringPreferencesKey("WebDAVUri")
@@ -124,23 +112,6 @@ class SettingsDataStore(private val context: Context) {
         val SyncServerUrl = stringPreferencesKey("SyncServerUrl")
         val SyncProxyUrl = stringPreferencesKey("SyncProxyUrl")
 
-        // === 临时 (不导出) ===
-        val LastLiveRoom = stringPreferencesKey("LastLiveRoom")
-        val LastLiveRoomResumePending = booleanPreferencesKey("LastLiveRoomResumePending")
-
-        // === 字幕 (当前功能隐藏) ===
-        val LiveSubtitleEnable = booleanPreferencesKey("LiveSubtitleEnable")
-        val LiveSubtitleModelPath = stringPreferencesKey("LiveSubtitleModelPath")
-        val LiveSubtitleLanguage = stringPreferencesKey("LiveSubtitleLanguage")
-        val LiveSubtitleFontSize = doublePreferencesKey("LiveSubtitleFontSize")
-        val LiveSubtitlePosition = intPreferencesKey("LiveSubtitlePosition")
-        val LiveSubtitleOffsetX = doublePreferencesKey("LiveSubtitleOffsetX")
-        val LiveSubtitleOffsetY = doublePreferencesKey("LiveSubtitleOffsetY")
-        val LiveSubtitleColor = intPreferencesKey("LiveSubtitleColor")
-        val LiveSubtitleFontWeight = intPreferencesKey("LiveSubtitleFontWeight")
-        val LiveSubtitleBackgroundEnable = booleanPreferencesKey("LiveSubtitleBackgroundEnable")
-        val LiveSubtitlePositionLocked = booleanPreferencesKey("LiveSubtitlePositionLocked")
-        val LiveSubtitleStartupGuard = booleanPreferencesKey("LiveSubtitleStartupGuard")
     }
 
     // === 通用读取/写入方法 ===

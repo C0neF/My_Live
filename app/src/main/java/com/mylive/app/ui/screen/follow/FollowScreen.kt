@@ -46,7 +46,9 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mylive.app.R
+import com.mylive.app.core.common.readUtf8TextWithinLimit
 import com.mylive.app.data.local.entity.FollowUserEntity
 import com.mylive.app.data.local.entity.FollowUserTagEntity
 import com.mylive.app.ui.component.BackToTopButton
@@ -71,14 +73,14 @@ fun FollowScreen(
     followCardColumns: Int = 1,
     viewModel: FollowViewModel = hiltViewModel()
 ) {
-    val allFollows by viewModel.follows.collectAsState()
-    val filteredFollows by viewModel.filteredFollows.collectAsState()
-    val groupMode by viewModel.groupMode.collectAsState()
-    val selectedGroupId by viewModel.selectedGroupId.collectAsState()
-    val groupOptions by viewModel.groupOptions.collectAsState()
-    val userTags by viewModel.userTags.collectAsState()
+    val allFollows by viewModel.follows.collectAsStateWithLifecycle()
+    val filteredFollows by viewModel.filteredFollows.collectAsStateWithLifecycle()
+    val groupMode by viewModel.groupMode.collectAsStateWithLifecycle()
+    val selectedGroupId by viewModel.selectedGroupId.collectAsStateWithLifecycle()
+    val groupOptions by viewModel.groupOptions.collectAsStateWithLifecycle()
+    val userTags by viewModel.userTags.collectAsStateWithLifecycle()
 
-    val updatingStatus by viewModel.updatingStatus.collectAsState()
+    val updatingStatus by viewModel.updatingStatus.collectAsStateWithLifecycle()
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
     val gridState = rememberLazyGridState()
@@ -95,7 +97,11 @@ fun FollowScreen(
             allFollows.filter { it.siteId == siteId }
         } ?: allFollows
     }
-    val displayedFollows = if (useTabletTwoColumnLayout) tabletFollows else filteredFollows
+    val displayedFollows = remember(useTabletTwoColumnLayout, tabletFollows, filteredFollows) {
+        if (useTabletTwoColumnLayout) tabletFollows else filteredFollows
+    }
+    val tabletStatusColumns = remember(displayedFollows) { followTabletStatusColumns(displayedFollows) }
+    val compactStatusBuckets = remember(displayedFollows) { followStatusBuckets(displayedFollows) }
     var isAtTop by remember { mutableStateOf(true) }
     var showMenu by remember { mutableStateOf(false) }
     var showGroupModeMenu by remember { mutableStateOf(false) }
@@ -196,7 +202,7 @@ fun FollowScreen(
         if (uri != null) {
             scope.launch {
                 try {
-                    val json = context.contentResolver.openInputStream(uri)?.bufferedReader()?.readText() ?: ""
+                    val json = context.contentResolver.openInputStream(uri)?.use { input -> input.readUtf8TextWithinLimit() } ?: ""
                     viewModel.importFollows(json)
                     Toast.makeText(context, "导入成功", Toast.LENGTH_SHORT).show()
                 } catch (e: Exception) {
@@ -365,9 +371,8 @@ fun FollowScreen(
                     EmptyState(message = stringResource(R.string.follow_empty))
                 }
             } else if (useTabletTwoColumnLayout) {
-                val columns = followTabletStatusColumns(displayedFollows)
                 FollowTabletTwoColumnContent(
-                    columns = columns,
+                    columns = tabletStatusColumns,
                     liveListState = liveListState,
                     inactiveListState = inactiveListState,
                     contentBottomPadding = contentBottomPadding,
@@ -377,11 +382,6 @@ fun FollowScreen(
                     onUnfollowConfirm = { unfollowTarget = it }
                 )
             } else {
-                // Group by live status
-                val liveList = displayedFollows.filter { it.liveStatus == 1 }
-                val unknownList = displayedFollows.filter { it.liveStatus == 0 }
-                val offlineList = displayedFollows.filter { it.liveStatus == 2 }
-
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(cardColumns),
                     modifier = Modifier.fillMaxSize(),
@@ -395,15 +395,15 @@ fun FollowScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     // 直播中
-                    if (liveList.isNotEmpty()) {
+                    if (compactStatusBuckets.live.isNotEmpty()) {
                         item(span = { GridItemSpan(maxLineSpan) }) {
                             FollowGroupHeader(
                                 title = stringResource(R.string.follow_group_live),
-                                count = liveList.size,
+                                count = compactStatusBuckets.live.size,
                                 isLive = true
                             )
                         }
-                        items(liveList, key = { it.id }) { follow ->
+                        items(compactStatusBuckets.live, key = { it.id }) { follow ->
                             SwipeableFollowItem(
                                 follow = follow,
                                 viewModel = viewModel,
@@ -415,14 +415,14 @@ fun FollowScreen(
                     }
 
                     // 未知
-                    if (unknownList.isNotEmpty()) {
+                    if (compactStatusBuckets.unknown.isNotEmpty()) {
                         item(span = { GridItemSpan(maxLineSpan) }) {
                             FollowGroupHeader(
                                 title = stringResource(R.string.follow_group_unknown),
-                                count = unknownList.size
+                                count = compactStatusBuckets.unknown.size
                             )
                         }
-                        items(unknownList, key = { it.id }) { follow ->
+                        items(compactStatusBuckets.unknown, key = { it.id }) { follow ->
                             SwipeableFollowItem(
                                 follow = follow,
                                 viewModel = viewModel,
@@ -434,14 +434,14 @@ fun FollowScreen(
                     }
 
                     // 未开播
-                    if (offlineList.isNotEmpty()) {
+                    if (compactStatusBuckets.offline.isNotEmpty()) {
                         item(span = { GridItemSpan(maxLineSpan) }) {
                             FollowGroupHeader(
                                 title = stringResource(R.string.follow_group_offline),
-                                count = offlineList.size
+                                count = compactStatusBuckets.offline.size
                             )
                         }
-                        items(offlineList, key = { it.id }) { follow ->
+                        items(compactStatusBuckets.offline, key = { it.id }) { follow ->
                             SwipeableFollowItem(
                                 follow = follow,
                                 viewModel = viewModel,
@@ -1212,6 +1212,12 @@ internal data class FollowTabletStatusColumns(
     val inactive: List<FollowUserEntity>
 )
 
+internal data class FollowStatusBuckets(
+    val live: List<FollowUserEntity>,
+    val unknown: List<FollowUserEntity>,
+    val offline: List<FollowUserEntity>
+)
+
 internal data class FollowTabletPlatformOption(
     val id: String,
     val title: String,
@@ -1227,6 +1233,14 @@ internal fun followTabletStatusColumns(follows: List<FollowUserEntity>): FollowT
     return FollowTabletStatusColumns(
         live = follows.filter { it.liveStatus == 1 },
         inactive = follows.filter { it.liveStatus != 1 }
+    )
+}
+
+internal fun followStatusBuckets(follows: List<FollowUserEntity>): FollowStatusBuckets {
+    return FollowStatusBuckets(
+        live = follows.filter { it.liveStatus == 1 },
+        unknown = follows.filter { it.liveStatus == 0 },
+        offline = follows.filter { it.liveStatus == 2 }
     )
 }
 

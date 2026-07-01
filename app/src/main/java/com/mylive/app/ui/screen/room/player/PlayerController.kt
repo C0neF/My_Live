@@ -59,6 +59,9 @@ class PlayerController(
     private val playerListener = object : Player.Listener {
         override fun onPlaybackStateChanged(playbackState: Int) {
             when (playbackState) {
+                Player.STATE_IDLE -> {
+                    _state.value = _state.value.copy(isLoading = false, isPlaying = false)
+                }
                 Player.STATE_READY -> {
                     sourceRefreshAttempted = false
                     _state.value = _state.value.copy(isLoading = false, error = null)
@@ -348,7 +351,7 @@ internal fun buildPlaybackUrlCandidates(urls: List<String>, forceHttps: Boolean)
     return urls.flatMap { url ->
         if (url.startsWith("http://")) {
             val httpsUrl = "https://" + url.substring(7)
-            if (httpsUrl == url) listOf(url) else listOf(httpsUrl, url)
+            listOf(httpsUrl)
         } else {
             listOf(url)
         }

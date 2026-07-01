@@ -8,7 +8,81 @@ internal data class LiveMessageShieldConfig(
     val shieldEnabled: Boolean = true,
     val keywordShieldEnabled: Boolean = true,
     val userShieldEnabled: Boolean = true
-)
+) {
+    val keywordRules: KeywordShieldRules = KeywordShieldRules.from(shieldValues)
+    val userRules: UserShieldRules = UserShieldRules.from(shieldValues)
+}
+
+internal data class KeywordShieldRules(
+    val plainKeywords: List<String> = emptyList(),
+    val regexKeywords: List<Regex> = emptyList()
+) {
+    fun matches(message: String): Boolean {
+        for (keyword in plainKeywords) {
+            if (message.contains(keyword)) return true
+        }
+        for (regex in regexKeywords) {
+            if (regex.containsMatchIn(message)) return true
+        }
+        return false
+    }
+
+    companion object {
+        fun from(shieldValues: List<String>): KeywordShieldRules {
+            val plainKeywords = mutableListOf<String>()
+            val regexKeywords = mutableListOf<Regex>()
+            for (rawValue in shieldValues) {
+                val keyword = rawValue.keywordShieldValue() ?: continue
+                if (keyword.isEmpty()) continue
+                if (keyword.isSlashRegex()) {
+                    val regex = runCatching {
+                        Regex(keyword.substring(1, keyword.length - 1))
+                    }.getOrNull()
+                    if (regex != null) {
+                        regexKeywords.add(regex)
+                    }
+                } else {
+                    plainKeywords.add(keyword)
+                }
+            }
+            return KeywordShieldRules(
+                plainKeywords = plainKeywords,
+                regexKeywords = regexKeywords
+            )
+        }
+    }
+}
+
+internal data class UserShieldRules(
+    val globalUserNames: Set<String> = emptySet(),
+    val siteUserNames: Map<String, Set<String>> = emptyMap()
+) {
+    fun matches(userName: String, siteId: String): Boolean {
+        val normalizedUserName = userName.trim()
+        if (normalizedUserName.isEmpty()) return false
+        if (normalizedUserName in globalUserNames) return true
+        return normalizedUserName in siteUserNames[siteId].orEmpty()
+    }
+
+    companion object {
+        fun from(shieldValues: List<String>): UserShieldRules {
+            val globalUserNames = mutableSetOf<String>()
+            val siteUserNames = mutableMapOf<String, MutableSet<String>>()
+            for (rawValue in shieldValues) {
+                val rule = rawValue.userShieldRule() ?: continue
+                if (rule.siteId == GlobalUserShieldSiteId) {
+                    globalUserNames.add(rule.userName)
+                } else {
+                    siteUserNames.getOrPut(rule.siteId) { mutableSetOf() }.add(rule.userName)
+                }
+            }
+            return UserShieldRules(
+                globalUserNames = globalUserNames,
+                siteUserNames = siteUserNames
+            )
+        }
+    }
+}
 
 internal fun shouldShieldLiveMessage(
     message: LiveMessage,
@@ -17,48 +91,14 @@ internal fun shouldShieldLiveMessage(
 ): Boolean {
     if (!config.shieldEnabled || message.type != LiveMessageType.CHAT) return false
 
-    if (config.userShieldEnabled && isUserShieldedByConfig(message.userName, siteId, config.shieldValues)) {
+    if (config.userShieldEnabled && config.userRules.matches(message.userName, siteId)) {
         return true
     }
 
-    if (config.keywordShieldEnabled && isKeywordShieldedByConfig(message.message, config.shieldValues)) {
+    if (config.keywordShieldEnabled && config.keywordRules.matches(message.message)) {
         return true
     }
 
-    return false
-}
-
-private fun isKeywordShieldedByConfig(message: String, shieldValues: List<String>): Boolean {
-    for (rawValue in shieldValues) {
-        val keyword = rawValue.keywordShieldValue() ?: continue
-        if (keyword.isEmpty()) continue
-        if (keyword.isSlashRegex()) {
-            val regex = try {
-                Regex(keyword.substring(1, keyword.length - 1))
-            } catch (_: IllegalArgumentException) {
-                null
-            }
-            if (regex != null && regex.containsMatchIn(message)) return true
-        } else if (message.contains(keyword)) {
-            return true
-        }
-    }
-    return false
-}
-
-private fun isUserShieldedByConfig(
-    userName: String,
-    siteId: String,
-    shieldValues: List<String>
-): Boolean {
-    val normalizedUserName = userName.trim()
-    if (normalizedUserName.isEmpty()) return false
-
-    for (rawValue in shieldValues) {
-        val rule = rawValue.userShieldRule() ?: continue
-        if (rule.userName != normalizedUserName) continue
-        if (rule.siteId == GlobalUserShieldSiteId || rule.siteId == siteId) return true
-    }
     return false
 }
 

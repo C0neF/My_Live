@@ -47,7 +47,6 @@ fun OtherSettingsScreen(
 ) {
     val debugMode by viewModel.debugMode.collectAsStateWithLifecycle()
     val logEnable by viewModel.logEnable.collectAsStateWithLifecycle()
-    val contributionRankEnable by viewModel.contributionRankEnable.collectAsStateWithLifecycle()
     val superChatSortDesc by viewModel.superChatSortDesc.collectAsStateWithLifecycle()
     val chatTextSize by viewModel.chatTextSize.collectAsStateWithLifecycle()
     val chatBubbleStyle by viewModel.chatBubbleStyle.collectAsStateWithLifecycle()
@@ -115,15 +114,6 @@ fun OtherSettingsScreen(
                         navigator.navigate(Route.DebugLog)
                     }
                 }
-            )
-            HorizontalDivider()
-
-            SettingsMenu(
-                title = stringResource(R.string.contribution_rank_title),
-                subtitle = stringResource(R.string.contribution_rank_subtitle),
-                value = if (contributionRankEnable) stringResource(R.string.value_show)
-                else stringResource(R.string.value_hide),
-                onClick = { viewModel.setContributionRankEnable(!contributionRankEnable) }
             )
             HorizontalDivider()
 

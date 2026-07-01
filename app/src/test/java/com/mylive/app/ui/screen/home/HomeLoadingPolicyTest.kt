@@ -87,6 +87,16 @@ class HomeLoadingPolicyTest {
     }
 
     @Test
+    fun homeRoomGridUsesStableContentTypes() {
+        val source = File("src/main/java/com/mylive/app/ui/screen/home/HomeScreen.kt").readText()
+
+        assertTrue(source.contains("items(\n                        items = uiState.rooms,"))
+        assertTrue(source.contains("key = { it.roomId }"))
+        assertTrue(source.contains("contentType = { \"home_room\" }"))
+        assertTrue(source.contains("contentType = { \"home_load_more_skeleton\" }"))
+    }
+
+    @Test
     fun cachedHomeStateRestoresLoadedRoomsWithoutInitialLoadingSkeleton() {
         HomeStateCache.clear()
         HomeStateCache.put(

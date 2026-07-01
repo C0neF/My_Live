@@ -16,6 +16,10 @@ class ShieldRepository @Inject constructor(
 
     suspend fun addShield(shield: ShieldEntity) = shieldDao.insertShield(shield)
 
+    suspend fun addShields(shields: List<ShieldEntity>) {
+        if (shields.isNotEmpty()) shieldDao.insertShields(shields)
+    }
+
     suspend fun updateShield(shield: ShieldEntity) = shieldDao.insertShield(shield)
 
     suspend fun removeShield(id: Long) = shieldDao.deleteShield(id)
@@ -30,6 +34,10 @@ class ShieldRepository @Inject constructor(
     fun getAllPresets(): Flow<List<ShieldPresetEntity>> = shieldDao.getAllPresets()
 
     suspend fun addPreset(preset: ShieldPresetEntity) = shieldDao.insertPreset(preset)
+
+    suspend fun addPresets(presets: List<ShieldPresetEntity>) {
+        if (presets.isNotEmpty()) shieldDao.insertPresets(presets)
+    }
 
     suspend fun removePreset(name: String) = shieldDao.deletePreset(name)
 }

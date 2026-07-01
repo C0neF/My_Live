@@ -85,32 +85,37 @@ class RemoteSyncRoomViewModel @Inject constructor(
                     if (overlay) {
                         historyRepository.clearAllHistory()
                     }
-                    for (i in 0 until arr.length()) {
-                        val item = arr.getJSONObject(i)
-                        val siteId = item.optString("siteId", item.optString("site", ""))
-                        val roomId = item.optString("roomId", item.optString("room", ""))
-                        if (siteId.isBlank() || roomId.isBlank()) continue
+                    val existingHistoriesById = historyRepository.getAllHistory().first().associateBy { it.id }
+                    val histories = buildList {
+                        for (i in 0 until arr.length()) {
+                            val item = arr.getJSONObject(i)
+                            val siteId = item.optString("siteId", item.optString("site", ""))
+                            val roomId = item.optString("roomId", item.optString("room", ""))
+                            if (siteId.isBlank() || roomId.isBlank()) continue
 
-                        val userName = item.optString("userName", item.optString("name", ""))
-                        val face = item.optString("face", item.optString("avatar", ""))
-                        val updateTime = item.optLong("updateTime", System.currentTimeMillis())
+                            val id = "${siteId}_${roomId}"
+                            val userName = item.optString("userName", item.optString("name", ""))
+                            val face = item.optString("face", item.optString("avatar", ""))
+                            val updateTime = item.optLong("updateTime", System.currentTimeMillis())
 
-                        val existing = historyRepository.getHistoryById("${siteId}_${roomId}")
-                        if (existing != null && existing.updateTime > updateTime) {
-                            continue
-                        }
+                            val existing = existingHistoriesById[id]
+                            if (existing != null && existing.updateTime > updateTime) {
+                                continue
+                            }
 
-                        historyRepository.addHistory(
-                            HistoryEntity(
-                                id = "${siteId}_${roomId}",
-                                roomId = roomId,
-                                siteId = siteId,
-                                userName = userName,
-                                face = face,
-                                updateTime = updateTime
+                            add(
+                                HistoryEntity(
+                                    id = id,
+                                    roomId = roomId,
+                                    siteId = siteId,
+                                    userName = userName,
+                                    face = face,
+                                    updateTime = updateTime
+                                )
                             )
-                        )
+                        }
                     }
+                    historyRepository.addHistories(histories)
                     _toastMessage.emit("已同步历史记录")
                 } catch (e: Exception) {
                     CoreLog.e("RemoteSyncRoomViewModel: History sync failed", e)
@@ -122,16 +127,12 @@ class RemoteSyncRoomViewModel @Inject constructor(
         remoteSyncService.onShieldWordReceived = { overlay, content ->
             viewModelScope.launch {
                 try {
-                    val arr = JSONArray(content)
+                    val keywords = decodeLanSyncShieldKeywords(content)
                     if (overlay) {
                         shieldRepository.clearAllKeywords()
                     }
-                    for (i in 0 until arr.length()) {
-                        val kw = arr.getString(i).trim()
-                        if (kw.isNotEmpty()) {
-                            shieldRepository.addShield(ShieldEntity(value = "keyword:$kw"))
-                        }
-                    }
+                    val shields = keywords.map { kw -> ShieldEntity(value = "keyword:$kw") }
+                    shieldRepository.addShields(shields)
                     _toastMessage.emit("已同步屏蔽词")
                 } catch (e: Exception) {
                     CoreLog.e("RemoteSyncRoomViewModel: Shield words sync failed", e)

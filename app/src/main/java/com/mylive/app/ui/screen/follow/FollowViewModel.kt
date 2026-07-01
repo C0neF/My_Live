@@ -7,6 +7,7 @@ import com.mylive.app.data.local.entity.FollowUserEntity
 import com.mylive.app.data.repository.FollowRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -69,8 +70,8 @@ class FollowViewModel @Inject constructor(
 
     val groupOptions: StateFlow<List<FollowGroupOption>> = combine(
         groupMode,
-        followRepository.getAllFollows(),
-        followRepository.getAllTags()
+        follows,
+        userTags
     ) { mode, followsList, tagsList ->
         val options = mutableListOf(FollowGroupOption("all", "全部"))
         when (mode) {
@@ -110,11 +111,11 @@ class FollowViewModel @Inject constructor(
     )
 
     val filteredFollows: StateFlow<List<FollowUserEntity>> = combine(
-        followRepository.getAllFollows(),
+        follows,
         groupMode,
         selectedGroupId,
         groupOptions,
-        followRepository.getAllTags()
+        userTags
     ) { followsList, mode, groupId, options, tagsList ->
         val selectedOption = options.find { it.id == groupId }
         if (selectedOption == null || selectedOption.id == "all") {
@@ -149,9 +150,11 @@ class FollowViewModel @Inject constructor(
 
     private val _updatingStatus = MutableStateFlow(false)
     val updatingStatus: StateFlow<Boolean> = _updatingStatus.asStateFlow()
+    private var updateJob: Job? = null
 
     fun updateFollowStatus() {
-        viewModelScope.launch {
+        if (updateJob?.isActive == true) return
+        updateJob = viewModelScope.launch {
             _updatingStatus.value = true
             try {
                 val currentFollows = followRepository.getAllFollows().first()
@@ -242,12 +245,11 @@ class FollowViewModel @Inject constructor(
     fun removeTag(tagId: String) {
         viewModelScope.launch {
             val tag = followRepository.getAllTags().first().find { it.id == tagId } ?: return@launch
-            for (userId in tag.userIds) {
-                val follow = followRepository.getAllFollows().first().find { it.id == userId }
-                if (follow != null) {
-                    followRepository.addFollow(follow.copy(tag = ""))
-                }
+            val followsById = followRepository.getAllFollows().first().associateBy { it.id }
+            val updatedFollows = tag.userIds.mapNotNull { userId ->
+                followsById[userId]?.copy(tag = "")
             }
+            followRepository.addFollows(updatedFollows)
             followRepository.removeTag(tagId)
         }
     }
@@ -256,12 +258,11 @@ class FollowViewModel @Inject constructor(
         viewModelScope.launch {
             val tag = followRepository.getAllTags().first().find { it.id == tagId } ?: return@launch
             followRepository.updateTag(tag.copy(tag = newName))
-            for (userId in tag.userIds) {
-                val follow = followRepository.getAllFollows().first().find { it.id == userId }
-                if (follow != null) {
-                    followRepository.addFollow(follow.copy(tag = newName))
-                }
+            val followsById = followRepository.getAllFollows().first().associateBy { it.id }
+            val updatedFollows = tag.userIds.mapNotNull { userId ->
+                followsById[userId]?.copy(tag = newName)
             }
+            followRepository.addFollows(updatedFollows)
         }
     }
 

@@ -5,6 +5,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 
 class FollowCompactLayoutPolicyTest {
 
@@ -71,6 +72,30 @@ class FollowCompactLayoutPolicyTest {
 
         assertEquals(listOf("live"), columns.live.map { it.id })
         assertEquals(listOf("unknown", "offline"), columns.inactive.map { it.id })
+    }
+
+    @Test
+    fun compactFollowStatusBucketsSplitLiveUnknownAndOffline() {
+        val buckets = followStatusBuckets(
+            listOf(
+                follow(id = "live", liveStatus = 1),
+                follow(id = "unknown", liveStatus = 0),
+                follow(id = "offline", liveStatus = 2)
+            )
+        )
+
+        assertEquals(listOf("live"), buckets.live.map { it.id })
+        assertEquals(listOf("unknown"), buckets.unknown.map { it.id })
+        assertEquals(listOf("offline"), buckets.offline.map { it.id })
+    }
+
+    @Test
+    fun followScreenCachesDerivedListsAcrossUnrelatedRecompositions() {
+        val source = File("src/main/java/com/mylive/app/ui/screen/follow/FollowScreen.kt").readText()
+
+        assertTrue(source.contains("remember(useTabletTwoColumnLayout, tabletFollows, filteredFollows)"))
+        assertTrue(source.contains("remember(displayedFollows) { followStatusBuckets(displayedFollows) }"))
+        assertTrue(source.contains("remember(displayedFollows) { followTabletStatusColumns(displayedFollows) }"))
     }
 
     @Test

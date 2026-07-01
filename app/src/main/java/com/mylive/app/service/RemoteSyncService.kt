@@ -2,6 +2,7 @@ package com.mylive.app.service
 
 import com.mylive.app.BuildConfig
 import com.mylive.app.core.common.CoreLog
+import com.mylive.app.core.common.safeUrlForLog
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
@@ -47,6 +48,7 @@ class RemoteSyncService @Inject constructor() {
         const val K_GENYMOTION_PROXY = "10.0.3.2:51888"
         const val K_DIRECT_PROXY_VALUE = "direct"
         const val K_LOCAL_DEBUG_SERVER_PORT = 51999
+        const val K_MAX_SYNC_CONTENT_BYTES = 5 * 1024 * 1024
         const val K_LOCAL_DEBUG_SERVER_URL = "ws://127.0.0.1:$K_LOCAL_DEBUG_SERVER_PORT"
         const val K_ANDROID_EMULATOR_DEBUG_SERVER_URL = "ws://10.0.2.2:$K_LOCAL_DEBUG_SERVER_PORT"
         const val K_GENYMOTION_DEBUG_SERVER_URL = "ws://10.0.3.2:$K_LOCAL_DEBUG_SERVER_PORT"
@@ -113,8 +115,11 @@ class RemoteSyncService @Inject constructor() {
                 return
             } catch (e: Exception) {
                 lastError = e
-                CoreLog.e("RemoteSyncService: Connection failed for ${target.url}", e)
-                Timber.e(e, "RemoteSyncService: Connection failed for %s", target.url)
+                Timber.e(
+                    e,
+                    "RemoteSyncService: Connection failed for %s",
+                    safeUrlForLog(target.url)
+                )
                 cleanupConnection(connectionId)
             }
         }
@@ -129,8 +134,11 @@ class RemoteSyncService @Inject constructor() {
     ) {
         val wsUrl = target.url
         _connectionState.value = RemoteSyncConnectionState.CONNECTING
-        CoreLog.d("RemoteSyncService: Connecting to $wsUrl with proxy '$configuredProxyUrl'")
-        Timber.d("RemoteSyncService: Connecting to %s with proxy '%s'", wsUrl, configuredProxyUrl)
+        Timber.d(
+            "RemoteSyncService: Connecting to %s with proxy configured=%s",
+            safeUrlForLog(wsUrl),
+            configuredProxyUrl.isNotBlank()
+        )
 
         val connectionReady = CompletableDeferred<Unit>()
         val clientBuilder = OkHttpClient.Builder()
@@ -146,8 +154,7 @@ class RemoteSyncService @Inject constructor() {
         }
         if (proxy != null) {
             clientBuilder.proxy(proxy)
-            CoreLog.d("RemoteSyncService: Using proxy $proxy")
-            Timber.d("RemoteSyncService: Using proxy %s", proxy)
+            Timber.d("RemoteSyncService: Using configured proxy")
         }
 
         val okHttpClient = clientBuilder.build()
@@ -162,7 +169,6 @@ class RemoteSyncService @Inject constructor() {
                     return
                 }
                 _connectionState.value = RemoteSyncConnectionState.CONNECTED
-                CoreLog.d("RemoteSyncService: WebSocket connection established")
                 Timber.d("RemoteSyncService: WebSocket connection established")
                 startHeartbeat(connectionId)
                 connectionReady.complete(Unit)
@@ -180,7 +186,6 @@ class RemoteSyncService @Inject constructor() {
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                 if (!isActiveConnection(connectionId)) return
-                CoreLog.d("RemoteSyncService: WebSocket closed ($code): $reason")
                 Timber.d("RemoteSyncService: WebSocket closed (%s): %s", code, reason)
                 connectionReady.completeExceptionally(Exception("同步服务连接已关闭: $reason"))
                 cleanupConnection(connectionId)
@@ -188,7 +193,6 @@ class RemoteSyncService @Inject constructor() {
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 if (!isActiveConnection(connectionId)) return
-                CoreLog.e("RemoteSyncService: WebSocket error", t)
                 Timber.e(t, "RemoteSyncService: WebSocket error response=%s", response?.code)
                 connectionReady.completeExceptionally(t)
                 cleanupConnection(connectionId)
@@ -451,6 +455,12 @@ class RemoteSyncService @Inject constructor() {
         overlay: Boolean,
         content: String
     ): RemoteSyncResp {
+        if (
+            content.length > K_MAX_SYNC_CONTENT_BYTES ||
+            content.toByteArray(Charsets.UTF_8).size > K_MAX_SYNC_CONTENT_BYTES
+        ) {
+            return RemoteSyncResp(false, "同步内容不能超过 5 MB", null)
+        }
         val mappedAction = when (action) {
             "SendFavorite" -> "sendFavorite"
             "SendHistory" -> "sendHistory"
@@ -595,7 +605,7 @@ class RemoteSyncService @Inject constructor() {
     private fun formatConnectionError(error: Throwable): String {
         val text = error.message ?: error.toString()
         if (error is TimeoutCancellationException || text.contains("timeout", ignoreCase = true)) {
-            return "同步服务连接超时，请检查网络或同步服务地址。当前默认 workers.dev 域名在部分网络下可能无法访问。"
+            return "同步服务连接超时，请检查网络或同步服务地址"
         }
         if (
             text.contains("Unable to resolve host", ignoreCase = true) ||

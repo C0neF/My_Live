@@ -1,10 +1,17 @@
 package com.mylive.app.service
 
+import org.json.JSONArray
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import java.io.File
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class LanSyncSecurityPolicyTest {
 
     @Test
@@ -32,6 +39,16 @@ class LanSyncSecurityPolicyTest {
         assertTrue(source.contains("pendingSyncJobCount"))
         assertTrue(source.contains("Response.Status.ACCEPTED"))
         assertTrue(source.contains("\"/sync/job/\""))
+    }
+
+    @Test
+    fun lanSyncPersistsCollectionsWithBatchDaoOperations() {
+        val source = File("src/main/java/com/mylive/app/service/LanSyncService.kt").readText()
+
+        assertTrue(source.contains("followRepository.addFollows(follows)"))
+        assertTrue(source.contains("followRepository.addTags(tags)"))
+        assertTrue(source.contains("historyRepository.addHistories(histories)"))
+        assertTrue(source.contains("shieldRepository.addShields(shields)"))
     }
 
     @Test
@@ -81,5 +98,44 @@ class LanSyncSecurityPolicyTest {
         assertFalse(sendSource.contains("put(\"cookie\", cookie)"))
         assertFalse(receiveSource.contains("/sync/account/bilibili"))
         assertFalse(receiveSource.contains("/sync/account/douyin"))
+    }
+
+    @Test
+    fun lanSyncAuthorizationFailsClosedAndRequiresAnExactNonEmptyToken() {
+        assertFalse(isValidLanSyncToken(expectedToken = "", providedToken = "anything"))
+        assertFalse(isValidLanSyncToken(expectedToken = "secret", providedToken = ""))
+        assertFalse(isValidLanSyncToken(expectedToken = "secret", providedToken = "Secret"))
+        assertTrue(isValidLanSyncToken(expectedToken = "secret", providedToken = "secret"))
+    }
+
+    @Test
+    fun lanSyncRotatesAndClearsItsPairingTokenWithTheServiceLifecycle() {
+        val source = File("src/main/java/com/mylive/app/service/LanSyncService.kt").readText()
+        val createBlock = source.substringAfter("override fun onCreate()")
+            .substringBefore("override fun onStartCommand")
+        val destroyBlock = source.substringAfter("override fun onDestroy()")
+            .substringBefore("override fun onBind")
+
+        assertTrue(createBlock.contains("syncToken = newLanSyncToken()"))
+        assertFalse(createBlock.contains("if (syncToken.isEmpty())"))
+        assertTrue(destroyBlock.contains("syncToken = \"\""))
+        assertTrue(source.contains("providedToken = providedToken"))
+        assertFalse(source.contains("syncToken.isEmpty() || providedToken == syncToken"))
+    }
+
+    @Test
+    fun lanFollowImportPreservesExportedMetadata() {
+        val follows = decodeFollowsForLanSync(
+            JSONArray(
+                """[{"id":"bilibili_300","siteId":"bilibili","roomId":"300","userName":"streamer","face":"avatar","addTime":"123","tag":"favorite","isSpecialFollow":true,"liveStatus":1,"liveStartTime":456,"showTime":"789"}]"""
+            )
+        )
+
+        val follow = follows.single()
+        assertEquals("bilibili_300", follow.id)
+        assertEquals(123L, follow.addTime)
+        assertEquals(1, follow.liveStatus)
+        assertEquals(456L, follow.liveStartTime)
+        assertEquals("789", follow.showTime)
     }
 }

@@ -62,6 +62,46 @@ internal fun loadingLiveRoomUiState(initialIsFollowing: Boolean? = null): LiveRo
     )
 }
 
+private fun qualityPreferenceLevel(name: String): Int? {
+    val normalizedName = name.lowercase()
+    return when {
+        listOf("原画", "蓝光", "4k", "2160p", "source", "origin")
+            .any(normalizedName::contains) -> 1
+        listOf("超清", "1080p").any(normalizedName::contains) -> 2
+        listOf("高清", "720p").any(normalizedName::contains) -> 3
+        listOf("标清", "480p").any(normalizedName::contains) -> 4
+        listOf("流畅", "360p", "240p", "180p").any(normalizedName::contains) -> 5
+        else -> null
+    }
+}
+
+internal fun selectPreferredQualityIndex(
+    qualities: List<LivePlayQuality>,
+    preferredLevel: Int
+): Int {
+    if (qualities.isEmpty() || preferredLevel == 0) return 0
+    if (preferredLevel !in 1..5) return 0
+
+    val rankedQualities = qualities.mapIndexedNotNull { index, quality ->
+        qualityPreferenceLevel(quality.quality)?.let { level -> Triple(index, level, quality) }
+    }
+
+    rankedQualities.firstOrNull { (_, level) -> level == preferredLevel }
+        ?.let { return it.first }
+
+    rankedQualities
+        .filter { (_, level) -> level > preferredLevel }
+        .minWithOrNull(compareBy<Triple<Int, Int, LivePlayQuality>> { it.second }.thenBy { it.first })
+        ?.let { return it.first }
+
+    rankedQualities
+        .filter { (_, level) -> level < preferredLevel }
+        .maxWithOrNull(compareBy<Triple<Int, Int, LivePlayQuality>> { it.second }.thenBy { it.first })
+        ?.let { return it.first }
+
+    return if (preferredLevel == 1) 0 else qualities.lastIndex
+}
+
 private fun LiveRoomUiState.asLoadingStatePreservingFollow(): LiveRoomUiState {
     return loadingLiveRoomUiState(
         initialIsFollowing = if (isFollowStatusKnown) isFollowing else null
@@ -79,30 +119,6 @@ class LiveRoomViewModel @Inject constructor(
     val settingsRepository: SettingsRepository,
     @param:ApplicationContext private val appContext: Context
 ) : ViewModel() {
-
-    private fun selectPreferredQuality(qualities: List<LivePlayQuality>, preferredLevel: Int): Int {
-        if (qualities.isEmpty()) return 0
-        if (preferredLevel == 0) return 0 // Auto
-
-        val keywords = when (preferredLevel) {
-            1 -> listOf("原画", "蓝光", "4k", "1080p", "source", "origin")
-            2 -> listOf("超清", "1080p", "720p")
-            3 -> listOf("高清", "720p", "480p")
-            4 -> listOf("标清", "480p", "360p")
-            5 -> listOf("流畅", "360p", "240p", "180p")
-            else -> emptyList()
-        }
-
-        for (keyword in keywords) {
-            val index = qualities.indexOfFirst { q ->
-                val lowerName = q.quality.lowercase()
-                lowerName.contains(keyword)
-            }
-            if (index != -1) return index
-        }
-
-        return if (preferredLevel == 5) qualities.lastIndex else 0
-    }
 
     var roomId: String = savedStateHandle.get<String>("roomId") ?: ""
         private set
@@ -493,7 +509,7 @@ class LiveRoomViewModel @Inject constructor(
                 cellularQualityLevel = settingsRepository.qualityLevelCellular.first(),
                 isCellularNetwork = isCellularNetworkActive()
             )
-            val matchIndex = selectPreferredQuality(qualities, preferredLevel)
+            val matchIndex = selectPreferredQualityIndex(qualities, preferredLevel)
             if (!isActiveRoute(route)) return
 
             _uiState.value = _uiState.value.copy(
@@ -531,6 +547,19 @@ class LiveRoomViewModel @Inject constructor(
         try {
             val playUrl = site.getPlayUrls(detail, quality)
             if (!isActiveRoute(route)) return
+            _uiState.update { state ->
+                val actualIndex = updatedQualityIndexForResolvedPlayback(
+                    qualities = state.playQualities,
+                    currentIndex = state.currentQualityIndex,
+                    requestedQuality = quality,
+                    actualQuality = playUrl.actualQuality
+                )
+                if (actualIndex == state.currentQualityIndex) {
+                    state
+                } else {
+                    state.copy(currentQualityIndex = actualIndex)
+                }
+            }
             playerController?.play(
                 urls = playUrl.urls,
                 headers = playUrl.headers,

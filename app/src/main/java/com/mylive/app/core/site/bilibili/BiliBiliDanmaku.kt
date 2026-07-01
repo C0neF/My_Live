@@ -7,6 +7,7 @@ import com.mylive.app.core.common.WebSocketUtils
 import com.mylive.app.core.model.DanmakuArgs
 import com.mylive.app.core.model.LiveMessage
 import com.mylive.app.core.model.LiveMessageColor
+import com.mylive.app.core.model.LiveMessageDanmakuPosition
 import com.mylive.app.core.model.LiveMessageType
 import com.mylive.app.core.model.LiveSuperChatMessage
 import com.mylive.app.core.site.LiveDanmaku
@@ -188,10 +189,14 @@ class BiliBiliDanmaku(private val webSocketUtils: WebSocketUtils) : LiveDanmaku 
                     if (info2 != null && info2.length() != 0) {
                         val username = info2.opt(1).toString()
                         val imageMap = extractImageMap(info, message)
+                        val danmakuPosition = resolveBiliBiliDanmakuPosition(
+                            info.optJSONArray(0)?.optInt(1, 1) ?: 1
+                        )
                         val liveMsg = LiveMessage(
                             type = LiveMessageType.CHAT,
                             userName = username,
                             message = message,
+                            danmakuPosition = danmakuPosition,
                             color = if (color == 0) LiveMessageColor.WHITE
                             else LiveMessageColor.numberToColor(color),
                             imageUrls = imageMap.values.toList().ifEmpty { null },
@@ -295,5 +300,13 @@ class BiliBiliDanmaku(private val webSocketUtils: WebSocketUtils) : LiveDanmaku 
         }
 
         return map
+    }
+}
+
+internal fun resolveBiliBiliDanmakuPosition(mode: Int): LiveMessageDanmakuPosition {
+    return when (mode) {
+        4 -> LiveMessageDanmakuPosition.BOTTOM
+        5 -> LiveMessageDanmakuPosition.TOP
+        else -> LiveMessageDanmakuPosition.SCROLL
     }
 }

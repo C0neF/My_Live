@@ -13,6 +13,7 @@ import okio.BufferedSource
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 import java.io.IOException
 
 class BaseTarsHttpTest {
@@ -38,6 +39,15 @@ class BaseTarsHttpTest {
         }
 
         assertTrue(body.isClosed)
+    }
+
+    @Test
+    fun tarsHttpReusesTimeoutClientAcrossRequests() {
+        val source = File("src/main/java/com/mylive/app/core/site/huya/tars/BaseTarsHttp.kt").readText()
+
+        assertTrue(source.contains("private val requestClient: OkHttpClient = okHttpClient.newBuilder()"))
+        assertTrue(source.contains("requestClient.newCall(request).execute()"))
+        assertTrue(source.indexOf("okHttpClient.newBuilder()") == source.lastIndexOf("okHttpClient.newBuilder()"))
     }
 
     private fun errorResponseInterceptor(body: ResponseBody): Interceptor {

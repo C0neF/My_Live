@@ -27,6 +27,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.activity.compose.BackHandler
 import com.mylive.app.ui.navigation.Navigator
 import com.mylive.app.ui.navigation.Route
@@ -51,11 +52,11 @@ fun CategoryDetailScreen(
             categoryName = key.categoryName
         )
     }
-    val rooms by viewModel.rooms.collectAsState()
-    val loading by viewModel.loading.collectAsState()
-    val loadingMore by viewModel.loadingMore.collectAsState()
-    val hasMore by viewModel.hasMore.collectAsState()
-    val error by viewModel.error.collectAsState()
+    val rooms by viewModel.rooms.collectAsStateWithLifecycle()
+    val loading by viewModel.loading.collectAsStateWithLifecycle()
+    val loadingMore by viewModel.loadingMore.collectAsStateWithLifecycle()
+    val hasMore by viewModel.hasMore.collectAsStateWithLifecycle()
+    val error by viewModel.error.collectAsStateWithLifecycle()
 
     var isExiting by remember { mutableStateOf(false) }
 
@@ -145,7 +146,11 @@ fun CategoryDetailScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier.fillMaxSize()
                 ) {
-                    items(rooms) { room ->
+                    items(
+                        items = rooms,
+                        key = { it.roomId },
+                        contentType = { "category_detail_room" }
+                    ) { room ->
                         LiveRoomCard(
                             title = room.title,
                             userName = room.userName,
@@ -164,7 +169,7 @@ fun CategoryDetailScreen(
 
                     // Loading more indicator
                     if (loadingMore) {
-                        item {
+                        item(contentType = "category_detail_loading_more") {
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()

@@ -12,7 +12,7 @@ class LiveRoomAutoFullscreenPolicyTest {
     fun liveRoomScreenAppliesAutoFullscreenOncePerRoute() {
         val source = File("src/main/java/com/mylive/app/ui/screen/room/LiveRoomScreen.kt").readText()
 
-        assertTrue(source.contains("val autoFullScreen by settingsViewModel.autoFullScreen.collectAsState"))
+        assertTrue(source.contains("val autoFullScreen = liveRoomPreferences.autoFullScreen"))
         assertTrue(source.contains("autoFullscreenAppliedRoute"))
         assertTrue(source.contains("autoFullscreenAppliedRoute = route"))
         assertTrue(source.contains("playerController?.toggleFullscreen()"))
@@ -61,7 +61,8 @@ class LiveRoomAutoFullscreenPolicyTest {
         val pipBranch = source.substringAfter("if (isInPip) {")
             .substringBefore("} else if (isLandscape || isFullscreen)")
 
-        assertTrue(source.contains("val pipHideDanmu by settingsViewModel.pipHideDanmu.collectAsState"))
+        assertTrue(source.contains("val pipHideDanmu = liveRoomPreferences.pipHideDanmu"))
+        assertTrue(source.contains("val pipDanmuEnable = liveRoomPreferences.danmuEnable"))
         assertTrue(source.contains("pipDanmakuController"))
         assertTrue(pipBranch.contains("danmuEnable = pipDanmuEnable && !pipHideDanmu"))
         assertTrue(pipBranch.contains("onDanmakuControllerCreated = { pipDanmakuController = it }"))
@@ -91,7 +92,7 @@ class LiveRoomAutoFullscreenPolicyTest {
         assertEquals(320f, liveRoomSidePanelOffsetAfterDrag(300f, 40f, 320f), 0.001f)
         assertTrue(source.contains("val roomTabs = remember { resolveLandscapeLiveRoomTabs() }"))
         assertTrue(source.contains("LandscapeRoomSidePanelHeader("))
-        assertTrue(source.contains("onQuickAccessClick = {"))
+        assertTrue(source.contains("onQuickAccessClick = quickAccessAction"))
         assertTrue(source.contains("onFollowClick = { viewModel.toggleFollow() }"))
         assertTrue(source.contains("if (roomTabs.contains(LiveRoomTabType.CHAT)) {"))
         assertFalse(source.contains("val liveRoomTabSort by settingsViewModel.liveRoomTabSort.collectAsState()"))

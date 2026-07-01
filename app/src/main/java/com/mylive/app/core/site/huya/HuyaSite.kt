@@ -722,13 +722,6 @@ class HuyaSite @Inject constructor(
         }
     }
 
-    // ── Contribution rank ──────────────────────────────────────────────────
-
-    override suspend fun getContributionRank(
-        roomId: String,
-        detail: LiveRoomDetail?
-    ): List<LiveContributionRankItem> = emptyList()
-
     // ── Helper: Category resolution ────────────────────────────────────────
 
     private fun resolveHuyaCategoryId(liveInfo: JSONObject): String? {

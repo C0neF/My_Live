@@ -6,8 +6,23 @@ import com.mylive.app.core.model.LiveMessageType
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 
 class LiveMessageShieldPolicyTest {
+
+    @Test
+    fun shieldHotPathUsesPrecompiledRules() {
+        val source = File("src/main/java/com/mylive/app/ui/screen/room/LiveMessageShieldPolicy.kt")
+            .readText()
+        val hotPath = source.substringAfter("internal fun shouldShieldLiveMessage(")
+            .substringBefore("private data class UserShieldRule")
+
+        assertTrue(source.contains("val keywordRules: KeywordShieldRules"))
+        assertTrue(source.contains("val userRules: UserShieldRules"))
+        assertFalse(hotPath.contains("Regex("))
+        assertFalse(hotPath.contains("keywordShieldValue()"))
+        assertFalse(hotPath.contains("userShieldRule()"))
+    }
 
     @Test
     fun keywordShieldMatchesPlainText() {

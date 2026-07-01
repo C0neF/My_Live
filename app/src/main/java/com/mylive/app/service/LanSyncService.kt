@@ -8,6 +8,7 @@ import android.os.IBinder
 import androidx.compose.runtime.mutableStateListOf
 import com.mylive.app.BuildConfig
 import com.mylive.app.core.common.CoreLog
+import com.mylive.app.core.common.safePathForLog
 import com.mylive.app.data.local.entity.FollowUserEntity
 import com.mylive.app.data.local.entity.HistoryEntity
 import com.mylive.app.data.local.entity.ShieldEntity
@@ -32,10 +33,53 @@ import org.json.JSONObject
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
+import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.UUID
 import javax.inject.Inject
+
+internal fun newLanSyncToken(): String = UUID.randomUUID().toString().replace("-", "")
+
+internal fun isValidLanSyncToken(
+    expectedToken: String,
+    providedToken: String
+): Boolean {
+    if (expectedToken.isEmpty() || providedToken.isEmpty()) return false
+    return MessageDigest.isEqual(
+        expectedToken.toByteArray(Charsets.UTF_8),
+        providedToken.toByteArray(Charsets.UTF_8)
+    )
+}
+
+internal fun decodeFollowsForLanSync(array: JSONArray): List<FollowUserEntity> = buildList {
+    for (index in 0 until array.length()) {
+        val item = array.getJSONObject(index)
+        val siteId = item.getString("siteId")
+        val roomId = item.getString("roomId")
+        val now = System.currentTimeMillis()
+        add(
+            FollowUserEntity(
+                id = item.optString("id", "${siteId}_${roomId}"),
+                roomId = roomId,
+                siteId = siteId,
+                userName = item.getString("userName"),
+                face = item.optString("face", item.optString("avatar", "")),
+                addTime = item.opt("addTime")?.toString()?.toLongOrNull() ?: now,
+                tag = item.optString("tag", ""),
+                isSpecialFollow = item.optBoolean("isSpecialFollow", false),
+                liveStatus = item.optInt("liveStatus", 0),
+                liveStartTime = item.opt("liveStartTime")
+                    ?.takeUnless { it == JSONObject.NULL }
+                    ?.toString()
+                    ?.toLongOrNull(),
+                showTime = item.opt("showTime")
+                    ?.takeUnless { it == JSONObject.NULL }
+                    ?.toString()
+            )
+        )
+    }
+}
 
 @AndroidEntryPoint
 class LanSyncService : Service() {
@@ -149,9 +193,7 @@ class LanSyncService : Service() {
         if (syncDeviceId.isEmpty()) {
             syncDeviceId = UUID.randomUUID().toString().split("-").first()
         }
-        if (syncToken.isEmpty()) {
-            syncToken = UUID.randomUUID().toString().replace("-", "").substring(0, 8)
-        }
+        syncToken = newLanSyncToken()
         CoreLog.d("LanSyncService: pair token generated")
         ipAddress = getLocalIpAddress()
         startHttpServer()
@@ -173,6 +215,7 @@ class LanSyncService : Service() {
         pendingSyncJobCount.set(0)
         scanClients.clear()
         isRunning = false
+        syncToken = ""
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -259,7 +302,7 @@ class LanSyncService : Service() {
             val method = session.method
             val uri = session.uri
             
-            CoreLog.d("LanSyncService: HTTP request: $method $uri")
+            CoreLog.d("LanSyncService: HTTP request: $method ${safePathForLog(uri)}")
             
             return try {
                 if (method == Method.GET && uri == "/") {
@@ -308,31 +351,12 @@ class LanSyncService : Service() {
                     when (uri) {
                         "/sync/follow" -> {
                             val arr = requireJsonArrayWithinLimit(body, MAX_SYNC_FOLLOW_ITEMS, "follow")
+                            val follows = decodeFollowsForLanSync(arr)
                             enqueueSyncImport("follow") {
                                 if (overlay) {
                                     followRepository.clearAllFollows()
                                 }
-                                for (i in 0 until arr.length()) {
-                                    val item = arr.getJSONObject(i)
-                                    val siteId = item.getString("siteId")
-                                    val roomId = item.getString("roomId")
-                                    val userName = item.getString("userName")
-                                    val face = item.optString("face", item.optString("avatar", ""))
-                                    val isSpecial = item.optBoolean("isSpecialFollow", false)
-                                    val tag = item.optString("tag", "")
-                                    followRepository.addFollow(
-                                        FollowUserEntity(
-                                            id = "${siteId}_${roomId}",
-                                            roomId = roomId,
-                                            siteId = siteId,
-                                            userName = userName,
-                                            face = face,
-                                            addTime = System.currentTimeMillis(),
-                                            isSpecialFollow = isSpecial,
-                                            tag = tag
-                                        )
-                                    )
-                                }
+                                followRepository.addFollows(follows)
                             }
                         }
                         "/sync/tag" -> {
@@ -342,9 +366,7 @@ class LanSyncService : Service() {
                                 if (overlay) {
                                     followRepository.clearAllTags()
                                 }
-                                for (tag in tags) {
-                                    followRepository.addTag(tag)
-                                }
+                                followRepository.addTags(tags)
                             }
                         }
                         "/sync/history" -> {
@@ -353,24 +375,27 @@ class LanSyncService : Service() {
                                 if (overlay) {
                                     historyRepository.clearAllHistory()
                                 }
-                                for (i in 0 until arr.length()) {
-                                    val item = arr.getJSONObject(i)
-                                    val siteId = item.getString("siteId")
-                                    val roomId = item.getString("roomId")
-                                    val userName = item.getString("userName")
-                                    val face = item.optString("face", item.optString("avatar", ""))
-                                    val updateTime = item.optLong("updateTime", System.currentTimeMillis())
-                                    historyRepository.addHistory(
-                                        HistoryEntity(
-                                            id = "${siteId}_${roomId}",
-                                            roomId = roomId,
-                                            siteId = siteId,
-                                            userName = userName,
-                                            face = face,
-                                            updateTime = updateTime
+                                val histories = buildList {
+                                    for (i in 0 until arr.length()) {
+                                        val item = arr.getJSONObject(i)
+                                        val siteId = item.getString("siteId")
+                                        val roomId = item.getString("roomId")
+                                        val userName = item.getString("userName")
+                                        val face = item.optString("face", item.optString("avatar", ""))
+                                        val updateTime = item.optLong("updateTime", System.currentTimeMillis())
+                                        add(
+                                            HistoryEntity(
+                                                id = "${siteId}_${roomId}",
+                                                roomId = roomId,
+                                                siteId = siteId,
+                                                userName = userName,
+                                                face = face,
+                                                updateTime = updateTime
+                                            )
                                         )
-                                    )
+                                    }
                                 }
+                                historyRepository.addHistories(histories)
                             }
                         }
                         "/sync/blocked_word" -> {
@@ -380,9 +405,8 @@ class LanSyncService : Service() {
                                 if (overlay) {
                                     shieldRepository.clearAllKeywords()
                                 }
-                                for (kw in keywords) {
-                                    shieldRepository.addShield(ShieldEntity(value = "keyword:$kw"))
-                                }
+                                val shields = keywords.map { kw -> ShieldEntity(value = "keyword:$kw") }
+                                shieldRepository.addShields(shields)
                             }
                         }
                         "/sync/profile" -> {
@@ -422,9 +446,16 @@ class LanSyncService : Service() {
             val providedToken = session.headers["x-sync-token"]
                 ?: session.parameters["token"]?.firstOrNull()
                 ?: ""
-            if (syncToken.isEmpty() || providedToken == syncToken) return null
+            if (
+                isValidLanSyncToken(
+                    expectedToken = syncToken,
+                    providedToken = providedToken
+                )
+            ) return null
 
-            CoreLog.w("LanSyncService: rejected unauthorized sync request to $uri")
+            CoreLog.w(
+                "LanSyncService: rejected unauthorized sync request to ${safePathForLog(uri)}"
+            )
             return newJsonResponse(
                 false,
                 "unauthorized: pairing required",

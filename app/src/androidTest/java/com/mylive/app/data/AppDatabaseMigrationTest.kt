@@ -57,9 +57,34 @@ class AppDatabaseMigrationTest {
         ).close()
     }
 
+    @Test
+    @Throws(IOException::class)
+    fun migrate3To4() {
+        helper.createDatabase(TEST_DB_3_4, 3).close()
+
+        helper.runMigrationsAndValidate(TEST_DB_3_4, 4, true, AppDatabase.MIGRATION_3_4).close()
+    }
+
+    @Test
+    @Throws(IOException::class)
+    fun migrate1To4() {
+        helper.createDatabase(TEST_DB_1_4, 1).close()
+
+        helper.runMigrationsAndValidate(
+            TEST_DB_1_4,
+            4,
+            true,
+            AppDatabase.MIGRATION_1_2,
+            AppDatabase.MIGRATION_2_3,
+            AppDatabase.MIGRATION_3_4
+        ).close()
+    }
+
     private companion object {
         const val TEST_DB = "migration-test-1-2"
         const val TEST_DB_2_3 = "migration-test-2-3"
         const val TEST_DB_1_3 = "migration-test-1-3"
+        const val TEST_DB_3_4 = "migration-test-3-4"
+        const val TEST_DB_1_4 = "migration-test-1-4"
     }
 }

@@ -8,11 +8,10 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
-import com.mylive.app.core.common.CoreLog
 import com.mylive.app.data.repository.SettingsRepository
 import com.mylive.app.ui.navigation.AppNavGraph
 import com.mylive.app.ui.navigation.Navigator
@@ -46,12 +45,7 @@ class MainActivity : ComponentActivity() {
         maybeRequestNotificationPermission()
         val initialRoute = intent.getStringExtra(EXTRA_INITIAL_ROUTE)
 
-        // Sync log settings
-        lifecycleScope.launch {
-            settingsRepository.logEnable.collect { enabled ->
-                CoreLog.enableLog = enabled
-            }
-        }
+
 
         // Sync sleep timer settings
         lifecycleScope.launch {
@@ -88,8 +82,10 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            val themeMode by settingsRepository.themeMode.collectAsState(initial = 0)
-            val styleColor by settingsRepository.styleColor.collectAsState(initial = 0xff3498db.toInt())
+            val themeMode by settingsRepository.themeMode.collectAsStateWithLifecycle(initialValue = 0)
+            val styleColor by settingsRepository.styleColor.collectAsStateWithLifecycle(
+                initialValue = 0xff3498db.toInt()
+            )
 
             val darkTheme = when (themeMode) {
                 1 -> false

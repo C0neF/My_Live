@@ -23,7 +23,7 @@ import com.mylive.app.data.local.entity.ShieldPresetEntity
         ShieldEntity::class,
         ShieldPresetEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -54,6 +54,20 @@ abstract class AppDatabase : RoomDatabase() {
         val MIGRATION_2_3: Migration = object : Migration(2, 3) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE follow_users ADD COLUMN showTime TEXT DEFAULT NULL")
+            }
+        }
+
+        /** Migration 3 -> 4: indexes the lookup and ordering paths used by the UI. */
+        val MIGRATION_3_4: Migration = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_follow_users_siteId_roomId " +
+                        "ON follow_users(siteId, roomId)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_histories_updateTime " +
+                        "ON histories(updateTime)"
+                )
             }
         }
     }

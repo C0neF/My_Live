@@ -21,7 +21,7 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
@@ -124,11 +124,10 @@ fun IndexScreen(
     }
 
     // Scroll-to-hide bottom bar state
-    val density = LocalContext.current.resources.displayMetrics.density
-    val maxOffsetPx = 100f * density
-    var bottomBarOffsetPx by remember { mutableStateOf(0f) }
+    val maxOffsetPx = with(LocalDensity.current) { 100.dp.toPx() }
+    var bottomBarOffsetPx by remember { mutableFloatStateOf(0f) }
 
-    val nestedScrollConnection = remember {
+    val nestedScrollConnection = remember(maxOffsetPx) {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
                 val delta = available.y

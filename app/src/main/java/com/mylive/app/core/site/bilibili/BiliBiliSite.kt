@@ -7,7 +7,6 @@ import com.mylive.app.core.model.DanmakuArgs
 import com.mylive.app.core.model.LiveAnchorItem
 import com.mylive.app.core.model.LiveCategory
 import com.mylive.app.core.model.LiveCategoryResult
-import com.mylive.app.core.model.LiveContributionRankItem
 import com.mylive.app.core.model.LivePlayQuality
 import com.mylive.app.core.model.LivePlayUrl
 import com.mylive.app.core.model.LiveRoomDetail
@@ -220,8 +219,11 @@ class BiliBiliSite @Inject constructor(
         quality: LivePlayQuality
     ): LivePlayUrl {
         val qualityId = (quality.data as PlayQualityData.BiliBili).qualityId
-        val urls = mutableListOf<String>()
-        try {
+        val headers = mapOf(
+            "referer" to "https://live.bilibili.com",
+            "user-agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36 Edg/115.0.1901.188"
+        )
+        return try {
             val result = httpClient.getJson(
                 "https://api.live.bilibili.com/xlive/web-room/v2/index/getRoomPlayInfo",
                 queryParameters = mapOf(
@@ -234,45 +236,18 @@ class BiliBiliSite @Inject constructor(
                 ),
                 header = getHeader()
             ) as JSONObject
-            val streamList = result.optJSONObject("data")
+            val playurlData = result.optJSONObject("data")
                 ?.optJSONObject("playurl_info")
                 ?.optJSONObject("playurl")
-                ?.optJSONArray("stream") ?: return LivePlayUrl(urls = urls, headers = emptyMap())
-            for (i in 0 until streamList.length()) {
-                val streamItem = streamList.optJSONObject(i) ?: continue
-                val formatList = streamItem.optJSONArray("format") ?: continue
-                for (j in 0 until formatList.length()) {
-                    val formatItem = formatList.optJSONObject(j) ?: continue
-                    val codecList = formatItem.optJSONArray("codec") ?: continue
-                    for (k in 0 until codecList.length()) {
-                        val codecItem = codecList.optJSONObject(k) ?: continue
-                        val urlList = codecItem.optJSONArray("url_info") ?: continue
-                        val baseUrl = codecItem.optString("base_url")
-                        for (l in 0 until urlList.length()) {
-                            val urlItem = urlList.optJSONObject(l) ?: continue
-                            urls.add("${urlItem.optString("host")}$baseUrl${urlItem.optString("extra")}")
-                        }
-                    }
-                }
-            }
+                ?: return LivePlayUrl(urls = emptyList(), headers = headers)
+            parseBiliBiliPlayback(
+                playurlData = playurlData,
+                requestedQuality = quality
+            ).copy(headers = headers)
         } catch (e: Exception) {
             CoreLog.e("BiliBili getPlayUrls failed", e)
+            LivePlayUrl(urls = emptyList(), headers = headers)
         }
-        // Sort: mcdn URLs last
-        urls.sortWith(Comparator { a, b ->
-            when {
-                a.contains("mcdn") && !b.contains("mcdn") -> 1
-                !a.contains("mcdn") && b.contains("mcdn") -> -1
-                else -> 0
-            }
-        })
-        return LivePlayUrl(
-            urls = urls,
-            headers = mapOf(
-                "referer" to "https://live.bilibili.com",
-                "user-agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36 Edg/115.0.1901.188"
-            )
-        )
     }
 
     override suspend fun getRecommendRooms(page: Int): LiveCategoryResult {
@@ -557,76 +532,6 @@ class BiliBiliSite @Inject constructor(
             }
         }
         return ls
-    }
-
-    override suspend fun getContributionRank(
-        roomId: String,
-        detail: LiveRoomDetail?
-    ): List<LiveContributionRankItem> {
-        val roomInfo = getRoomInfo(roomId)
-        val roomRankItems = roomInfo.optJSONObject("room_rank_info")
-            ?.optJSONObject("user_rank_entry")
-            ?.optJSONObject("user_contribution_rank_entry")
-            ?.optJSONArray("item")
-        if (roomRankItems != null && roomRankItems.length() > 0) {
-            return (0 until roomRankItems.length()).map { i ->
-                mapContributionRankItem(roomRankItems.getJSONObject(i))
-            }
-        }
-
-        val roomData = roomInfo.optJSONObject("room_info")
-        val uid = roomData?.optStringValue("uid") ?: ""
-        val realRoomId = roomData?.optStringValue("room_id", roomId) ?: roomId
-        if (uid.isEmpty()) {
-            return emptyList()
-        }
-
-        val result = httpClient.getJson(
-            "https://api.live.bilibili.com/xlive/general-interface/v1/rank/queryContributionRank",
-            queryParameters = mapOf(
-                "ruid" to uid,
-                "room_id" to realRoomId,
-                "page" to "1",
-                "page_size" to "50"
-            ),
-            header = getHeader()
-        ) as JSONObject
-        val items = result.optJSONObject("data")?.optJSONArray("item")
-        if (items != null) {
-            return (0 until items.length()).map { i ->
-                mapContributionRankItem(items.getJSONObject(i))
-            }
-        }
-        return emptyList()
-    }
-
-    private fun mapContributionRankItem(item: JSONObject): LiveContributionRankItem {
-        val medalInfo = item.optJSONObject("medal_info")
-            ?: item.optJSONObject("uinfo")?.optJSONObject("medal")
-        val wealthLevelRaw = item.opt("wealth_level")
-            ?: item.optJSONObject("uinfo")?.optJSONObject("wealth")?.opt("level")
-        val wealthLevel = wealthLevelRaw?.takeIf { it != JSONObject.NULL }?.toString()?.toIntOrNull()
-        val guardLevel = item.optStringValue("guard_level").toIntOrNull() ?: 0
-
-        return LiveContributionRankItem(
-            rank = item.optStringValue("rank").toIntOrNull() ?: 0,
-            userName = item.optNullableStringValue("name")
-                ?: item.optJSONObject("uinfo")?.optJSONObject("base")?.optNullableStringValue("name")
-                ?: "",
-            avatar = item.optNullableStringValue("face")
-                ?: item.optJSONObject("uinfo")?.optJSONObject("base")?.optNullableStringValue("face")
-                ?: "",
-            scoreText = item.optStringValue("score", "0"),
-            userLevel = wealthLevel,
-            userLevelText = if (wealthLevel == null || wealthLevel <= 0) null else "财富 $wealthLevel",
-            fansLevel = (medalInfo?.opt("level") ?: medalInfo?.opt("medal_level"))
-                ?.takeIf { it != JSONObject.NULL }
-                ?.toString()
-                ?.toIntOrNull(),
-            fansName = medalInfo?.optNullableStringValue("name")
-                ?: medalInfo?.optNullableStringValue("medal_name"),
-            scoreDetail = if (guardLevel > 0) "舰队 $guardLevel" else null
-        )
     }
 
     /**

@@ -18,8 +18,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mylive.app.ui.navigation.Navigator
-import com.mylive.app.ui.navigation.Route
 import com.mylive.app.R
 import com.mylive.app.core.common.CoreLog
 
@@ -27,18 +27,8 @@ import com.mylive.app.core.common.CoreLog
 @Composable
 fun DebugLogScreen(navigator: Navigator) {
     val context = LocalContext.current
-    var logs by remember { mutableStateOf(emptyList<CoreLog.LogEntry>()) }
+    val logs by CoreLog.entries.collectAsStateWithLifecycle()
     var isExiting by remember { mutableStateOf(false) }
-
-    val refreshLogs = {
-        synchronized(CoreLog.logHistory) {
-            logs = ArrayList(CoreLog.logHistory)
-        }
-    }
-
-    LaunchedEffect(Unit) {
-        refreshLogs()
-    }
 
     val handleBack: () -> Unit = {
         if (!isExiting) {
@@ -82,8 +72,7 @@ fun DebugLogScreen(navigator: Navigator) {
                     }
                     IconButton(
                         onClick = {
-                            CoreLog.logHistory.clear()
-                            refreshLogs()
+                            CoreLog.clear()
                         }
                     ) {
                         Icon(Icons.Default.ClearAll, contentDescription = "清空")

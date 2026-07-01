@@ -3,6 +3,7 @@ package com.mylive.app.ui.screen.settings
 import android.annotation.SuppressLint
 import android.webkit.CookieManager
 import android.webkit.WebResourceRequest
+import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
@@ -44,7 +45,7 @@ fun DouyinWebLoginScreen(
     val context = LocalContext.current
     var isExiting by remember { mutableStateOf(false) }
     var webViewInstance by remember { mutableStateOf<WebView?>(null) }
-    var progressVal by remember { mutableStateOf(0f) }
+    var progressVal by remember { mutableFloatStateOf(0f) }
 
     val handleBack: () -> Unit = {
         if (!isExiting) {
@@ -163,6 +164,9 @@ fun DouyinWebLoginScreen(
                         settings.domStorageEnabled = true
                         settings.useWideViewPort = true
                         settings.loadWithOverviewMode = true
+                        settings.allowFileAccess = false
+                        settings.allowContentAccess = false
+                        settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
 
                         // Use Desktop User-Agent to prevent app redirection and show web login QR code correctly
                         settings.userAgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 Edg/125.0.0.0"
@@ -172,6 +176,8 @@ fun DouyinWebLoginScreen(
                                 view: WebView?,
                                 request: WebResourceRequest?
                             ): Boolean {
+                                val url = request?.url ?: return true
+                                if (!isSafeLoginWebUrl(url)) return true
                                 return false
                             }
 

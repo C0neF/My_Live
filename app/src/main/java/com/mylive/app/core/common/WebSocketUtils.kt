@@ -40,15 +40,21 @@ class WebSocketUtils(
     private val client: OkHttpClient
 ) {
 
+    @Volatile
     var status: SocketStatus = SocketStatus.CLOSED
         private set
 
+    @Volatile
     private var webSocket: WebSocket? = null
+    @Volatile
     private var heartBeatTimer: Timer? = null
+    @Volatile
     private var reconnectTimer: Timer? = null
+    @Volatile
     private var reconnectTime: Int = 0
     private var maxReconnectTime: Int = 5
     private var currentUrlIndex: Int = 0
+    @Volatile
     private var intentionalClose: Boolean = true
 
     // Cached parameters for reconnect
@@ -199,7 +205,7 @@ class WebSocketUtils(
     private fun initHeartBeat() {
         heartBeatTimer?.cancel()
         heartBeatTimer = Timer("ws-heartbeat", true).apply {
-            scheduleAtFixedRate(object : TimerTask() {
+            schedule(object : TimerTask() {
                 override fun run() {
                     callbackHeartBeat?.invoke()
                 }

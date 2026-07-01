@@ -23,4 +23,30 @@ class FollowRefreshPolicyTest {
         assertTrue(source.contains("BackToTopButton("))
         assertTrue(source.contains("onRevealBottomBar()"))
     }
+
+    @Test
+    fun followViewModelSkipsConcurrentStatusRefreshes() {
+        val source = File("src/main/java/com/mylive/app/ui/screen/follow/FollowViewModel.kt").readText()
+
+        assertTrue(source.contains("private var updateJob: Job? = null"))
+        assertTrue(source.contains("if (updateJob?.isActive == true) return"))
+        assertTrue(source.contains("updateJob = viewModelScope.launch"))
+    }
+
+    @Test
+    fun followViewModelDerivedFlowsReuseSharedRoomSubscriptions() {
+        val source = File("src/main/java/com/mylive/app/ui/screen/follow/FollowViewModel.kt").readText()
+        val normalized = source.replace(Regex("\\s+"), " ")
+
+        assertTrue(normalized.contains("combine( groupMode, follows, userTags )"))
+        assertTrue(normalized.contains("combine( follows, groupMode, selectedGroupId, groupOptions, userTags )"))
+    }
+
+    @Test
+    fun followViewModelTagEditsDoNotReadFollowsInsideUserLoops() {
+        val source = File("src/main/java/com/mylive/app/ui/screen/follow/FollowViewModel.kt").readText()
+
+        assertTrue(source.contains("val followsById = followRepository.getAllFollows().first().associateBy { it.id }"))
+        assertFalse(source.contains("for (userId in tag.userIds) {\n                val follow = followRepository.getAllFollows().first()"))
+    }
 }

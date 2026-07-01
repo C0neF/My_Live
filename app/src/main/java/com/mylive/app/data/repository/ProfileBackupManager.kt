@@ -1,6 +1,7 @@
 package com.mylive.app.data.repository
 
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.MutablePreferences
 import com.mylive.app.data.local.datastore.SettingsDataStore
 import com.mylive.app.data.local.entity.FollowUserEntity
 import com.mylive.app.data.local.entity.FollowUserTagEntity
@@ -32,15 +33,12 @@ class ProfileBackupManager @Inject constructor(
         SettingsDataStore.DouyinCookie.name,
         SettingsDataStore.EncryptedBilibiliCookie.name,
         SettingsDataStore.EncryptedDouyinCookie.name,
-        SettingsDataStore.BilibiliLoginTip.name,
         SettingsDataStore.WebDAVUri.name,
         SettingsDataStore.WebDAVUser.name,
         SettingsDataStore.kWebDAVPassword.name,
         SettingsDataStore.EncryptedWebDAVPassword.name,
         SettingsDataStore.kWebDAVLastUploadTime.name,
-        SettingsDataStore.kWebDAVLastRecoverTime.name,
-        SettingsDataStore.LastLiveRoom.name,
-        SettingsDataStore.LastLiveRoomResumePending.name
+        SettingsDataStore.kWebDAVLastRecoverTime.name
     )
 
     /**
@@ -55,7 +53,6 @@ class ProfileBackupManager @Inject constructor(
     )
 
     private val settingEntries = listOf(
-        bool(SettingsDataStore.FirstRun, false),
         int(SettingsDataStore.ThemeMode, 0),
         bool(SettingsDataStore.DebugMode, false),
         bool(SettingsDataStore.LogEnable, false),
@@ -63,7 +60,6 @@ class ProfileBackupManager @Inject constructor(
         bool(SettingsDataStore.kIsDynamic, false),
         string(SettingsDataStore.SiteSort, "bilibili,douyu,huya,douyin"),
         string(SettingsDataStore.HomeSort, "recommend,follow,category,user"),
-        string(SettingsDataStore.LiveRoomTabSort, "chat,super_chat,follow,settings"),
         string(SettingsDataStore.LiveRoomQuickAccessSort, "follow,history,recommendation"),
         bool(SettingsDataStore.LiveRoomQuickAccessEnabled, true),
         bool(SettingsDataStore.DanmuEnable, true),
@@ -96,51 +92,32 @@ class ProfileBackupManager @Inject constructor(
         bool(SettingsDataStore.PlayerCompatMode, false),
         bool(SettingsDataStore.PlayerAutoPause, false),
         bool(SettingsDataStore.AllowBackgroundPlayback, false),
-        int(SettingsDataStore.PlayerBufferSize, 0),
         bool(SettingsDataStore.PlayerForceHttps, false),
-        double(SettingsDataStore.PlayerVolume, 1.0),
         bool(SettingsDataStore.AutoFullScreen, false),
         bool(SettingsDataStore.AutoPipOnExit, false),
-        bool(SettingsDataStore.CustomPlayerOutput, false),
-        string(SettingsDataStore.VideoOutputDriver, ""),
-        string(SettingsDataStore.VideoHardwareDecoder, ""),
-        string(SettingsDataStore.AudioOutputDriver, ""),
         bool(SettingsDataStore.AutoExitEnable, false),
         int(SettingsDataStore.AutoExitDuration, 60),
-        int(SettingsDataStore.RoomAutoExitDuration, 60),
+        int(SettingsDataStore.RoomAutoExitDuration, 0),
         double(SettingsDataStore.ChatTextSize, 14.0),
         double(SettingsDataStore.ChatTextGap, 4.0),
         bool(SettingsDataStore.ChatBubbleStyle, false),
-        bool(SettingsDataStore.ContributionRankEnable, true),
         bool(SettingsDataStore.PIPHideDanmu, false),
-        bool(SettingsDataStore.PIPHideDanmuDefaultMigrated, false),
         bool(SettingsDataStore.SuperChatSortDesc, false),
         bool(SettingsDataStore.AutoUpdateFollowEnable, true),
         int(SettingsDataStore.AutoUpdateFollowDuration, 60),
         int(SettingsDataStore.UpdateFollowThreadCount, 8),
         string(SettingsDataStore.UserRemarks, ""),
         string(SettingsDataStore.SyncServerUrl, ""),
-        string(SettingsDataStore.SyncProxyUrl, ""),
-        bool(SettingsDataStore.LiveSubtitleEnable, false),
-        string(SettingsDataStore.LiveSubtitleModelPath, ""),
-        string(SettingsDataStore.LiveSubtitleLanguage, ""),
-        double(SettingsDataStore.LiveSubtitleFontSize, 16.0),
-        int(SettingsDataStore.LiveSubtitlePosition, 0),
-        double(SettingsDataStore.LiveSubtitleOffsetX, 0.0),
-        double(SettingsDataStore.LiveSubtitleOffsetY, 0.0),
-        int(SettingsDataStore.LiveSubtitleColor, -1),
-        int(SettingsDataStore.LiveSubtitleFontWeight, 4),
-        bool(SettingsDataStore.LiveSubtitleBackgroundEnable, false),
-        bool(SettingsDataStore.LiveSubtitlePositionLocked, false),
-        bool(SettingsDataStore.LiveSubtitleStartupGuard, false)
+        string(SettingsDataStore.SyncProxyUrl, "")
     ).filterNot { it.name in excludedKeys }
 
     private val settingEntriesByName = settingEntries.associateBy { it.name }
 
     suspend fun exportProfileJson(): String {
+        val preferences = settingsDataStore.preferencesFlow().first()
         val settings = JSONObject()
         settingEntries.forEach { entry ->
-            settings.put(entry.name, entry.read(settingsDataStore))
+            settings.put(entry.name, entry.read(preferences))
         }
 
         val follows = followRepository.getAllFollows().first()
@@ -260,76 +237,88 @@ class ProfileBackupManager @Inject constructor(
 
     private suspend fun importSettings(settings: JSONObject, trusted: Boolean) {
         val excluded = if (trusted) excludedKeys else untrustedExcludedKeys
-        settings.keys().forEach { key ->
-            if (key in excluded) return@forEach
-            val entry = settingEntriesByName[key] ?: return@forEach
-            val value = settings.opt(key)
-            entry.write(settingsDataStore, unwrapLegacyValue(value))
+        settingsDataStore.edit { preferences ->
+            settings.keys().forEach { key ->
+                if (key in excluded) return@forEach
+                val entry = settingEntriesByName[key] ?: return@forEach
+                val value = settings.opt(key)
+                entry.write(preferences, unwrapLegacyValue(value))
+            }
         }
     }
 
     private suspend fun importFollowUsers(array: JSONArray) {
-        for (index in 0 until array.length()) {
-            val item = array.optJSONObject(index) ?: continue
-            val siteId = item.optString("siteId", item.optString("site", ""))
-            val roomId = item.optString("roomId", item.optString("room", ""))
-            val id = item.optString("id", "${siteId}_${roomId}")
-            if (id.isBlank() || siteId.isBlank() || roomId.isBlank()) continue
+        val follows = buildList {
+            for (index in 0 until array.length()) {
+                val item = array.optJSONObject(index) ?: continue
+                val siteId = item.optString("siteId", item.optString("site", ""))
+                val roomId = item.optString("roomId", item.optString("room", ""))
+                val id = item.optString("id", "${siteId}_${roomId}")
+                if (id.isBlank() || siteId.isBlank() || roomId.isBlank()) continue
 
-            followRepository.addFollow(
-                FollowUserEntity(
-                    id = id,
-                    roomId = roomId,
-                    siteId = siteId,
-                    userName = item.optString("userName", item.optString("name", "")),
-                    face = item.optString("face", item.optString("avatar", "")),
-                    addTime = item.optTimestampMillis("addTime", System.currentTimeMillis()),
-                    tag = item.optString("tag", ""),
-                    isSpecialFollow = item.optBoolean("isSpecialFollow", false),
-                    liveStatus = item.optInt("liveStatus", 0),
-                    liveStartTime = item.optNullableLong("liveStartTime")
+                add(
+                    FollowUserEntity(
+                        id = id,
+                        roomId = roomId,
+                        siteId = siteId,
+                        userName = item.optString("userName", item.optString("name", "")),
+                        face = item.optString("face", item.optString("avatar", "")),
+                        addTime = item.optTimestampMillis("addTime", System.currentTimeMillis()),
+                        tag = item.optString("tag", ""),
+                        isSpecialFollow = item.optBoolean("isSpecialFollow", false),
+                        liveStatus = item.optInt("liveStatus", 0),
+                        liveStartTime = item.optNullableLong("liveStartTime"),
+                        showTime = item.optNullableString("showTime")
+                    )
                 )
-            )
+            }
         }
+        followRepository.addFollows(follows)
     }
 
     private suspend fun importFollowUserTags(array: JSONArray) {
-        for (index in 0 until array.length()) {
-            val item = array.optJSONObject(index) ?: continue
-            val tag = item.optString("tag", item.optString("name", ""))
-            if (tag.isBlank()) continue
-            val id = item.optString("id", UUID.randomUUID().toString()).ifBlank {
-                UUID.randomUUID().toString()
-            }
-            followRepository.addTag(
-                FollowUserTagEntity(
-                    id = id,
-                    tag = tag,
-                    userIds = (item.optJSONArray("userIds") ?: item.optJSONArray("userId")).toStringList()
+        val tags = buildList {
+            for (index in 0 until array.length()) {
+                val item = array.optJSONObject(index) ?: continue
+                val tag = item.optString("tag", item.optString("name", ""))
+                if (tag.isBlank()) continue
+                val id = item.optString("id", UUID.randomUUID().toString()).ifBlank {
+                    UUID.randomUUID().toString()
+                }
+                add(
+                    FollowUserTagEntity(
+                        id = id,
+                        tag = tag,
+                        userIds = (item.optJSONArray("userIds") ?: item.optJSONArray("userId")).toStringList()
+                    )
                 )
-            )
+            }
         }
+        followRepository.addTags(tags)
     }
 
     private suspend fun importHistories(array: JSONArray) {
-        for (index in 0 until array.length()) {
-            val item = array.optJSONObject(index) ?: continue
-            val siteId = item.optString("siteId", item.optString("site", ""))
-            val roomId = item.optString("roomId", item.optString("room", ""))
-            val id = item.optString("id", "${siteId}_${roomId}")
-            if (id.isBlank() || siteId.isBlank() || roomId.isBlank()) continue
+        val histories = buildList {
+            for (index in 0 until array.length()) {
+                val item = array.optJSONObject(index) ?: continue
+                val siteId = item.optString("siteId", item.optString("site", ""))
+                val roomId = item.optString("roomId", item.optString("room", ""))
+                val id = item.optString("id", "${siteId}_${roomId}")
+                if (id.isBlank() || siteId.isBlank() || roomId.isBlank()) continue
 
-            historyRepository.addHistory(
-                HistoryEntity(
-                    id = id,
-                    roomId = roomId,
-                    siteId = siteId,
-                    userName = item.optString("userName", item.optString("name", "")),
-                    face = item.optString("face", item.optString("avatar", "")),
-                    updateTime = item.optTimestampMillis("updateTime", System.currentTimeMillis())
+                add(
+                    HistoryEntity(
+                        id = id,
+                        roomId = roomId,
+                        siteId = siteId,
+                        userName = item.optString("userName", item.optString("name", "")),
+                        face = item.optString("face", item.optString("avatar", "")),
+                        updateTime = item.optTimestampMillis("updateTime", System.currentTimeMillis())
+                    )
                 )
-            )
+            }
         }
+        historyRepository.addHistories(histories)
     }
 
     private suspend fun importShieldPayload(payload: Any?) {
@@ -356,45 +345,54 @@ class ProfileBackupManager @Inject constructor(
 
     private suspend fun importShields(array: JSONArray) {
         val existingValues = shieldRepository.getAllShields().first().mapTo(mutableSetOf()) { it.value }
-        for (index in 0 until array.length()) {
-            val value = when (val item = array.opt(index)) {
-                is JSONObject -> item.optString(
-                    "value",
-                    item.optString("keyword", item.optString("text", ""))
-                )
-                is String -> item
-                else -> item?.toString() ?: ""
+        val shields = buildList {
+            for (index in 0 until array.length()) {
+                val value = when (val item = array.opt(index)) {
+                    is JSONObject -> item.optString(
+                        "value",
+                        item.optString("keyword", item.optString("text", ""))
+                    )
+                    is String -> item
+                    else -> item?.toString() ?: ""
+                }
+                if (value.isBlank() || !existingValues.add(value)) continue
+                add(ShieldEntity(value = value))
             }
-            if (value.isBlank() || !existingValues.add(value)) continue
-            shieldRepository.addShield(ShieldEntity(value = value))
         }
+        shieldRepository.addShields(shields)
     }
 
     private suspend fun importShieldValues(array: JSONArray?, prefix: String) {
         if (array == null) return
         val existingValues = shieldRepository.getAllShields().first().mapTo(mutableSetOf()) { it.value }
-        for (index in 0 until array.length()) {
-            val raw = array.optString(index, "").trim()
-            if (raw.isBlank()) continue
-            val value = if (raw.startsWith("keyword:") || raw.startsWith("user:")) raw else "$prefix$raw"
-            if (existingValues.add(value)) {
-                shieldRepository.addShield(ShieldEntity(value = value))
+        val shields = buildList {
+            for (index in 0 until array.length()) {
+                val raw = array.optString(index, "").trim()
+                if (raw.isBlank()) continue
+                val value = if (raw.startsWith("keyword:") || raw.startsWith("user:")) raw else "$prefix$raw"
+                if (existingValues.add(value)) {
+                    add(ShieldEntity(value = value))
+                }
             }
         }
+        shieldRepository.addShields(shields)
     }
 
     private suspend fun importShieldPresets(array: JSONArray) {
-        for (index in 0 until array.length()) {
-            val item = array.optJSONObject(index) ?: continue
-            val name = item.optString("name", "")
-            if (name.isBlank()) continue
-            shieldRepository.addPreset(
-                ShieldPresetEntity(
-                    name = name,
-                    value = item.optString("value", "")
+        val presets = buildList {
+            for (index in 0 until array.length()) {
+                val item = array.optJSONObject(index) ?: continue
+                val name = item.optString("name", "")
+                if (name.isBlank()) continue
+                add(
+                    ShieldPresetEntity(
+                        name = name,
+                        value = item.optString("value", "")
+                    )
                 )
-            )
+            }
         }
+        shieldRepository.addPresets(presets)
     }
 
     private fun JSONObject.containsKnownSettings(): Boolean {
@@ -423,6 +421,7 @@ class ProfileBackupManager @Inject constructor(
         .put("isSpecialFollow", isSpecialFollow)
         .put("liveStatus", liveStatus)
         .put("liveStartTime", liveStartTime ?: JSONObject.NULL)
+        .put("showTime", showTime ?: JSONObject.NULL)
 
     private fun FollowUserTagEntity.toJson(): JSONObject = JSONObject()
         .put("id", id)
@@ -460,6 +459,11 @@ class ProfileBackupManager @Inject constructor(
         return optLong(key)
     }
 
+    private fun JSONObject.optNullableString(key: String): String? {
+        if (!has(key) || isNull(key)) return null
+        return optString(key).takeIf { it.isNotEmpty() }
+    }
+
     private fun JSONObject.optTimestampMillis(key: String, defaultValue: Long): Long {
         if (!has(key) || isNull(key)) return defaultValue
         return when (val value = opt(key)) {
@@ -474,30 +478,27 @@ class ProfileBackupManager @Inject constructor(
         return SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
     }
 
-    private sealed class SettingEntry<T>(
+    private sealed class SettingEntry<T : Any>(
         val key: Preferences.Key<T>,
         val defaultValue: T
     ) {
         val name: String get() = key.name
-        abstract suspend fun read(settingsDataStore: SettingsDataStore): Any
-        abstract suspend fun write(settingsDataStore: SettingsDataStore, value: Any?)
+        fun read(preferences: Preferences): Any = preferences[key] ?: defaultValue
+        abstract fun write(preferences: MutablePreferences, value: Any?)
     }
 
     private class BooleanSettingEntry(
         key: Preferences.Key<Boolean>,
         defaultValue: Boolean
     ) : SettingEntry<Boolean>(key, defaultValue) {
-        override suspend fun read(settingsDataStore: SettingsDataStore): Any =
-            settingsDataStore.getFlow(key, defaultValue).first()
-
-        override suspend fun write(settingsDataStore: SettingsDataStore, value: Any?) {
+        override fun write(preferences: MutablePreferences, value: Any?) {
             val parsed = when (value) {
                 is Boolean -> value
                 is Number -> value.toInt() != 0
                 is String -> value.toBooleanStrictOrNull()
                 else -> null
             } ?: return
-            settingsDataStore.setValue(key, parsed)
+            preferences[key] = parsed
         }
     }
 
@@ -505,16 +506,13 @@ class ProfileBackupManager @Inject constructor(
         key: Preferences.Key<Int>,
         defaultValue: Int
     ) : SettingEntry<Int>(key, defaultValue) {
-        override suspend fun read(settingsDataStore: SettingsDataStore): Any =
-            settingsDataStore.getFlow(key, defaultValue).first()
-
-        override suspend fun write(settingsDataStore: SettingsDataStore, value: Any?) {
+        override fun write(preferences: MutablePreferences, value: Any?) {
             val parsed = when (value) {
                 is Number -> value.toInt()
                 is String -> value.toIntOrNull()
                 else -> null
             } ?: return
-            settingsDataStore.setValue(key, parsed)
+            preferences[key] = parsed
         }
     }
 
@@ -522,16 +520,13 @@ class ProfileBackupManager @Inject constructor(
         key: Preferences.Key<Double>,
         defaultValue: Double
     ) : SettingEntry<Double>(key, defaultValue) {
-        override suspend fun read(settingsDataStore: SettingsDataStore): Any =
-            settingsDataStore.getFlow(key, defaultValue).first()
-
-        override suspend fun write(settingsDataStore: SettingsDataStore, value: Any?) {
+        override fun write(preferences: MutablePreferences, value: Any?) {
             val parsed = when (value) {
                 is Number -> value.toDouble()
                 is String -> value.toDoubleOrNull()
                 else -> null
             } ?: return
-            settingsDataStore.setValue(key, parsed)
+            preferences[key] = parsed
         }
     }
 
@@ -539,12 +534,9 @@ class ProfileBackupManager @Inject constructor(
         key: Preferences.Key<String>,
         defaultValue: String
     ) : SettingEntry<String>(key, defaultValue) {
-        override suspend fun read(settingsDataStore: SettingsDataStore): Any =
-            settingsDataStore.getFlow(key, defaultValue).first()
-
-        override suspend fun write(settingsDataStore: SettingsDataStore, value: Any?) {
+        override fun write(preferences: MutablePreferences, value: Any?) {
             if (value == null || value == JSONObject.NULL) return
-            settingsDataStore.setValue(key, value.toString())
+            preferences[key] = value.toString()
         }
     }
 

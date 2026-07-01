@@ -2,6 +2,7 @@ package com.mylive.app.ui.screen.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.mylive.app.BuildConfig
 import com.mylive.app.update.AppUpdateInfo
 import com.mylive.app.update.AppUpdateRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -29,6 +30,7 @@ class AppUpdateViewModel @Inject constructor(
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(AppUpdateUiState())
     val uiState: StateFlow<AppUpdateUiState> = _uiState.asStateFlow()
+    private val updateChannelName = "v${BuildConfig.VERSION_NAME.substringBefore('.')} 稳定版"
 
     fun checkForUpdate() {
         if (_uiState.value.checking) return
@@ -47,7 +49,7 @@ class AppUpdateViewModel @Inject constructor(
                         it.copy(
                             checking = false,
                             updateInfo = update,
-                            message = if (update == null) "当前已是最新版本" else null,
+                            message = if (update == null) "当前已是最新的 $updateChannelName" else null,
                             error = null
                         )
                     }

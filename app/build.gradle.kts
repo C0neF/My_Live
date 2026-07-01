@@ -95,6 +95,31 @@ kotlin {
 
 // Jacoco code coverage configuration
 tasks.withType<Test>().configureEach {
+    providers.environmentVariable("MYLIVE_TEST_ENV_DIR").orNull
+        ?.takeIf { it.isNotBlank() }
+        ?.let { rootPath ->
+            val testEnvironmentRoot = file(rootPath)
+            val testUserHome = testEnvironmentRoot.resolve("home")
+            val testTempDir = testEnvironmentRoot.resolve("tmp")
+            systemProperty("user.home", testUserHome.absolutePath)
+            systemProperty("java.io.tmpdir", testTempDir.absolutePath)
+            jvmArgs("-Djava.io.tmpdir=${testTempDir.absolutePath}")
+            environment("TEMP", testTempDir.absolutePath)
+            environment("TMP", testTempDir.absolutePath)
+            doFirst {
+                testUserHome.mkdirs()
+                testTempDir.mkdirs()
+            }
+        }
+
+    providers.environmentVariable("MYLIVE_TEST_M2_REPO").orNull
+        ?.takeIf { it.isNotBlank() }
+        ?.let { repoPath ->
+            val testMavenRepo = file(repoPath)
+            systemProperty("maven.repo.local", testMavenRepo.absolutePath)
+            jvmArgs("-Dmaven.repo.local=${testMavenRepo.absolutePath}")
+        }
+
     extensions.configure(JacocoTaskExtension::class) {
         isEnabled = true
     }

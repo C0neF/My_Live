@@ -48,6 +48,7 @@ class HuyaDanmaku(
         webSocketUtils.connect(
             url = serverUrl,
             heartBeatTime = heartbeatTime.toLong(),
+            idleTimeoutMillis = heartbeatTime.toLong() * 3,
             onMessage = { e ->
                 when (e) {
                     is ByteArray -> decodeMessage(e)

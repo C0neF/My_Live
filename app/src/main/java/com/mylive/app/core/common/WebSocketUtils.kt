@@ -62,12 +62,15 @@ class WebSocketUtils(
     private var connectBackupUrl: String? = null
     private var connectBackupUrls: List<String> = emptyList()
     private var connectHeartBeatTime: Long = 30_000L
+    private var connectIdleTimeoutMillis: Long? = null
     private var connectHeaders: Map<String, String>? = null
     private var callbackMessage: ((Any) -> Unit)? = null
     private var callbackClose: ((String) -> Unit)? = null
     private var callbackReconnect: (() -> Unit)? = null
     private var callbackReady: (() -> Unit)? = null
     private var callbackHeartBeat: (() -> Unit)? = null
+    @Volatile
+    private var lastMessageAtMillis: Long = 0L
 
     /**
      * Build the ordered list of URLs to try: primary + backup(s), deduplicated.
@@ -89,6 +92,7 @@ class WebSocketUtils(
      * @param backupUrl Optional backup URL
      * @param backupUrls Optional list of additional backup URLs
      * @param heartBeatTime Heartbeat interval in milliseconds
+     * @param idleTimeoutMillis Optional timeout for connections that stay open but stop receiving messages
      * @param headers Optional request headers
      * @param onMessage Callback when a message is received
      * @param onClose Callback when connection is closed
@@ -101,6 +105,7 @@ class WebSocketUtils(
         backupUrl: String? = null,
         backupUrls: List<String> = emptyList(),
         heartBeatTime: Long = 30_000L,
+        idleTimeoutMillis: Long? = null,
         headers: Map<String, String>? = null,
         onMessage: ((Any) -> Unit)? = null,
         onClose: ((String) -> Unit)? = null,
@@ -113,6 +118,7 @@ class WebSocketUtils(
         this.connectBackupUrl = backupUrl
         this.connectBackupUrls = backupUrls
         this.connectHeartBeatTime = heartBeatTime
+        this.connectIdleTimeoutMillis = idleTimeoutMillis
         this.connectHeaders = headers
         this.callbackMessage = onMessage
         this.callbackClose = onClose
@@ -191,6 +197,7 @@ class WebSocketUtils(
     private fun onReady() {
         status = SocketStatus.CONNECTED
         currentUrlIndex = 0
+        lastMessageAtMillis = System.currentTimeMillis()
         // Cancel reconnect timer on successful connection to prevent repeated reconnect attempts
         reconnectTimer?.cancel()
         reconnectTimer = null
@@ -207,6 +214,14 @@ class WebSocketUtils(
         heartBeatTimer = Timer("ws-heartbeat", true).apply {
             schedule(object : TimerTask() {
                 override fun run() {
+                    val idleTimeout = connectIdleTimeoutMillis
+                    if (idleTimeout != null && idleTimeout > 0 && status == SocketStatus.CONNECTED) {
+                        val idleFor = System.currentTimeMillis() - lastMessageAtMillis
+                        if (idleFor >= idleTimeout) {
+                            onIdleTimeout()
+                            return
+                        }
+                    }
                     callbackHeartBeat?.invoke()
                 }
             }, connectHeartBeatTime, connectHeartBeatTime)
@@ -217,8 +232,24 @@ class WebSocketUtils(
      * Called when a message is received. Resets reconnect counter on first message.
      */
     private fun receiveMessage(data: Any) {
+        lastMessageAtMillis = System.currentTimeMillis()
         reconnectTime = 0
         callbackMessage?.invoke(data)
+    }
+
+    /**
+     * A silent-but-open socket is recoverable and should not be surfaced as a
+     * terminal close to the UI. Recreate it immediately so streams can resume.
+     */
+    private fun onIdleTimeout() {
+        if (intentionalClose) return
+        heartBeatTimer?.cancel()
+        heartBeatTimer = null
+        status = SocketStatus.FAILED
+        webSocket?.cancel()
+        webSocket = null
+        callbackReconnect?.invoke()
+        doConnect(retry = true)
     }
 
     /**

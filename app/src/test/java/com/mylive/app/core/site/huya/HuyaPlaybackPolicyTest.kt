@@ -33,6 +33,16 @@ class HuyaPlaybackPolicyTest {
     }
 
     @Test
+    fun huyaDanmakuUsesIdleTimeoutForSilentWebSocket() {
+        val source = File("src/main/java/com/mylive/app/core/site/huya/HuyaDanmaku.kt").readText()
+
+        assertTrue(
+            "Huya danmaku must reconnect when the WebSocket stays open but no messages arrive",
+            source.contains("idleTimeoutMillis = heartbeatTime.toLong() * 3")
+        )
+    }
+
+    @Test
     fun antiCodeForLargePresenterUidDoesNotCollapseToZero() {
         val okHttpClient = OkHttpClient()
         val site = HuyaSite(HttpClient(okHttpClient), okHttpClient)

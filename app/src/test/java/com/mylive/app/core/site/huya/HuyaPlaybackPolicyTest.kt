@@ -43,6 +43,22 @@ class HuyaPlaybackPolicyTest {
     }
 
     @Test
+    fun huyaDanmakuAyyuidPreservesUnsignedIntRange() {
+        val siteSource = File("src/main/java/com/mylive/app/core/site/huya/HuyaSite.kt").readText()
+        val modelSource = File("src/main/java/com/mylive/app/core/model/SiteSpecificData.kt").readText()
+
+        assertTrue(
+            "Huya lYyid often exceeds Int.MAX_VALUE and must not overflow before join-room encoding",
+            modelSource.contains("val ayyuid: Long")
+        )
+        assertTrue(
+            "Huya lYyid must be parsed as Long, not via JSONObject.optInt",
+            siteSource.contains("""val ayyuid = asPositiveLong(tLiveInfo.opt("lYyid"))""")
+        )
+        assertFalse(siteSource.contains("optInt(\"lYyid\""))
+    }
+
+    @Test
     fun antiCodeForLargePresenterUidDoesNotCollapseToZero() {
         val okHttpClient = OkHttpClient()
         val site = HuyaSite(HttpClient(okHttpClient), okHttpClient)

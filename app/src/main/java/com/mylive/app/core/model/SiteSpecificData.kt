@@ -26,7 +26,7 @@ sealed interface DanmakuArgs {
     ) : DanmakuArgs
 
     data class Huya(
-        val ayyuid: Int,
+        val ayyuid: Long,
         val topSid: Long,
         val subSid: Long
     ) : DanmakuArgs

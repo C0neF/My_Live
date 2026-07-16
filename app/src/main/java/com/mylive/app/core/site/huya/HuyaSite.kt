@@ -311,7 +311,7 @@ class HuyaSite @Inject constructor(
             roomPlayDataCache.put(roomId, playData)
 
             // Cache danmaku args for the danmaku connection
-            val ayyuid = tLiveInfo.optInt("lYyid", 0)
+            val ayyuid = asPositiveLong(tLiveInfo.opt("lYyid"))
             danmakuArgsCache.put(roomId, DanmakuArgs.Huya(
                 ayyuid = ayyuid,
                 topSid = topSid,

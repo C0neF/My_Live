@@ -7,6 +7,7 @@ import okhttp3.WebSocketListener
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -15,6 +16,36 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 class WebSocketUtilsTest {
+
+    @Test
+    fun canDisableCompressionExtensionForIncompatibleServers() {
+        val server = MockWebServer()
+        val openLatch = CountDownLatch(1)
+        server.enqueue(
+            MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
+                override fun onOpen(webSocket: WebSocket, response: Response) {
+                    openLatch.countDown()
+                }
+            })
+        )
+        server.start()
+
+        try {
+            val socket = WebSocketUtils(OkHttpClient())
+            val wsUrl = server.url("/socket").toString().replace("http://", "ws://")
+
+            socket.connect(
+                url = wsUrl,
+                disableCompression = true
+            )
+
+            assertTrue(openLatch.await(2, TimeUnit.SECONDS))
+            assertNull(server.takeRequest(2, TimeUnit.SECONDS)?.getHeader("Sec-WebSocket-Extensions"))
+            socket.close()
+        } finally {
+            server.shutdown()
+        }
+    }
 
     @Test
     fun heartbeatUsesFixedDelayAndCrossThreadLifecycleStateIsVisible() {

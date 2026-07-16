@@ -676,7 +676,7 @@ class LiveRoomViewModel @Inject constructor(
                     "douyu" -> DanmakuArgs.Douyu(roomId = routeRoomId)
                     "huya" -> {
                         val huyaSite = site as? HuyaSite
-                        huyaSite?.getDanmakuArgs(routeRoomId) ?: DanmakuArgs.Huya(ayyuid = 0, topSid = 0, subSid = 0)
+                        huyaSite?.getDanmakuArgs(routeRoomId) ?: DanmakuArgs.Huya(ayyuid = 0L, topSid = 0, subSid = 0)
                     }
                     "douyin" -> {
                         val douyinSite = site as? DouyinSite

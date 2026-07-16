@@ -49,6 +49,7 @@ class HuyaDanmaku(
             url = serverUrl,
             heartBeatTime = heartbeatTime.toLong(),
             idleTimeoutMillis = heartbeatTime.toLong() * 3,
+            disableCompression = true,
             onMessage = { e ->
                 when (e) {
                     is ByteArray -> decodeMessage(e)
@@ -72,7 +73,7 @@ class HuyaDanmaku(
      * Build and send the TARS-encoded join room message.
      */
     private fun joinRoom() {
-        val joinData = getJoinData(danmakuArgs.ayyuid, danmakuArgs.topSid, danmakuArgs.topSid)
+        val joinData = encodeJoinData(danmakuArgs.ayyuid, danmakuArgs.topSid, danmakuArgs.topSid)
         webSocketUtils.sendMessage(joinData)
     }
 
@@ -84,7 +85,7 @@ class HuyaDanmaku(
      * Inner stream: tag 0 = ayyuid, tag 1 = true, tag 2/3 = empty strings,
      * tag 4 = tid, tag 5 = sid, tag 6/7 = 0.
      */
-    private fun getJoinData(ayyuid: Int, tid: Long, sid: Long): ByteArray {
+    internal fun encodeJoinData(ayyuid: Long, tid: Long, sid: Long): ByteArray {
         return try {
             val oos = TarsOutputStream()
             oos.write(ayyuid, 0)

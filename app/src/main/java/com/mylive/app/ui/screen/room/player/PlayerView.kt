@@ -113,6 +113,7 @@ fun PlayerView(
     onHorizontalDragEnd: (() -> Unit)? = null,
     isFullscreenOverride: Boolean? = null,
     onFullscreenClick: (() -> Unit)? = null,
+    onControlsLockChange: ((Boolean) -> Unit)? = null,
     onRoomSettingsClick: (() -> Unit)? = null,
     onQuickAccessClick: (() -> Unit)? = null,
     onFollowClick: (() -> Unit)? = null,
@@ -141,9 +142,26 @@ fun PlayerView(
 
     val isFullscreen = isFullscreenOverride ?: state.isFullscreen
 
-    // Intercept back key when in fullscreen to exit fullscreen first
+    // Intercept back key when in fullscreen to exit fullscreen first (still allowed while locked).
     BackHandler(enabled = isFullscreen) {
         onFullscreenClick?.invoke() ?: playerController?.toggleFullscreen()
+    }
+
+    LaunchedEffect(isLocked) {
+        onControlsLockChange?.invoke(isLocked)
+    }
+
+    DisposableEffect(onControlsLockChange) {
+        onDispose {
+            onControlsLockChange?.invoke(false)
+        }
+    }
+
+    // Leave lock state when back to pure portrait non-fullscreen player.
+    LaunchedEffect(isFullscreen, isPortrait) {
+        if (!isFullscreen && isPortrait && isLocked) {
+            isLocked = false
+        }
     }
 
     // Auto-hide controls after 3 seconds

@@ -1,5 +1,6 @@
 package com.mylive.app.ui.screen.room
 
+import android.content.pm.ActivityInfo
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertEquals
@@ -24,31 +25,92 @@ class LiveRoomAutoFullscreenPolicyTest {
 
         assertTrue(source.contains("private fun applyLiveRoomFullscreen("))
         assertTrue(source.contains("private fun restoreLiveRoomSystemUi("))
-        assertTrue(source.contains("DisposableEffect(activity)"))
+        assertTrue(source.contains("DisposableEffect(activity, liveRoomView)"))
         assertTrue(source.contains("onDispose {"))
-        assertTrue(source.contains("restoreLiveRoomSystemUi(act)"))
+        assertTrue(source.contains("restoreLiveRoomSystemUi(it)"))
         assertTrue(source.contains("ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED"))
     }
 
     @Test
     fun liveRoomScreenKeepsScreenAwakeUntilDisposed() {
         val source = File("src/main/java/com/mylive/app/ui/screen/room/LiveRoomScreen.kt").readText()
-        val disposeEffect = source.substringAfter("DisposableEffect(activity)")
+        val disposeEffect = source.substringAfter("DisposableEffect(activity, liveRoomView)")
             .substringBefore("// Shared back handler")
 
         assertTrue(source.contains("WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON"))
-        assertTrue(disposeEffect.contains("keepLiveRoomScreenAwake(act, true)"))
-        assertTrue(disposeEffect.contains("keepLiveRoomScreenAwake(act, false)"))
+        assertTrue(source.contains("liveRoomView.keepScreenOn = true"))
+        assertTrue(disposeEffect.contains("keepLiveRoomScreenAwake(activity, true)"))
+        assertTrue(disposeEffect.contains("keepLiveRoomScreenAwake(activity, false)"))
+        assertTrue(disposeEffect.contains("liveRoomView.keepScreenOn = false"))
+        assertTrue(source.contains("ON_RESUME"))
+        assertTrue(source.contains("keepLiveRoomScreenAwake(activity, true)"))
     }
 
     @Test
-    fun playerViewDoesNotOwnActivityFullscreenSideEffects() {
+    fun lockedControlsFreezeOrientationAndUnlockedFullscreenAllowsPortraitExit() {
+        assertEquals(
+            ActivityInfo.SCREEN_ORIENTATION_LOCKED,
+            liveRoomRequestedOrientation(
+                fullscreen = true,
+                controlsLocked = true,
+                isLandscape = true,
+                hasReachedLandscapeInFullscreen = true
+            )
+        )
+        assertEquals(
+            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE,
+            liveRoomRequestedOrientation(
+                fullscreen = true,
+                controlsLocked = false,
+                isLandscape = false,
+                hasReachedLandscapeInFullscreen = false
+            )
+        )
+        assertEquals(
+            ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR,
+            liveRoomRequestedOrientation(
+                fullscreen = true,
+                controlsLocked = false,
+                isLandscape = true,
+                hasReachedLandscapeInFullscreen = true
+            )
+        )
+        assertFalse(
+            shouldExitFullscreenOnPortraitRotation(
+                fullscreen = true,
+                controlsLocked = true,
+                isLandscape = false,
+                hasReachedLandscapeInFullscreen = true
+            )
+        )
+        assertTrue(
+            shouldExitFullscreenOnPortraitRotation(
+                fullscreen = true,
+                controlsLocked = false,
+                isLandscape = false,
+                hasReachedLandscapeInFullscreen = true
+            )
+        )
+        assertFalse(
+            shouldExitFullscreenOnPortraitRotation(
+                fullscreen = true,
+                controlsLocked = false,
+                isLandscape = false,
+                hasReachedLandscapeInFullscreen = false
+            )
+        )
+    }
+
+    @Test
+    fun playerViewReportsControlsLockToParentAndDoesNotOwnOrientation() {
         val source = File("src/main/java/com/mylive/app/ui/screen/room/player/PlayerView.kt").readText()
         val playerViewBody = source.substringAfter("fun PlayerView(")
             .substringBefore("// Intercept back key when in fullscreen")
 
         assertFalse(playerViewBody.contains("requestedOrientation"))
         assertFalse(playerViewBody.contains("WindowInsetsCompat.Type.systemBars()"))
+        assertTrue(source.contains("onControlsLockChange: ((Boolean) -> Unit)? = null"))
+        assertTrue(source.contains("onControlsLockChange?.invoke(isLocked)"))
     }
 
     @Test

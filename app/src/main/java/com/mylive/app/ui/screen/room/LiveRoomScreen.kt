@@ -43,6 +43,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.progressBarRangeInfo
@@ -182,16 +183,66 @@ internal fun liveRoomQuickAccessAction(
 val LocalRoomAccentColor = compositionLocalOf { Color.Unspecified }
 
 private fun currentEpochMillis(): Long = System.currentTimeMillis()
-private fun applyLiveRoomFullscreen(activity: Activity, fullscreen: Boolean) {
+
+/**
+ * Orientation policy for the live room.
+ *
+ * - Controls locked: freeze the current orientation so rotate-to-portrait is ignored.
+ * - Fullscreen unlocked, still entering from portrait: force landscape first.
+ * - Fullscreen unlocked, already landscape: free sensor so rotate-to-portrait can exit fullscreen.
+ * - Otherwise: system default.
+ */
+internal fun liveRoomRequestedOrientation(
+    fullscreen: Boolean,
+    controlsLocked: Boolean,
+    isLandscape: Boolean,
+    hasReachedLandscapeInFullscreen: Boolean
+): Int {
+    return when {
+        controlsLocked -> ActivityInfo.SCREEN_ORIENTATION_LOCKED
+        fullscreen && !isLandscape && !hasReachedLandscapeInFullscreen ->
+            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        fullscreen -> ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
+        else -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+    }
+}
+
+/** Exit fullscreen only after we have been landscape, and only while unlocked. */
+internal fun shouldExitFullscreenOnPortraitRotation(
+    fullscreen: Boolean,
+    controlsLocked: Boolean,
+    isLandscape: Boolean,
+    hasReachedLandscapeInFullscreen: Boolean
+): Boolean {
+    return fullscreen &&
+        !controlsLocked &&
+        !isLandscape &&
+        hasReachedLandscapeInFullscreen
+}
+
+private fun applyLiveRoomFullscreen(
+    activity: Activity,
+    fullscreen: Boolean,
+    controlsLocked: Boolean,
+    isLandscape: Boolean,
+    hasReachedLandscapeInFullscreen: Boolean
+) {
+    activity.requestedOrientation = liveRoomRequestedOrientation(
+        fullscreen = fullscreen,
+        controlsLocked = controlsLocked,
+        isLandscape = isLandscape,
+        hasReachedLandscapeInFullscreen = hasReachedLandscapeInFullscreen
+    )
     if (fullscreen) {
-        activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         WindowCompat.setDecorFitsSystemWindows(activity.window, false)
         val controller = WindowCompat.getInsetsController(activity.window, activity.window.decorView)
         controller.hide(WindowInsetsCompat.Type.systemBars())
         controller.systemBarsBehavior =
             WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
     } else {
-        restoreLiveRoomSystemUi(activity)
+        WindowCompat.setDecorFitsSystemWindows(activity.window, true)
+        WindowCompat.getInsetsController(activity.window, activity.window.decorView)
+            .show(WindowInsetsCompat.Type.systemBars())
     }
 }
 
@@ -202,11 +253,12 @@ private fun restoreLiveRoomSystemUi(activity: Activity) {
         .show(WindowInsetsCompat.Type.systemBars())
 }
 
-private fun keepLiveRoomScreenAwake(activity: Activity, keepAwake: Boolean) {
+private fun keepLiveRoomScreenAwake(activity: Activity?, keepAwake: Boolean) {
+    val window = activity?.window ?: return
     if (keepAwake) {
-        activity.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     } else {
-        activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
 }
 
@@ -235,8 +287,11 @@ fun LiveRoomScreen(
     val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
     val context = LocalContext.current
     val activity = context as? Activity
+    val liveRoomView = LocalView.current
 
     var isExiting by remember { mutableStateOf(false) }
+    var isControlsLocked by remember { mutableStateOf(false) }
+    var hasReachedLandscapeInFullscreen by remember { mutableStateOf(false) }
     val settingsViewModel: SettingsViewModel = hiltViewModel()
     val liveRoomPreferences by settingsViewModel.liveRoomPreferences.collectAsStateWithLifecycle()
     val scaleMode = liveRoomPreferences.scaleMode
@@ -360,7 +415,15 @@ fun LiveRoomScreen(
         playerController?.setForceHttps(playerForceHttps)
     }
 
-    DisposableEffect(lifecycleOwner, playerController, allowBackgroundPlayback, playerAutoPause, uiState.detail) {
+    DisposableEffect(
+        lifecycleOwner,
+        playerController,
+        allowBackgroundPlayback,
+        playerAutoPause,
+        uiState.detail,
+        activity,
+        liveRoomView
+    ) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_PAUSE -> {
@@ -383,6 +446,9 @@ fun LiveRoomScreen(
                     }
                 }
                 Lifecycle.Event.ON_RESUME -> {
+                    // Re-assert screen-on after lifecycle transitions that may clear window flags.
+                    liveRoomView.keepScreenOn = true
+                    keepLiveRoomScreenAwake(activity, true)
                     com.mylive.app.service.PlaybackForegroundService.stop(context)
                     if (resumePlaybackOnForeground) {
                         playerController?.resume()
@@ -421,22 +487,44 @@ fun LiveRoomScreen(
         }
     }
 
-    // Handle fullscreen: change orientation + hide/show system bars
-    LaunchedEffect(isFullscreen) {
-        val act = activity ?: return@LaunchedEffect
-        applyLiveRoomFullscreen(act, isFullscreen)
+    LaunchedEffect(isFullscreen, isLandscape) {
+        if (!isFullscreen) {
+            hasReachedLandscapeInFullscreen = false
+        } else if (isLandscape) {
+            hasReachedLandscapeInFullscreen = true
+        }
     }
 
-    DisposableEffect(activity) {
-        val act = activity
-        if (act != null) {
-            keepLiveRoomScreenAwake(act, true)
+    // Handle fullscreen/lock: orientation + system bars. Locked freezes rotation.
+    LaunchedEffect(isFullscreen, isControlsLocked, isLandscape, hasReachedLandscapeInFullscreen) {
+        val act = activity ?: return@LaunchedEffect
+        applyLiveRoomFullscreen(
+            activity = act,
+            fullscreen = isFullscreen,
+            controlsLocked = isControlsLocked,
+            isLandscape = isLandscape,
+            hasReachedLandscapeInFullscreen = hasReachedLandscapeInFullscreen
+        )
+        if (
+            shouldExitFullscreenOnPortraitRotation(
+                fullscreen = isFullscreen,
+                controlsLocked = isControlsLocked,
+                isLandscape = isLandscape,
+                hasReachedLandscapeInFullscreen = hasReachedLandscapeInFullscreen
+            )
+        ) {
+            playerController?.toggleFullscreen()
         }
+    }
+
+    // Keep the screen on for the entire live-room stay (window flag + view flag).
+    DisposableEffect(activity, liveRoomView) {
+        liveRoomView.keepScreenOn = true
+        keepLiveRoomScreenAwake(activity, true)
         onDispose {
-            if (act != null) {
-                keepLiveRoomScreenAwake(act, false)
-                restoreLiveRoomSystemUi(act)
-            }
+            liveRoomView.keepScreenOn = false
+            keepLiveRoomScreenAwake(activity, false)
+            activity?.let { restoreLiveRoomSystemUi(it) }
         }
     }
 
@@ -573,6 +661,7 @@ fun LiveRoomScreen(
                 liveRoomPreferences = liveRoomPreferences,
                 onQualityClick = { showQualitySheet = true },
                 isExiting = isExiting,
+                onControlsLockChange = { isControlsLocked = it },
                 onBack = {
                     if (isFullscreen) {
                         playerController?.toggleFullscreen()
@@ -594,6 +683,7 @@ fun LiveRoomScreen(
                 liveRoomPreferences = liveRoomPreferences,
                 onQualityClick = { showQualitySheet = true },
                 isExiting = isExiting,
+                onControlsLockChange = { isControlsLocked = it },
                 onBack = handleBack
             )
         }
@@ -614,6 +704,7 @@ private fun PortraitLayout(
     liveRoomPreferences: LiveRoomPreferences,
     onQualityClick: () -> Unit,
     isExiting: Boolean = false,
+    onControlsLockChange: (Boolean) -> Unit = {},
     onBack: () -> Unit = {}
 ) {
     val danmuEnable = liveRoomPreferences.danmuEnable
@@ -795,6 +886,7 @@ private fun PortraitLayout(
                 onDanmakuControllerCreated = { danmakuController = it },
                 isFullscreenOverride = false,
                 onFullscreenClick = { playerController?.toggleFullscreen() },
+                onControlsLockChange = onControlsLockChange,
                 isExiting = isExiting
             )
         }
@@ -893,6 +985,7 @@ private fun LandscapeLayout(
     liveRoomPreferences: LiveRoomPreferences,
     onQualityClick: () -> Unit,
     isExiting: Boolean = false,
+    onControlsLockChange: (Boolean) -> Unit = {},
     onBack: () -> Unit = {}
 ) {
     val danmuEnable = liveRoomPreferences.danmuEnable
@@ -1064,6 +1157,7 @@ private fun LandscapeLayout(
                 onFollowClick = { viewModel.toggleFollow() },
                 isFollowing = uiState.isFollowing,
                 followEnabled = uiState.detail != null && uiState.isFollowStatusKnown,
+                onControlsLockChange = onControlsLockChange,
                 onHorizontalDragDelta = { deltaX ->
                     coroutineScope.launch {
                         val newOffset = liveRoomSidePanelOffsetAfterDrag(

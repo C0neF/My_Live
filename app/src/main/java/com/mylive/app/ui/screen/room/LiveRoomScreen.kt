@@ -76,10 +76,13 @@ import com.mylive.app.core.model.LiveMessageSpan
 import com.mylive.app.core.model.LivePlayQuality
 import com.mylive.app.data.repository.LiveRoomPreferences
 import com.mylive.app.ui.emoji.EmojiImage
+import com.mylive.app.ui.screen.room.player.LiveDanmakuSurfaceFeed
+import com.mylive.app.ui.screen.room.player.LivePlaybackSession
 import com.mylive.app.ui.screen.room.player.PlayerController
 import com.mylive.app.ui.screen.room.player.PlayerView
 import com.mylive.app.ui.screen.room.player.DanmakuController
-import com.mylive.app.ui.screen.room.player.PlayerState
+import com.mylive.app.ui.screen.room.player.shouldFeedLiveDanmakuSurface
+import com.mylive.app.ui.screen.room.player.shouldFeedPipDanmakuSurface
 import com.mylive.app.ui.screen.settings.SettingsViewModel
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -104,7 +107,10 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlin.math.roundToInt
 import java.util.concurrent.atomic.AtomicLong
 
@@ -282,7 +288,6 @@ fun LiveRoomScreen(
         routeSiteId = key.siteId,
         routeInitialIsFollowing = key.initialIsFollowing
     )
-    val danmakuMessages by viewModel.danmakuMessages.collectAsStateWithLifecycle()
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
     val context = LocalContext.current
@@ -348,40 +353,41 @@ fun LiveRoomScreen(
         }
     }
 
-    LaunchedEffect(pipDanmakuController, isInPip, pipDanmuEnable, pipHideDanmu, isExiting) {
-        val controller = pipDanmakuController
-        if (controller != null && isInPip && pipDanmuEnable && !pipHideDanmu && !isExiting) {
-            viewModel.newDanmakuMessages.collect { msg ->
-                if (isInPip && pipDanmuEnable && !pipHideDanmu && !isExiting) {
-                    controller.addDanmaku(msg)
-                }
-            }
-        } else {
-            controller?.clear()
-        }
-    }
+    LiveDanmakuSurfaceFeed(
+        messages = viewModel.newDanmakuMessages,
+        controller = pipDanmakuController,
+        active = shouldFeedPipDanmakuSurface(
+            isInPip = isInPip,
+            danmuEnable = pipDanmuEnable,
+            pipHideDanmu = pipHideDanmu,
+            isExiting = isExiting
+        ),
+        clearWhenInactive = true
+    )
 
     val autoPipOnExit = liveRoomPreferences.autoPipOnExit
     val autoFullScreen = liveRoomPreferences.autoFullScreen
     DisposableEffect(autoPipOnExit) {
-        com.mylive.app.MainActivity.isPipSupportedAndActive = autoPipOnExit
+        LivePlaybackSession.setAutoPipActive(autoPipOnExit)
         onDispose {
-            com.mylive.app.MainActivity.isPipSupportedAndActive = false
+            LivePlaybackSession.setAutoPipActive(false)
         }
     }
 
-    var playerController by remember { mutableStateOf<PlayerController?>(null) }
+    // Playback session owns PlayerController create/release, VM bind, and FGS handoff.
+    var playbackSession by remember { mutableStateOf<LivePlaybackSession?>(null) }
+    val playerController = playbackSession?.playerController
 
     LaunchedEffect(isExiting) {
         if (isExiting) {
-            playerController?.stop()
+            playbackSession?.stop()
         }
     }
 
     LaunchedEffect(Unit) {
         kotlinx.coroutines.delay(AppMotion.LiveRoomPlayerStartupDelayMillis.toLong())
         val startupPreferences = viewModel.settingsRepository.liveRoomPreferences.first()
-        val pc = PlayerController(
+        val session = LivePlaybackSession.create(
             context = context,
             hardwareDecodeEnabled = startupPreferences.hardwareDecode,
             forceHttps = startupPreferences.playerForceHttps,
@@ -389,18 +395,14 @@ fun LiveRoomScreen(
                 viewModel.recoverPlaybackAfterSourceFailure()
             }
         )
-        playerController = pc
-        viewModel.playerController = pc
-        viewModel.onPlayerControllerReady()
+        playbackSession = session
+        session.attach(viewModel)
     }
 
-    DisposableEffect(playerController) {
-        val pc = playerController
+    DisposableEffect(playbackSession) {
+        val session = playbackSession
         onDispose {
-            pc?.release()
-            if (viewModel.playerController === pc) {
-                viewModel.playerController = null
-            }
+            session?.release()
         }
     }
 
@@ -409,15 +411,14 @@ fun LiveRoomScreen(
     val playerAutoPause = liveRoomPreferences.playerAutoPause
     val playerForceHttps = liveRoomPreferences.playerForceHttps
     val lifecycleOwner = LocalLifecycleOwner.current
-    var resumePlaybackOnForeground by remember { mutableStateOf(false) }
 
-    LaunchedEffect(playerController, playerForceHttps) {
-        playerController?.setForceHttps(playerForceHttps)
+    LaunchedEffect(playbackSession, playerForceHttps) {
+        playbackSession?.setForceHttps(playerForceHttps)
     }
 
     DisposableEffect(
         lifecycleOwner,
-        playerController,
+        playbackSession,
         allowBackgroundPlayback,
         playerAutoPause,
         uiState.detail,
@@ -427,33 +428,19 @@ fun LiveRoomScreen(
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_PAUSE -> {
-                    val p = playerController?.player
-                    val lifecyclePausesPlayback = !allowBackgroundPlayback || playerAutoPause
-                    resumePlaybackOnForeground = shouldResumeLivePlaybackOnForeground(
-                        lifecyclePausedPlayback = lifecyclePausesPlayback,
-                        wasPlayingBeforePause = p?.isPlaying == true
+                    playbackSession?.onHostPause(
+                        allowBackgroundPlayback = allowBackgroundPlayback,
+                        playerAutoPause = playerAutoPause,
+                        roomTitle = uiState.detail?.title ?: "",
+                        anchorName = uiState.detail?.userName ?: "",
+                        platform = viewModel.siteId
                     )
-                    if (lifecyclePausesPlayback) {
-                        playerController?.pause()
-                    } else if (p != null && p.isPlaying) {
-                        com.mylive.app.service.PlaybackForegroundService.start(
-                            context,
-                            p,
-                            uiState.detail?.title ?: "",
-                            uiState.detail?.userName ?: "",
-                            viewModel.siteId
-                        )
-                    }
                 }
                 Lifecycle.Event.ON_RESUME -> {
                     // Re-assert screen-on after lifecycle transitions that may clear window flags.
                     liveRoomView.keepScreenOn = true
                     keepLiveRoomScreenAwake(activity, true)
-                    com.mylive.app.service.PlaybackForegroundService.stop(context)
-                    if (resumePlaybackOnForeground) {
-                        playerController?.resume()
-                    }
-                    resumePlaybackOnForeground = false
+                    playbackSession?.onHostResume()
                 }
                 else -> {}
             }
@@ -461,7 +448,7 @@ fun LiveRoomScreen(
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
-            com.mylive.app.service.PlaybackForegroundService.stop(context)
+            playbackSession?.stopForegroundService()
         }
     }
 
@@ -469,8 +456,11 @@ fun LiveRoomScreen(
     val roomAutoExitDuration = liveRoomPreferences.roomAutoExitDuration
     val lastInteractionTime = remember { AtomicLong(System.currentTimeMillis()) }
 
-    val playerState = playerController?.state?.collectAsStateWithLifecycle()?.value ?: PlayerState()
-    val isFullscreen = playerState.isFullscreen
+    // Collect only the fullscreen flag at root so volume/brightness/loading do not
+    // recompose the entire room layout branch selection.
+    val isFullscreen by remember(playerController) {
+        playerController?.state?.map { it.isFullscreen } ?: flowOf(false)
+    }.collectAsStateWithLifecycle(initialValue = playerController?.state?.value?.isFullscreen == true)
     var autoFullscreenAppliedRoute by remember { mutableStateOf<Pair<String, String>?>(null) }
 
     LaunchedEffect(autoFullScreen, playerController, uiState.detail, key.roomId, key.siteId, isFullscreen) {
@@ -651,7 +641,6 @@ fun LiveRoomScreen(
         } else if (isLandscape || isFullscreen) {
             LandscapeLayout(
                 uiState = uiState,
-                danmakuMessages = danmakuMessages,
                 viewModel = viewModel,
                 accentSiteId = accentSiteId,
                 navigator = navigator,
@@ -673,7 +662,6 @@ fun LiveRoomScreen(
         } else {
             PortraitLayout(
                 uiState = uiState,
-                danmakuMessages = danmakuMessages,
                 viewModel = viewModel,
                 accentSiteId = accentSiteId,
                 navigator = navigator,
@@ -694,7 +682,6 @@ fun LiveRoomScreen(
 @Composable
 private fun PortraitLayout(
     uiState: LiveRoomUiState,
-    danmakuMessages: List<DisplayLiveMessage>,
     viewModel: LiveRoomViewModel,
     accentSiteId: String,
     navigator: Navigator,
@@ -823,15 +810,14 @@ private fun PortraitLayout(
         )
     }
 
-    LaunchedEffect(danmakuController, isExiting) {
-        if (danmakuController != null && !isExiting) {
-            viewModel.newDanmakuMessages.collect { msg ->
-                if (!isExiting) {
-                    danmakuController?.addDanmaku(msg)
-                }
-            }
-        }
-    }
+    LiveDanmakuSurfaceFeed(
+        messages = viewModel.newDanmakuMessages,
+        controller = danmakuController,
+        active = shouldFeedLiveDanmakuSurface(
+            hasController = danmakuController != null,
+            isExiting = isExiting
+        )
+    )
 
     Column(
         modifier = Modifier
@@ -905,7 +891,7 @@ private fun PortraitLayout(
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
         ChatPanel(
-            messages = danmakuMessages,
+            messagesFlow = viewModel.danmakuMessages,
             modifier = Modifier
                 .weight(1f)
                 .background(MaterialTheme.colorScheme.background),
@@ -921,7 +907,6 @@ private fun PortraitLayout(
 private fun LiveRoomTabPage(
     tabType: LiveRoomTabType?,
     uiState: LiveRoomUiState,
-    danmakuMessages: List<DisplayLiveMessage>,
     viewModel: LiveRoomViewModel,
     navigator: Navigator,
     settingsViewModel: SettingsViewModel,
@@ -935,7 +920,7 @@ private fun LiveRoomTabPage(
     when (tabType) {
         LiveRoomTabType.CHAT -> {
             ChatPanel(
-                messages = danmakuMessages,
+                messagesFlow = viewModel.danmakuMessages,
                 modifier = modifier,
                 hostName = uiState.detail?.userName ?: "",
                 chatTextSize = chatTextSize,
@@ -975,7 +960,6 @@ private fun LiveRoomTabPage(
 @Composable
 private fun LandscapeLayout(
     uiState: LiveRoomUiState,
-    danmakuMessages: List<DisplayLiveMessage>,
     viewModel: LiveRoomViewModel,
     accentSiteId: String,
     navigator: Navigator,
@@ -1096,15 +1080,14 @@ private fun LandscapeLayout(
 
     var danmakuController by remember { mutableStateOf<DanmakuController?>(null) }
 
-    LaunchedEffect(danmakuController, isExiting) {
-        if (danmakuController != null && !isExiting) {
-            viewModel.newDanmakuMessages.collect { msg ->
-                if (!isExiting) {
-                    danmakuController?.addDanmaku(msg)
-                }
-            }
-        }
-    }
+    LiveDanmakuSurfaceFeed(
+        messages = viewModel.newDanmakuMessages,
+        controller = danmakuController,
+        active = shouldFeedLiveDanmakuSurface(
+            hasController = danmakuController != null,
+            isExiting = isExiting
+        )
+    )
 
     Row(modifier = Modifier.fillMaxSize()) {
         // Player (takes remaining space)
@@ -1218,7 +1201,7 @@ private fun LandscapeLayout(
 
                     if (roomTabs.contains(LiveRoomTabType.CHAT)) {
                         ChatPanel(
-                            messages = danmakuMessages,
+                            messagesFlow = viewModel.danmakuMessages,
                             hostName = uiState.detail?.userName ?: "",
                             chatTextSize = chatTextSize,
                             chatTextGap = chatTextGap,
@@ -1618,13 +1601,15 @@ private const val ChatPanelMaxMessages = 200
 
 @Composable
 fun ChatPanel(
-    messages: List<DisplayLiveMessage>,
+    messagesFlow: StateFlow<List<DisplayLiveMessage>>,
     modifier: Modifier = Modifier,
     hostName: String = "",
     chatTextSize: Double = 14.0,
     chatTextGap: Double = 4.0,
     chatBubbleStyle: Boolean = false
 ) {
+    // Collect at the chat leaf so message snapshots do not recompose room chrome.
+    val messages by messagesFlow.collectAsStateWithLifecycle()
     val listState = rememberLazyListState()
     var previousLastMessageId by remember { mutableStateOf<Long?>(null) }
     var autoScrollDisabled by remember { mutableStateOf(false) }

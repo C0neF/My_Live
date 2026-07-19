@@ -49,7 +49,9 @@ class WebSocketUtilsTest {
 
     @Test
     fun heartbeatUsesFixedDelayAndCrossThreadLifecycleStateIsVisible() {
-        val source = File("src/main/java/com/mylive/app/core/common/WebSocketUtils.kt").readText()
+        val source = File("src/main/java/com/mylive/app/core/common/WebSocketUtils.kt")
+            .readText()
+            .replace("\r\n", "\n")
 
         assertFalse(source.contains("scheduleAtFixedRate"))
         assertTrue(source.contains("@Volatile\n    var status"))

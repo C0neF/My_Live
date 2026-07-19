@@ -101,6 +101,9 @@ fun IndexScreen(
     val homeLiveRoomGridColumns = indexHomeLiveRoomGridColumns(configuration.screenWidthDp)
     val followCardColumns = followCardGridColumns(useSideNavigation)
     val topRoute = navigator.backStack.lastOrNull()
+    // When a non-Index route covers Index, skip heavy tab composition so Home/Follow
+    // collectors and grids do not keep working under a live room.
+    val composeIndexTabContent = shouldComposeIndexTabContent(topRoute)
     var sawLiveRoomOnTop by remember { mutableStateOf(false) }
     var suppressHomeInitialLoadingEffect by remember { mutableStateOf(false) }
 
@@ -227,37 +230,39 @@ fun IndexScreen(
                 }
 
                 Box(modifier = Modifier.fillMaxSize()) {
-                    when (selection.key) {
-                        "recommend" -> HomeScreen(
-                            navigator = navigator,
-                            suppressInitialLoadingEffect = suppressHomeInitialLoadingEffect,
-                            refreshSignal = homeRefreshSignal,
-                            onInitialLoadingEffectSettled = {
-                                suppressHomeInitialLoadingEffect = false
-                            },
-                            onPlatformAccentColorChange = {
-                                homePlatformAccentColor = it
-                            },
-                            onRevealBottomBar = revealBottomBar,
-                            contentBottomPadding = contentBottomPadding,
-                            homeLiveRoomGridColumns = homeLiveRoomGridColumns
-                        )
-                        "follow" -> FollowScreen(
-                            navigator = navigator,
-                            refreshSignal = followRefreshSignal,
-                            onRevealBottomBar = revealBottomBar,
-                            contentBottomPadding = contentBottomPadding,
-                            followCardColumns = followCardColumns
-                        )
-                        "category" -> CategoryScreen(
-                            navigator = navigator,
-                            refreshSignal = categoryRefreshSignal,
-                            contentBottomPadding = contentBottomPadding
-                        )
-                        "user" -> MineScreen(
-                            navigator = navigator,
-                            contentBottomPadding = contentBottomPadding
-                        )
+                    if (composeIndexTabContent) {
+                        when (selection.key) {
+                            "recommend" -> HomeScreen(
+                                navigator = navigator,
+                                suppressInitialLoadingEffect = suppressHomeInitialLoadingEffect,
+                                refreshSignal = homeRefreshSignal,
+                                onInitialLoadingEffectSettled = {
+                                    suppressHomeInitialLoadingEffect = false
+                                },
+                                onPlatformAccentColorChange = {
+                                    homePlatformAccentColor = it
+                                },
+                                onRevealBottomBar = revealBottomBar,
+                                contentBottomPadding = contentBottomPadding,
+                                homeLiveRoomGridColumns = homeLiveRoomGridColumns
+                            )
+                            "follow" -> FollowScreen(
+                                navigator = navigator,
+                                refreshSignal = followRefreshSignal,
+                                onRevealBottomBar = revealBottomBar,
+                                contentBottomPadding = contentBottomPadding,
+                                followCardColumns = followCardColumns
+                            )
+                            "category" -> CategoryScreen(
+                                navigator = navigator,
+                                refreshSignal = categoryRefreshSignal,
+                                contentBottomPadding = contentBottomPadding
+                            )
+                            "user" -> MineScreen(
+                                navigator = navigator,
+                                contentBottomPadding = contentBottomPadding
+                            )
+                        }
                     }
                 }
             }

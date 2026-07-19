@@ -15,6 +15,7 @@ import androidx.lifecycle.lifecycleScope
 import com.mylive.app.data.repository.SettingsRepository
 import com.mylive.app.ui.navigation.AppNavGraph
 import com.mylive.app.ui.navigation.Navigator
+import com.mylive.app.ui.screen.room.player.LivePlaybackHostSignals
 import com.mylive.app.ui.theme.MyLiveTheme
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Job
@@ -121,7 +122,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        if (isPipSupportedAndActive) {
+        if (LivePlaybackHostSignals.autoPipOnLeave) {
             try {
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
                     val params = android.app.PictureInPictureParams.Builder().build()
@@ -135,6 +136,15 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         const val EXTRA_INITIAL_ROUTE = "com.mylive.app.extra.INITIAL_ROUTE"
-        var isPipSupportedAndActive = false
+
+        /**
+         * Test/compat accessor over [LivePlaybackHostSignals.autoPipOnLeave].
+         * Production room UI should call [com.mylive.app.ui.screen.room.player.LivePlaybackSession.setAutoPipActive].
+         */
+        var isPipSupportedAndActive: Boolean
+            get() = LivePlaybackHostSignals.autoPipOnLeave
+            set(value) {
+                LivePlaybackHostSignals.setAutoPipOnLeave(value)
+            }
     }
 }

@@ -10,7 +10,6 @@ import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Typeface
 import android.graphics.drawable.BitmapDrawable
-import android.os.SystemClock
 import android.util.LruCache
 import coil.Coil
 import coil.request.ImageRequest
@@ -21,10 +20,13 @@ import com.mylive.app.core.model.LiveMessageSpan
 import com.mylive.app.core.model.LiveMessageType
 import com.mylive.app.ui.emoji.EmojiAtlasRepository
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
 
 sealed class DanmakuPart {
@@ -74,12 +76,18 @@ internal fun normalizeDanmakuFontWeight(weight: Int): Int {
  *    `@Volatile` and applied via a cheap dirty-check so Typeface/Paint are reconfigured only when
  *    they change — never per frame.
  */
-class DanmakuController(private val context: Context) {
+class DanmakuController(
+    private val context: Context,
+    private val clock: DanmakuClock = SystemDanmakuClock,
+    private val overflowTrackPicker: DanmakuOverflowTrackPicker = RandomDanmakuOverflowTrackPicker
+) {
 
     // Shared application-level Coil loader (NOT a per-instance loader with its own memory cache).
     private val imageLoader = Coil.imageLoader(context)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val bitmapCache = LruCache<String, Bitmap>(50) // Cache 50 emoticons
+    // Coalesce concurrent Coil requests for the same emoji/image URL.
+    private val inFlightBitmaps = ConcurrentHashMap<String, Deferred<Bitmap?>>()
 
     // Hand-off queue: produced by addDanmaku (any thread), consumed by the render thread.
     private val pending = ConcurrentLinkedQueue<PendingDanmaku>()
@@ -166,7 +174,7 @@ class DanmakuController(private val context: Context) {
 
         val parts = buildParts(msg)
         preloadImages(parts)
-        val releaseTimeMs = SystemClock.uptimeMillis() + danmuDelayMs.coerceIn(0, 5000)
+        val releaseTimeMs = clock.uptimeMillis() + danmuDelayMs.coerceIn(0, 5000)
         pending.add(PendingDanmaku(parts, msg.danmakuPosition, releaseTimeMs))
     }
 
@@ -197,8 +205,17 @@ class DanmakuController(private val context: Context) {
                     part.bitmap = atlasBitmap
                     continue
                 }
+                val deferred = inFlightBitmaps.computeIfAbsent(part.url) { url ->
+                    scope.async {
+                        try {
+                            loadBitmap(url)
+                        } finally {
+                            inFlightBitmaps.remove(url)
+                        }
+                    }
+                }
                 scope.launch {
-                    val bitmap = loadBitmap(part.url)
+                    val bitmap = deferred.await()
                     if (bitmap != null) {
                         bitmapCache.put(part.url, bitmap)
                         part.bitmap = bitmap
@@ -239,6 +256,7 @@ class DanmakuController(private val context: Context) {
     fun release() {
         scope.cancel()
         pending.clear()
+        inFlightBitmaps.clear()
         bitmapCache.evictAll()
     }
 
@@ -401,7 +419,7 @@ class DanmakuController(private val context: Context) {
         val maxTracks = layout.trackCount
         val pad = 50 * cfgDensity
         val durationMs = 8000f / danmuSpeed.coerceAtLeast(0.1f)
-        val nowMs = SystemClock.uptimeMillis()
+        val nowMs = clock.uptimeMillis()
 
         var p = pending.peek()
         while (p != null) {
@@ -428,7 +446,7 @@ class DanmakuController(private val context: Context) {
                         break
                     }
                 }
-                if (track == -1) track = (0 until maxTracks).random()
+                if (track == -1) track = overflowTrackPicker.pick(maxTracks)
 
                 val item = DanmakuItem(
                     parts = p.parts,

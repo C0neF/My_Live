@@ -30,8 +30,8 @@ class LiveRoomRoutePolicyTest {
             source.contains("暂无可播放画质")
         )
         assertTrue(
-            "play URL fetch failures must be surfaced to PlayerController",
-            source.contains("playerController?.showError")
+            "play URL fetch failures must be surfaced to the playback engine",
+            source.contains("playbackEngine?.showError")
         )
     }
 
@@ -40,15 +40,42 @@ class LiveRoomRoutePolicyTest {
         val screenSource = File(
             "src/main/java/com/mylive/app/ui/screen/room/LiveRoomScreen.kt"
         ).readText()
+        val sessionSource = File(
+            "src/main/java/com/mylive/app/ui/screen/room/player/LivePlaybackSession.kt"
+        ).readText()
         val viewModelSource = File(
             "src/main/java/com/mylive/app/ui/screen/room/LiveRoomViewModel.kt"
         ).readText()
 
         assertTrue(screenSource.contains("onPlaybackSourceExhausted = {"))
         assertTrue(screenSource.contains("viewModel.recoverPlaybackAfterSourceFailure()"))
-        assertTrue(screenSource.contains("viewModel.playerController = null"))
+        assertTrue(
+            "session owns detach of the playback engine from the ViewModel",
+            sessionSource.contains("viewModel?.unbindPlaybackEngine(engine)")
+        )
         assertTrue(viewModelSource.contains("fun recoverPlaybackAfterSourceFailure()"))
         assertTrue(viewModelSource.contains("resetSourceRefreshAttempt = false"))
+        assertTrue(viewModelSource.contains("fun bindPlaybackEngine("))
+        assertTrue(viewModelSource.contains("LivePlaybackEngine"))
+    }
+
+    @Test
+    fun onlineCountIsIsolatedFromMainUiState() {
+        val source = File(
+            "src/main/java/com/mylive/app/ui/screen/room/LiveRoomViewModel.kt"
+        ).readText()
+        val uiStateBlock = source.substringAfter("data class LiveRoomUiState(")
+            .substringBefore("internal fun loadingLiveRoomUiState")
+        assertTrue(source.contains("val onlineCount: StateFlow<Int>"))
+        assertTrue(source.contains("_onlineCount.value = message.onlineCount"))
+        assertFalse(
+            "ONLINE ticks must not rewrite LiveRoomUiState",
+            source.contains("onlineCount = message.onlineCount")
+        )
+        assertFalse(
+            "LiveRoomUiState must not carry the high-frequency online counter",
+            uiStateBlock.contains("onlineCount")
+        )
     }
 
     @Test

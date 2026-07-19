@@ -21,7 +21,7 @@ import com.mylive.app.data.repository.ShieldRepository
 import com.mylive.app.data.local.entity.FollowUserEntity
 import com.mylive.app.data.local.entity.HistoryEntity
 import com.mylive.app.ui.motion.AppMotion
-import com.mylive.app.ui.screen.room.player.PlayerController
+import com.mylive.app.ui.screen.room.player.LivePlaybackEngine
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
@@ -49,7 +49,6 @@ data class LiveRoomUiState(
     val error: String? = null,
     val isFollowing: Boolean = false,
     val isFollowStatusKnown: Boolean = false,
-    val onlineCount: Int = 0,
     val playQualities: List<LivePlayQuality> = emptyList(),
     val currentQualityIndex: Int = 0
 )
@@ -131,6 +130,13 @@ class LiveRoomViewModel @Inject constructor(
     private val _superChats = MutableStateFlow<List<LiveSuperChatMessage>>(emptyList())
     val superChats: StateFlow<List<LiveSuperChatMessage>> = _superChats.asStateFlow()
 
+    /**
+     * High-frequency online counter kept off [uiState] so ONLINE ticks do not recompose
+     * room chrome that only cares about detail/qualities/follow.
+     */
+    private val _onlineCount = MutableStateFlow(0)
+    val onlineCount: StateFlow<Int> = _onlineCount.asStateFlow()
+
     // Keep last N messages for the chat panel.
     private val maxMessages = 200
 
@@ -187,24 +193,36 @@ class LiveRoomViewModel @Inject constructor(
     private var activeRoute: Pair<String, String>? = null
     private var loadRoomJob: Job? = null
     private var followStatusJob: Job? = null
-    var playerController: PlayerController? = null // Set from Composable
-        set(value) {
-            field = value
-            Timber.d("PlayerController set: ${value != null}")
-        }
+    /**
+     * Playback port owned by [com.mylive.app.ui.screen.room.player.LivePlaybackSession].
+     * ViewModel must not release the engine.
+     */
+    private var playbackEngine: LivePlaybackEngine? = null
 
     // Track if playback was requested but player wasn't ready yet
     private var pendingPlayRequest = false
 
+    fun bindPlaybackEngine(engine: LivePlaybackEngine) {
+        playbackEngine = engine
+        Timber.d("Playback engine bound")
+    }
+
+    fun unbindPlaybackEngine(engine: LivePlaybackEngine) {
+        if (playbackEngine === engine) {
+            playbackEngine = null
+            Timber.d("Playback engine unbound")
+        }
+    }
+
     /**
-     * Called when PlayerController is assigned from the Composable.
+     * Called when the playback session is ready.
      * If qualities were already loaded but player wasn't ready, triggers playback now.
      */
     fun onPlayerControllerReady() {
         val detail = _uiState.value.detail ?: return
         val qualities = _uiState.value.playQualities
         val route = activeRoute ?: return
-        if (qualities.isNotEmpty() && playerController != null) {
+        if (qualities.isNotEmpty() && playbackEngine != null) {
             Timber.d("Player ready, starting playback with ${qualities.size} qualities")
             pendingPlayRequest = false
             viewModelScope.launch {
@@ -229,9 +247,9 @@ class LiveRoomViewModel @Inject constructor(
             followStatusJob?.cancel()
             this.roomId = ""
             this.siteId = nextSiteId
-            playerController?.stop()
+            playbackEngine?.stop()
             _uiState.value = LiveRoomUiState(isLoading = false, error = "直播间参数缺失")
-            playerController?.showError("直播间参数缺失")
+            playbackEngine?.showError("直播间参数缺失")
             return
         }
 
@@ -242,9 +260,10 @@ class LiveRoomViewModel @Inject constructor(
         _uiState.value = loadingLiveRoomUiState(initialIsFollowing)
         pendingPlayRequest = false
         currentSite = null
-        playerController?.stop()
+        playbackEngine?.stop()
         _danmakuMessages.value = liveMessageBuffer.clear()
         _superChats.value = emptyList()
+        _onlineCount.value = 0
 
         currentDanmaku?.let { danmaku ->
             cleanupScope.launch {
@@ -296,7 +315,7 @@ class LiveRoomViewModel @Inject constructor(
         viewModelScope.launch {
             _messages.collect { message ->
                 if (message.type == LiveMessageType.ONLINE) {
-                    _uiState.update { it.copy(onlineCount = message.onlineCount ?: 0) }
+                    _onlineCount.value = message.onlineCount ?: 0
                 } else {
                     if (message.type == LiveMessageType.SUPER_CHAT) {
                         message.superChatMessage?.let { sc ->
@@ -380,7 +399,7 @@ class LiveRoomViewModel @Inject constructor(
                     isLoading = false,
                     error = "未找到直播间"
                 )
-                playerController?.showError("未找到直播间")
+                playbackEngine?.showError("未找到直播间")
                 return
             }
 
@@ -444,7 +463,7 @@ class LiveRoomViewModel @Inject constructor(
                 isLoading = false,
                 error = message
             )
-            playerController?.showError(message)
+            playbackEngine?.showError(message)
         }
     }
 
@@ -517,10 +536,10 @@ class LiveRoomViewModel @Inject constructor(
                 currentQualityIndex = matchIndex
             )
             if (qualities.isEmpty()) {
-                playerController?.showError("暂无可播放画质")
+                playbackEngine?.showError("暂无可播放画质")
                 return
             }
-            if (playerController != null) {
+            if (playbackEngine != null) {
                 // Player is ready, play immediately
                 playWithQuality(detail, qualities[matchIndex], route)
             } else {
@@ -532,7 +551,7 @@ class LiveRoomViewModel @Inject constructor(
             if (e is CancellationException) throw e
             if (!isActiveRoute(route)) return
             Timber.e(e, "Failed to load play qualities")
-            playerController?.showError(e.message ?: "加载播放画质失败")
+            playbackEngine?.showError(e.message ?: "加载播放画质失败")
         }
     }
 
@@ -560,7 +579,7 @@ class LiveRoomViewModel @Inject constructor(
                     state.copy(currentQualityIndex = actualIndex)
                 }
             }
-            playerController?.play(
+            playbackEngine?.play(
                 urls = playUrl.urls,
                 headers = playUrl.headers,
                 resetSourceRefreshAttempt = resetSourceRefreshAttempt
@@ -569,7 +588,7 @@ class LiveRoomViewModel @Inject constructor(
             if (e is CancellationException) throw e
             if (!isActiveRoute(route)) return
             Timber.e(e, "Failed to get play URLs")
-            playerController?.showError(e.message ?: "获取播放地址失败")
+            playbackEngine?.showError(e.message ?: "获取播放地址失败")
         }
     }
 
@@ -601,7 +620,7 @@ class LiveRoomViewModel @Inject constructor(
         val qualities = _uiState.value.playQualities
         val route = activeRoute
         if (detail == null || route == null || qualities.isEmpty()) {
-            playerController?.showError("播放失败，请刷新重试")
+            playbackEngine?.showError("播放失败，请刷新重试")
             return
         }
 
@@ -768,7 +787,7 @@ class LiveRoomViewModel @Inject constructor(
                 Timber.e(e, "Failed to stop danmaku")
             }
         }
-        // playerController is owned by LiveRoomScreen and released in its
-        // DisposableEffect.onDispose, so the ViewModel must not release it here.
+        // playbackEngine is owned by LivePlaybackSession (created from LiveRoomScreen)
+        // and released in session.release(), so the ViewModel must not release it here.
     }
 }

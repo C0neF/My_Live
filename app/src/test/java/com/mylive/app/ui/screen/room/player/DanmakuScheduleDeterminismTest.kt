@@ -11,6 +11,20 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
+private class FixedDanmakuOverflowTrackPicker(private val track: Int = 0) : DanmakuOverflowTrackPicker {
+    override fun pick(trackCount: Int): Int {
+        if (trackCount <= 0) return 0
+        return track.coerceIn(0, trackCount - 1)
+    }
+}
+
+private class FakeDanmakuClock(private var nowMs: Long = 0L) : DanmakuClock {
+    override fun uptimeMillis(): Long = nowMs
+    fun advance(deltaMs: Long) {
+        nowMs += deltaMs
+    }
+}
+
 /**
  * Exercises the surface schedule path with fixed clock + overflow picker.
  * Requires Robolectric because Paint.measureText is Android-backed.
@@ -48,10 +62,7 @@ class DanmakuScheduleDeterminismTest {
         // First frame initializes dt and drains pending.
         controller.draw(canvas, frameTimeNanos = 16_000_000L)
         controller.draw(canvas, frameTimeNanos = 32_000_000L)
-
-        // All items should have been accepted onto tracks; overflow always picks track 0.
-        // We only assert non-crash deterministic drain: pending empty after release time.
-        assertTrue(controller.width > 0)
+        val firstSnapshot = controller.scheduleSnapshot()
         // Replay same sequence on a second controller with same deps.
         val clock2 = FakeDanmakuClock(nowMs = 1_000L)
         val controller2 = DanmakuController(
@@ -69,9 +80,12 @@ class DanmakuScheduleDeterminismTest {
         messages.forEach(controller2::addDanmaku)
         controller2.draw(canvas, frameTimeNanos = 16_000_000L)
         controller2.draw(canvas, frameTimeNanos = 32_000_000L)
+        val secondSnapshot = controller2.scheduleSnapshot()
 
-        // Both controllers accepted the full scripted batch without throwing.
-        assertEquals(8, messages.size)
+        assertEquals(0, firstSnapshot.pendingCount)
+        assertEquals(8, firstSnapshot.activeCount)
+        assertEquals(firstSnapshot, secondSnapshot)
+        assertEquals(listOf(0, 1, 2, 3, 0, 0, 0, 0), firstSnapshot.activeTracks)
         controller.release()
         controller2.release()
     }
@@ -93,9 +107,13 @@ class DanmakuScheduleDeterminismTest {
         )
         val canvas = Canvas()
         controller.draw(canvas, frameTimeNanos = 16_000_000L)
-        // Still pending: clock has not reached release time.
+        assertEquals(1, controller.scheduleSnapshot().pendingCount)
+        assertEquals(0, controller.scheduleSnapshot().activeCount)
+
         clock.advance(600)
         controller.draw(canvas, frameTimeNanos = 32_000_000L)
+        assertEquals(0, controller.scheduleSnapshot().pendingCount)
+        assertEquals(1, controller.scheduleSnapshot().activeCount)
         controller.release()
     }
 }

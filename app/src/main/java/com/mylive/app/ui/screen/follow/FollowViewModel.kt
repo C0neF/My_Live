@@ -2,28 +2,19 @@ package com.mylive.app.ui.screen.follow
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.mylive.app.core.site.LiveSite
 import com.mylive.app.data.local.entity.FollowUserEntity
 import com.mylive.app.data.repository.FollowRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.combine
 import com.mylive.app.data.local.entity.FollowUserTagEntity
 import com.mylive.app.data.repository.SettingsRepository
-import com.mylive.app.service.resolveFollowUpdateConcurrency
+import com.mylive.app.service.FollowStatusRefreshCoordinator
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
 import timber.log.Timber
 import javax.inject.Inject
 
@@ -63,7 +54,7 @@ internal fun sortFollowPlatformIds(siteIds: List<String>, sortOrder: String): Li
 class FollowViewModel @Inject constructor(
     private val followRepository: FollowRepository,
     private val settingsRepository: SettingsRepository,
-    private val sites: Set<@JvmSuppressWildcards LiveSite>
+    private val followStatusRefreshCoordinator: FollowStatusRefreshCoordinator
 ) : ViewModel() {
 
     /**
@@ -165,58 +156,11 @@ class FollowViewModel @Inject constructor(
         initialValue = emptyList()
     )
 
-    private val _updatingStatus = MutableStateFlow(false)
-    val updatingStatus: StateFlow<Boolean> = _updatingStatus.asStateFlow()
-    private var updateJob: Job? = null
+    val updatingStatus: StateFlow<Boolean> = followStatusRefreshCoordinator.isRefreshing
 
     fun updateFollowStatus() {
-        if (updateJob?.isActive == true) return
-        updateJob = viewModelScope.launch {
-            _updatingStatus.value = true
-            try {
-                val currentFollows = followRepository.getAllFollows().first()
-                val updateSemaphore = Semaphore(
-                    permits = resolveFollowUpdateConcurrency(settingsRepository.updateFollowThreadCount.first())
-                )
-                coroutineScope {
-                    currentFollows.map { follow ->
-                        async(Dispatchers.IO) {
-                            updateSemaphore.withPermit {
-                                refreshOne(follow)
-                            }
-                        }
-                    }.awaitAll()
-                }
-            } finally {
-                _updatingStatus.value = false
-            }
-        }
-    }
-
-    private suspend fun refreshOne(follow: FollowUserEntity) {
-        try {
-            val site = sites.find { it.id == follow.siteId } ?: return
-            val isLive = site.getLiveStatus(follow.roomId)
-            val newStatus = if (isLive) 1 else 2
-            var showTime: String? = null
-            if (isLive) {
-                try {
-                    val detail = site.getRoomDetail(follow.roomId)
-                    showTime = detail.showTime
-                } catch (_: Exception) {
-                    // getRoomDetail 失败不影响开播状态更新
-                }
-            }
-            if (follow.liveStatus != newStatus || (isLive && follow.showTime != showTime)) {
-                followRepository.updateLiveStatus(
-                    id = follow.id,
-                    status = newStatus,
-                    startTime = if (isLive) System.currentTimeMillis() else null,
-                    showTime = if (isLive) showTime else null
-                )
-            }
-        } catch (e: Exception) {
-            Timber.w(e, "Failed to update status for ${follow.userName}")
+        viewModelScope.launch {
+            followStatusRefreshCoordinator.refreshAll()
         }
     }
 

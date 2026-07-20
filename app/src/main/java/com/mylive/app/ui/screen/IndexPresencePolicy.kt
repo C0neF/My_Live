@@ -13,12 +13,3 @@ import com.mylive.app.ui.navigation.Route
 internal fun shouldComposeIndexTabContent(topRoute: NavKey?): Boolean {
     return topRoute == null || topRoute is Route.Index
 }
-
-/**
- * Whether Index should treat itself as the visible interaction surface.
- * Same as [shouldComposeIndexTabContent] today; kept separate for future "state retained,
- * composition paused" variants.
- */
-internal fun isIndexInteractionSurface(topRoute: NavKey?): Boolean {
-    return shouldComposeIndexTabContent(topRoute)
-}

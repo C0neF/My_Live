@@ -51,7 +51,7 @@ class LiveRoomRoutePolicyTest {
         assertTrue(screenSource.contains("viewModel.recoverPlaybackAfterSourceFailure()"))
         assertTrue(
             "session owns detach of the playback engine from the ViewModel",
-            sessionSource.contains("viewModel?.unbindPlaybackEngine(engine)")
+            sessionSource.contains("binding?.unbindPlaybackEngine(engine)")
         )
         assertTrue(viewModelSource.contains("fun recoverPlaybackAfterSourceFailure()"))
         assertTrue(viewModelSource.contains("resetSourceRefreshAttempt = false"))

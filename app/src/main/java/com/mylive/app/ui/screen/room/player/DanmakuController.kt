@@ -46,6 +46,12 @@ class DanmakuItem(
     val expiresAtMs: Long? = null
 )
 
+internal data class DanmakuScheduleSnapshot(
+    val pendingCount: Int,
+    val activeCount: Int,
+    val activeTracks: List<Int>
+)
+
 private class PendingDanmaku(
     val parts: List<DanmakuPart>,
     val position: LiveMessageDanmakuPosition,
@@ -258,6 +264,15 @@ class DanmakuController(
         pending.clear()
         inFlightBitmaps.clear()
         bitmapCache.evictAll()
+    }
+
+    /** Read from the render thread in deterministic scheduler tests. */
+    internal fun scheduleSnapshot(): DanmakuScheduleSnapshot {
+        return DanmakuScheduleSnapshot(
+            pendingCount = pending.size,
+            activeCount = activeDanmakus.size,
+            activeTracks = activeDanmakus.map { it.track }
+        )
     }
 
     /**

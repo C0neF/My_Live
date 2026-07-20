@@ -12,81 +12,30 @@ import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.mylive.app.MainActivity
 import com.mylive.app.R
-import com.mylive.app.core.site.LiveSite
 import com.mylive.app.data.local.entity.FollowUserEntity
-import com.mylive.app.data.repository.FollowRepository
-import com.mylive.app.data.repository.SettingsRepository
 import com.mylive.app.ui.navigation.Route
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
 import timber.log.Timber
 
 @HiltWorker
 class FollowUpdateWorker @AssistedInject constructor(
     @Assisted context: Context,
     @Assisted params: WorkerParameters,
-    private val followRepository: FollowRepository,
-    private val settingsRepository: SettingsRepository,
-    private val sites: Set<@JvmSuppressWildcards LiveSite>
+    private val followStatusRefreshCoordinator: FollowStatusRefreshCoordinator
 ) : CoroutineWorker(context, params) {
 
-    override suspend fun doWork(): Result = coroutineScope {
-        try {
-            val follows = followRepository.getAllFollows().first()
-            val updateSemaphore = Semaphore(
-                permits = resolveFollowUpdateConcurrency(settingsRepository.updateFollowThreadCount.first())
-            )
-            follows.map { follow ->
-                async(Dispatchers.IO) {
-                    updateSemaphore.withPermit {
-                        refreshOne(follow)
-                    }
+    override suspend fun doWork(): Result {
+        return try {
+            followStatusRefreshCoordinator.refreshAll().forEach { transition ->
+                if (transition.follow.isSpecialFollow && transition.becameLive) {
+                    sendNotification(transition.follow)
                 }
-            }.awaitAll()
+            }
             Result.success()
         } catch (e: Exception) {
             Timber.e(e, "FollowUpdateWorker failed")
             Result.retry()
-        }
-    }
-
-    private suspend fun refreshOne(follow: FollowUserEntity) {
-        try {
-            val site = sites.find { it.id == follow.siteId } ?: return
-            val isLive = site.getLiveStatus(follow.roomId)
-            val newStatus = if (isLive) 1 else 2
-            var showTime: String? = null
-            if (isLive) {
-                try {
-                    val detail = site.getRoomDetail(follow.roomId)
-                    showTime = detail.showTime
-                } catch (_: Exception) {
-                    // getRoomDetail 失败不影响开播状态更新
-                }
-            }
-
-            if (follow.liveStatus != newStatus || (isLive && follow.showTime != showTime)) {
-                followRepository.updateLiveStatus(
-                    id = follow.id,
-                    status = newStatus,
-                    startTime = if (isLive) System.currentTimeMillis() else null,
-                    showTime = if (isLive) showTime else null
-                )
-
-                // If special follow has started streaming, trigger a notification!
-                if (follow.isSpecialFollow && follow.liveStatus != 1 && newStatus == 1) {
-                    sendNotification(follow)
-                }
-            }
-        } catch (e: Exception) {
-            Timber.w(e, "FollowUpdateWorker: Failed to update status for ${follow.userName}")
         }
     }
 

@@ -21,11 +21,24 @@ interface LivePlaybackEngine {
     fun showError(message: String)
 }
 
+/** Binding implemented by the room state owner without exposing it to the player module. */
+interface LivePlaybackSessionBinding {
+    fun bindPlaybackEngine(engine: LivePlaybackEngine)
+    fun unbindPlaybackEngine(engine: LivePlaybackEngine)
+    fun onPlaybackEngineReady()
+}
+
 /** Host-background decision after folding settings and current play state. */
 sealed class LivePlaybackHostPauseAction {
     data object Pause : LivePlaybackHostPauseAction()
     data object StartForegroundService : LivePlaybackHostPauseAction()
     data object NoOp : LivePlaybackHostPauseAction()
+}
+
+sealed class LivePlaybackStartAction {
+    data object StartNow : LivePlaybackStartAction()
+    data object DeferUntilResume : LivePlaybackStartAction()
+    data object StartWithForegroundService : LivePlaybackStartAction()
 }
 
 /**
@@ -34,7 +47,7 @@ sealed class LivePlaybackHostPauseAction {
 internal fun resolveLivePlaybackHostPauseAction(
     allowBackgroundPlayback: Boolean,
     playerAutoPause: Boolean,
-    isPlaying: Boolean
+    hasPlaybackIntent: Boolean
 ): LivePlaybackHostPauseAction {
     val lifecyclePausesPlayback = shouldLifecyclePauseLivePlayback(
         allowBackgroundPlayback = allowBackgroundPlayback,
@@ -44,8 +57,22 @@ internal fun resolveLivePlaybackHostPauseAction(
         lifecyclePausesPlayback -> LivePlaybackHostPauseAction.Pause
         shouldStartPlaybackForegroundService(
             lifecyclePausesPlayback = lifecyclePausesPlayback,
-            isPlaying = isPlaying
+            isPlaying = hasPlaybackIntent
         ) -> LivePlaybackHostPauseAction.StartForegroundService
         else -> LivePlaybackHostPauseAction.NoOp
+    }
+}
+
+
+internal fun resolveLivePlaybackStartAction(
+    hostPaused: Boolean,
+    allowBackgroundPlayback: Boolean,
+    playerAutoPause: Boolean
+): LivePlaybackStartAction {
+    if (!hostPaused) return LivePlaybackStartAction.StartNow
+    return if (shouldLifecyclePauseLivePlayback(allowBackgroundPlayback, playerAutoPause)) {
+        LivePlaybackStartAction.DeferUntilResume
+    } else {
+        LivePlaybackStartAction.StartWithForegroundService
     }
 }

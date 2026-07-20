@@ -22,6 +22,7 @@ import com.mylive.app.data.local.entity.FollowUserEntity
 import com.mylive.app.data.local.entity.HistoryEntity
 import com.mylive.app.ui.motion.AppMotion
 import com.mylive.app.ui.screen.room.player.LivePlaybackEngine
+import com.mylive.app.ui.screen.room.player.LivePlaybackSessionBinding
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
@@ -117,7 +118,7 @@ class LiveRoomViewModel @Inject constructor(
     private val shieldRepository: ShieldRepository,
     val settingsRepository: SettingsRepository,
     @param:ApplicationContext private val appContext: Context
-) : ViewModel() {
+) : ViewModel(), LivePlaybackSessionBinding {
 
     var roomId: String = savedStateHandle.get<String>("roomId") ?: ""
         private set
@@ -202,12 +203,12 @@ class LiveRoomViewModel @Inject constructor(
     // Track if playback was requested but player wasn't ready yet
     private var pendingPlayRequest = false
 
-    fun bindPlaybackEngine(engine: LivePlaybackEngine) {
+    override fun bindPlaybackEngine(engine: LivePlaybackEngine) {
         playbackEngine = engine
         Timber.d("Playback engine bound")
     }
 
-    fun unbindPlaybackEngine(engine: LivePlaybackEngine) {
+    override fun unbindPlaybackEngine(engine: LivePlaybackEngine) {
         if (playbackEngine === engine) {
             playbackEngine = null
             Timber.d("Playback engine unbound")
@@ -218,7 +219,7 @@ class LiveRoomViewModel @Inject constructor(
      * Called when the playback session is ready.
      * If qualities were already loaded but player wasn't ready, triggers playback now.
      */
-    fun onPlayerControllerReady() {
+    override fun onPlaybackEngineReady() {
         val detail = _uiState.value.detail ?: return
         val qualities = _uiState.value.playQualities
         val route = activeRoute ?: return

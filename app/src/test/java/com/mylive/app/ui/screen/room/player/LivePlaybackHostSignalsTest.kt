@@ -18,6 +18,22 @@ class LivePlaybackHostSignalsTest {
     }
 
     @Test
+    fun disposingPreviousOwnerDoesNotDisableCurrentRoomAutoPip() {
+        LivePlaybackHostSignals.setAutoPipOnLeave(false)
+        val previousRoom = Any()
+        val currentRoom = Any()
+
+        LivePlaybackHostSignals.setAutoPipOnLeave(previousRoom, true)
+        LivePlaybackHostSignals.setAutoPipOnLeave(currentRoom, true)
+        LivePlaybackHostSignals.setAutoPipOnLeave(previousRoom, false)
+
+        assertTrue(LivePlaybackHostSignals.autoPipOnLeave)
+
+        LivePlaybackHostSignals.setAutoPipOnLeave(currentRoom, false)
+        assertFalse(LivePlaybackHostSignals.autoPipOnLeave)
+    }
+
+    @Test
     fun mainActivityAndSessionUseHostSignalsNotBareStaticMutationInSession() {
         val session = File("src/main/java/com/mylive/app/ui/screen/room/player/LivePlaybackSession.kt")
             .readText()

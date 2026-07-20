@@ -26,4 +26,12 @@ class IndexPresencePolicyTest {
         assertTrue(source.contains("shouldComposeIndexTabContent("))
         assertTrue(source.contains("composeIndexTabContent"))
     }
+
+    @Test
+    fun hiddenIndexContentRetainsSaveableTabState() {
+        val source = File("src/main/java/com/mylive/app/ui/screen/IndexScreen.kt").readText()
+
+        assertTrue(source.contains("rememberSaveableStateHolder()"))
+        assertTrue(source.contains("SaveableStateProvider(selection.key)"))
+    }
 }

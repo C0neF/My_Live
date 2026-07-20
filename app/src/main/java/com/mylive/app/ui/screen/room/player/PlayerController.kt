@@ -37,10 +37,10 @@ class PlayerController(
     private val hardwareDecodeEnabled: Boolean = true,
     private var forceHttps: Boolean = false,
     private val onPlaybackSourceExhausted: (() -> Unit)? = null
-) : LivePlaybackEngine {
+) {
 
     private val _state = MutableStateFlow(PlayerState())
-    override val state: StateFlow<PlayerState> = _state
+    val state: StateFlow<PlayerState> = _state
 
     var player: ExoPlayer? = null
         private set
@@ -137,11 +137,11 @@ class PlayerController(
         _state.value = _state.value.copy(volume = currentVol)
     }
 
-    override fun play(
+    fun play(
         urls: List<String>,
-        headers: Map<String, String>?,
-        startIndex: Int,
-        resetSourceRefreshAttempt: Boolean
+        headers: Map<String, String>? = null,
+        startIndex: Int = 0,
+        resetSourceRefreshAttempt: Boolean = true
     ) {
         val processedUrls = buildPlaybackUrlCandidates(urls, forceHttps)
         this.urls = processedUrls
@@ -220,7 +220,7 @@ class PlayerController(
         playCurrentUrl()
     }
 
-    override fun showError(message: String) {
+    fun showError(message: String) {
         player?.stop()
         _state.value = _state.value.copy(
             isPlaying = false,
@@ -313,7 +313,7 @@ class PlayerController(
      * Stop playback and clear the video surface.
      * Call this before navigating away to prevent the last frame from lingering.
      */
-    override fun stop() {
+    fun stop() {
         player?.stop()
         _state.value = _state.value.copy(isPlaying = false, isLoading = false)
     }

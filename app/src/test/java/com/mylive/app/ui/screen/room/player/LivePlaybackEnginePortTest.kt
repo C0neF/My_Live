@@ -21,18 +21,26 @@ class LivePlaybackEnginePortTest {
     }
 
     @Test
-    fun playerControllerImplementsEnginePort() {
-        val source = File("src/main/java/com/mylive/app/ui/screen/room/player/PlayerController.kt")
+    fun sessionImplementsEnginePortAndKeepsControllerPrivate() {
+        val controller = File("src/main/java/com/mylive/app/ui/screen/room/player/PlayerController.kt")
             .readText()
-        assertTrue(source.contains(": LivePlaybackEngine"))
+        val session = File("src/main/java/com/mylive/app/ui/screen/room/player/LivePlaybackSession.kt")
+            .readText()
+        assertFalse(controller.contains(": LivePlaybackEngine"))
+        assertTrue(session.contains(": LivePlaybackEngine"))
     }
 
     @Test
     fun sessionBindsEngineThroughPort() {
         val source = File("src/main/java/com/mylive/app/ui/screen/room/player/LivePlaybackSession.kt")
             .readText()
-        assertTrue(source.contains("val engine: LivePlaybackEngine"))
-        assertTrue(source.contains("viewModel.bindPlaybackEngine(engine)"))
-        assertTrue(source.contains("viewModel?.unbindPlaybackEngine(engine)"))
+        assertTrue(source.contains(": LivePlaybackEngine"))
+        assertTrue(source.contains("get() = this"))
+        assertTrue(source.contains("binding.bindPlaybackEngine(engine)"))
+        assertTrue(source.contains("binding?.unbindPlaybackEngine(engine)"))
+        assertTrue(source.contains("deferredPlayRequest"))
+        val engineProperty = source.substringAfter("val engine: LivePlaybackEngine")
+            .substringBefore("override val state")
+        assertFalse(engineProperty.contains("get() = controller"))
     }
 }

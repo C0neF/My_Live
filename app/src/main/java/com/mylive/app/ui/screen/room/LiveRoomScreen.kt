@@ -34,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
@@ -367,16 +368,21 @@ fun LiveRoomScreen(
 
     val autoPipOnExit = liveRoomPreferences.autoPipOnExit
     val autoFullScreen = liveRoomPreferences.autoFullScreen
-    DisposableEffect(autoPipOnExit) {
-        LivePlaybackSession.setAutoPipActive(autoPipOnExit)
+    val autoPipOwner = remember { Any() }
+    DisposableEffect(autoPipOnExit, autoPipOwner) {
+        LivePlaybackSession.setAutoPipActive(autoPipOwner, autoPipOnExit)
         onDispose {
-            LivePlaybackSession.setAutoPipActive(false)
+            LivePlaybackSession.setAutoPipActive(autoPipOwner, false)
         }
     }
 
     // Playback session owns PlayerController create/release, VM bind, and FGS handoff.
     var playbackSession by remember { mutableStateOf<LivePlaybackSession?>(null) }
     val playerController = playbackSession?.playerController
+    val allowBackgroundPlayback = liveRoomPreferences.allowBackgroundPlayback
+    val playerAutoPause = liveRoomPreferences.playerAutoPause
+    val playerForceHttps = liveRoomPreferences.playerForceHttps
+    val lifecycleOwner = LocalLifecycleOwner.current
 
     LaunchedEffect(isExiting) {
         if (isExiting) {
@@ -395,6 +401,15 @@ fun LiveRoomScreen(
                 viewModel.recoverPlaybackAfterSourceFailure()
             }
         )
+        if (!lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+            session.onHostPause(
+                allowBackgroundPlayback = startupPreferences.allowBackgroundPlayback,
+                playerAutoPause = startupPreferences.playerAutoPause,
+                roomTitle = uiState.detail?.title ?: "",
+                anchorName = uiState.detail?.userName ?: "",
+                platform = viewModel.siteId
+            )
+        }
         playbackSession = session
         session.attach(viewModel)
     }
@@ -407,11 +422,6 @@ fun LiveRoomScreen(
     }
 
     // Sync playback auto-pause & background play settings with Lifecycle
-    val allowBackgroundPlayback = liveRoomPreferences.allowBackgroundPlayback
-    val playerAutoPause = liveRoomPreferences.playerAutoPause
-    val playerForceHttps = liveRoomPreferences.playerForceHttps
-    val lifecycleOwner = LocalLifecycleOwner.current
-
     LaunchedEffect(playbackSession, playerForceHttps) {
         playbackSession?.setForceHttps(playerForceHttps)
     }
@@ -446,6 +456,17 @@ fun LiveRoomScreen(
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
+        if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+            playbackSession?.onHostResume()
+        } else {
+            playbackSession?.onHostPause(
+                allowBackgroundPlayback = allowBackgroundPlayback,
+                playerAutoPause = playerAutoPause,
+                roomTitle = uiState.detail?.title ?: "",
+                anchorName = uiState.detail?.userName ?: "",
+                platform = viewModel.siteId
+            )
+        }
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
             playbackSession?.stopForegroundService()
@@ -460,7 +481,7 @@ fun LiveRoomScreen(
     // recompose the entire room layout branch selection.
     val isFullscreen by remember(playerController) {
         playerController?.state?.map { it.isFullscreen } ?: flowOf(false)
-    }.collectAsStateWithLifecycle(initialValue = playerController?.state?.value?.isFullscreen == true)
+    }.collectAsStateWithLifecycle(initialValue = false)
     var autoFullscreenAppliedRoute by remember { mutableStateOf<Pair<String, String>?>(null) }
 
     LaunchedEffect(autoFullScreen, playerController, uiState.detail, key.roomId, key.siteId, isFullscreen) {
@@ -1459,12 +1480,13 @@ private fun PortraitAuxiliaryPanelSheet(
     val maxSheetHeight = (LocalConfiguration.current.screenHeightDp * 0.72f).dp
     ModalBottomSheet(
         onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = MaterialTheme.colorScheme.surface
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 320.dp, max = maxSheetHeight)
+                .heightIn(max = maxSheetHeight)
                 .navigationBarsPadding()
         ) {
             Row(
@@ -1496,7 +1518,7 @@ private fun PortraitAuxiliaryPanelSheet(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f)
+                    .weight(1f, fill = false)
             ) {
                 when (panel) {
                     PortraitLiveRoomPanel.SUPER_CHAT -> {
@@ -1767,10 +1789,16 @@ private fun ChatMessageItem(
     when (message.type) {
         LiveMessageType.CHAT -> {
             val isSystem = message.userName == "LiveSysMessage"
-            val liveMessageColor = remember(message.color) {
-                val r = (message.color.r / 255f).coerceIn(0f, 1f)
-                val g = (message.color.g / 255f).coerceIn(0f, 1f)
-                val b = (message.color.b / 255f).coerceIn(0f, 1f)
+            val chatSurfaceLuminance = MaterialTheme.colorScheme.surface.luminance().toDouble()
+            // Light chat surfaces make yellow / lime / cyan unreadable — darken while keeping hue.
+            val liveMessageColor = remember(message.color, chatSurfaceLuminance) {
+                val readable = resolveReadableChatMessageColor(
+                    color = message.color,
+                    backgroundLuminance = chatSurfaceLuminance
+                )
+                val r = (readable.r / 255f).coerceIn(0f, 1f)
+                val g = (readable.g / 255f).coerceIn(0f, 1f)
+                val b = (readable.b / 255f).coerceIn(0f, 1f)
                 Color(r, g, b)
             }
             val colorPolicy = remember(message.color) {
@@ -2393,6 +2421,7 @@ fun FollowListPanel(
     modifier: Modifier = Modifier
 ) {
     val follows by viewModel.follows.collectAsStateWithLifecycle()
+    val isRefreshing by viewModel.updatingStatus.collectAsStateWithLifecycle()
     var filterIndex by remember { mutableIntStateOf(0) } // 0: 全部, 1: 直播中, 2: 未开播
 
     val filteredFollows = remember(follows, filterIndex) {
@@ -2404,12 +2433,13 @@ fun FollowListPanel(
     }
 
     Column(modifier = modifier.fillMaxSize().padding(8.dp)) {
-        // Filter options row
+        // Filter chips + refresh (manual only; do not auto-refresh on open).
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 8.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
             val options = listOf("全部", "直播中", "未开播")
             options.forEachIndexed { index, text ->
@@ -2424,22 +2454,43 @@ fun FollowListPanel(
                     )
                 )
             }
+            Spacer(modifier = Modifier.weight(1f))
+            IconButton(
+                onClick = { viewModel.updateFollowStatus() },
+                enabled = !isRefreshing
+            ) {
+                if (isRefreshing) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = "刷新关注状态"
+                    )
+                }
+            }
         }
 
         if (filteredFollows.isEmpty()) {
             Box(
-                modifier = Modifier.weight(1f).fillMaxWidth(),
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "暂无数据",
+                    text = if (isRefreshing) "刷新中…" else "暂无数据",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         } else {
             LazyColumn(
-                modifier = Modifier.weight(1f).fillMaxWidth(),
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 contentPadding = PaddingValues(bottom = 16.dp)
             ) {

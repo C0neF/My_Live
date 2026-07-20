@@ -23,21 +23,3 @@ object RandomDanmakuOverflowTrackPicker : DanmakuOverflowTrackPicker {
         return Random.nextInt(trackCount)
     }
 }
-
-class FixedDanmakuOverflowTrackPicker(private val track: Int = 0) : DanmakuOverflowTrackPicker {
-    override fun pick(trackCount: Int): Int {
-        if (trackCount <= 0) return 0
-        return track.coerceIn(0, trackCount - 1)
-    }
-}
-
-/** Mutable clock for deterministic schedule tests. */
-class FakeDanmakuClock(private var nowMs: Long = 0L) : DanmakuClock {
-    override fun uptimeMillis(): Long = nowMs
-    fun advance(deltaMs: Long) {
-        nowMs += deltaMs
-    }
-    fun set(nowMs: Long) {
-        this.nowMs = nowMs
-    }
-}

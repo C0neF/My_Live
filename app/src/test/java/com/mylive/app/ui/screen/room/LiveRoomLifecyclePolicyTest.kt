@@ -31,16 +31,22 @@ class LiveRoomLifecyclePolicyTest {
 
     @Test
     fun liveRoomDoesNotUnconditionallyResumePlaybackOnForeground() {
-        val source = File("src/main/java/com/mylive/app/ui/screen/room/LiveRoomScreen.kt").readText()
-        val lifecycleEffect = source.substringAfter(
-            "DisposableEffect(lifecycleOwner, playerController, allowBackgroundPlayback, playerAutoPause, uiState.detail)"
+        val screen = File("src/main/java/com/mylive/app/ui/screen/room/LiveRoomScreen.kt").readText()
+        val session = File(
+            "src/main/java/com/mylive/app/ui/screen/room/player/LivePlaybackSession.kt"
+        ).readText()
+        val lifecycleEffect = screen.substringAfter(
+            "DisposableEffect(\n        lifecycleOwner,\n        playbackSession,"
         ).substringBefore("// Room idle auto exit state")
         val resumeBranch = lifecycleEffect.substringAfter("Lifecycle.Event.ON_RESUME ->")
             .substringBefore("else ->")
 
-        assertTrue(source.contains("var resumePlaybackOnForeground"))
-        assertTrue(resumeBranch.contains("if (resumePlaybackOnForeground)"))
-        assertFalse(resumeBranch.contains("\n                    playerController?.resume()"))
+        assertTrue(screen.contains("playbackSession?.onHostResume()"))
+        assertTrue(resumeBranch.contains("playbackSession?.onHostResume()"))
+        assertFalse(resumeBranch.contains("playbackSession?.resume()"))
+        assertTrue(session.contains("private var resumePlaybackOnForeground"))
+        assertTrue(session.contains("if (resumePlaybackOnForeground)"))
+        assertTrue(session.contains("controller.resume()"))
     }
 
     @Test

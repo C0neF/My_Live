@@ -36,6 +36,7 @@ import com.mylive.app.data.local.entity.HistoryEntity
 import com.mylive.app.data.repository.FollowRepository
 import com.mylive.app.data.repository.HistoryRepository
 import com.mylive.app.data.repository.SettingsRepository
+import com.mylive.app.service.FollowStatusRefreshCoordinator
 import com.mylive.app.ui.theme.Icons
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -61,7 +62,8 @@ class QuickAccessViewModel @Inject constructor(
     private val followRepository: FollowRepository,
     private val historyRepository: HistoryRepository,
     private val settingsRepository: SettingsRepository,
-    private val sites: Set<@JvmSuppressWildcards LiveSite>
+    private val sites: Set<@JvmSuppressWildcards LiveSite>,
+    private val followStatusRefreshCoordinator: FollowStatusRefreshCoordinator
 ) : ViewModel() {
 
     val follows: StateFlow<List<FollowUserEntity>> = followRepository.getAllFollows()
@@ -81,6 +83,15 @@ class QuickAccessViewModel @Inject constructor(
     }
 
     fun getSiteById(siteId: String): LiveSite? = sites.find { it.id == siteId }
+
+    val updatingFollowStatus: StateFlow<Boolean> = followStatusRefreshCoordinator.isRefreshing
+
+    /** Manual refresh of live status for all follows (chip-row refresh in more menu). */
+    fun updateFollowStatus() {
+        viewModelScope.launch {
+            followStatusRefreshCoordinator.refreshAll()
+        }
+    }
 
     // Recommendation state
     private val _recommendations = MutableStateFlow<List<LiveRoomItem>>(emptyList())
@@ -336,6 +347,7 @@ private fun FollowQuickPanel(
     onNavigateToRoom: (siteId: String, roomId: String, initialIsFollowing: Boolean?) -> Unit
 ) {
     val follows by viewModel.follows.collectAsStateWithLifecycle()
+    val isRefreshing by viewModel.updatingFollowStatus.collectAsStateWithLifecycle()
     var filterIndex by remember { mutableIntStateOf(0) }
 
     val filteredFollows = remember(follows, filterIndex) {
@@ -347,12 +359,13 @@ private fun FollowQuickPanel(
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // Filter chips
+        // Filter chips + refresh on the right
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
             listOf("全部", "直播中", "未开播").forEachIndexed { index, label ->
                 FilterChip(
@@ -362,11 +375,32 @@ private fun FollowQuickPanel(
                     modifier = Modifier.height(32.dp)
                 )
             }
+            Spacer(modifier = Modifier.weight(1f))
+            IconButton(
+                onClick = { viewModel.updateFollowStatus() },
+                enabled = !isRefreshing,
+                modifier = Modifier.size(36.dp)
+            ) {
+                if (isRefreshing) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = "刷新关注状态"
+                    )
+                }
+            }
         }
 
         if (filteredFollows.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("暂无关注", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    text = if (isRefreshing) "刷新中…" else "暂无关注",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         } else {
             LazyColumn(modifier = Modifier.fillMaxSize()) {

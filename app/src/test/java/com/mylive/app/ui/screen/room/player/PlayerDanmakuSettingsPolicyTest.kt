@@ -20,13 +20,16 @@ class PlayerDanmakuSettingsPolicyTest {
         assertTrue(source.contains("danmuHideTop: Boolean = false"))
         assertTrue(source.contains("danmuHideBottom: Boolean = false"))
         assertTrue(source.contains("danmuDedupeStep: Int = 2"))
-        assertTrue(source.contains("controller.danmuLineCount = danmuLineCount"))
-        assertTrue(source.contains("controller.danmuDelayMs = danmuDelayMs"))
-        assertTrue(source.contains("controller.danmuTopMargin = danmuTopMargin.toFloat()"))
-        assertTrue(source.contains("controller.danmuBottomMargin = danmuBottomMargin.toFloat()"))
-        assertTrue(source.contains("controller.danmuHideTop = danmuHideTop"))
-        assertTrue(source.contains("controller.danmuHideBottom = danmuHideBottom"))
-        assertTrue(source.contains("controller.dedupeStepSize = danmuDedupeStep"))
+        // Settings are applied through DanmakuConfig (single write surface).
+        assertTrue(source.contains("applyDanmakuConfig("))
+        assertTrue(source.contains("DanmakuConfig("))
+        assertTrue(source.contains("lineCount = danmuLineCount"))
+        assertTrue(source.contains("delayMs = danmuDelayMs"))
+        assertTrue(source.contains("topMargin = danmuTopMargin"))
+        assertTrue(source.contains("bottomMargin = danmuBottomMargin"))
+        assertTrue(source.contains("hideTop = danmuHideTop"))
+        assertTrue(source.contains("hideBottom = danmuHideBottom"))
+        assertTrue(source.contains("dedupeStep = danmuDedupeStep"))
     }
 
     @Test

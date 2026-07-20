@@ -25,12 +25,17 @@ class FollowRefreshPolicyTest {
     }
 
     @Test
-    fun followViewModelSkipsConcurrentStatusRefreshes() {
-        val source = File("src/main/java/com/mylive/app/ui/screen/follow/FollowViewModel.kt").readText()
+    fun followViewModelUsesSharedSingleFlightRefreshCoordinator() {
+        val viewModel = File("src/main/java/com/mylive/app/ui/screen/follow/FollowViewModel.kt").readText()
+        val coordinator = File(
+            "src/main/java/com/mylive/app/service/FollowStatusRefreshCoordinator.kt"
+        ).readText()
 
-        assertTrue(source.contains("private var updateJob: Job? = null"))
-        assertTrue(source.contains("if (updateJob?.isActive == true) return"))
-        assertTrue(source.contains("updateJob = viewModelScope.launch"))
+        assertTrue(viewModel.contains("FollowStatusRefreshCoordinator"))
+        assertTrue(viewModel.contains("followStatusRefreshCoordinator.refreshAll()"))
+        assertFalse(viewModel.contains("private var updateJob: Job?"))
+        assertTrue(coordinator.contains("SuspendSingleFlight"))
+        assertTrue(coordinator.contains("inFlight"))
     }
 
     @Test

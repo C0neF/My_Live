@@ -223,6 +223,11 @@ fun PlayerView(
                                 else -> 0 // RESIZE_MODE_FIT
                             }
                         },
+                        // Detach player from the platform view before the AndroidView is
+                        // destroyed (layout mode / compat surface swap / leave room).
+                        onRelease = { view ->
+                            view.player = null
+                        },
                         modifier = playerModifier
                     )
                 }
@@ -1293,24 +1298,29 @@ private fun updateControllerConfig(
     danmuDedupeStrictMode: Boolean,
     danmuRenderEmoji: Boolean
 ) {
-    controller.danmuSize = danmuSize.toFloat()
-    controller.danmuSpeed = danmuSpeed.toFloat()
-    controller.danmuArea = danmuArea.toFloat()
-    controller.danmuLineCount = danmuLineCount
-    controller.danmuDelayMs = danmuDelayMs
-    controller.danmuOpacity = danmuOpacity.toFloat()
-    controller.danmuFontWeight = danmuFontWeight
-    controller.danmuStrokeWidth = danmuStrokeWidth.toFloat()
-    controller.danmuTopMargin = danmuTopMargin.toFloat()
-    controller.danmuBottomMargin = danmuBottomMargin.toFloat()
-    controller.danmuHideScroll = danmuHideScroll
-    controller.danmuHideTop = danmuHideTop
-    controller.danmuHideBottom = danmuHideBottom
-    controller.dedupeEnabled = danmuDedupeEnable
-    controller.dedupeWindowSize = danmuDedupeWindow
-    controller.dedupeStepSize = danmuDedupeStep
-    controller.dedupeStrictMode = danmuDedupeStrictMode
-    controller.danmuRenderEmoji = danmuRenderEmoji
+    applyDanmakuConfig(
+        controller,
+        DanmakuConfig(
+            size = danmuSize,
+            speed = danmuSpeed,
+            area = danmuArea,
+            lineCount = danmuLineCount,
+            delayMs = danmuDelayMs,
+            opacity = danmuOpacity,
+            fontWeight = danmuFontWeight,
+            strokeWidth = danmuStrokeWidth,
+            topMargin = danmuTopMargin,
+            bottomMargin = danmuBottomMargin,
+            hideScroll = danmuHideScroll,
+            hideTop = danmuHideTop,
+            hideBottom = danmuHideBottom,
+            dedupeEnable = danmuDedupeEnable,
+            dedupeWindow = danmuDedupeWindow,
+            dedupeStep = danmuDedupeStep,
+            dedupeStrictMode = danmuDedupeStrictMode,
+            renderEmoji = danmuRenderEmoji
+        )
+    )
 }
 
 @Composable

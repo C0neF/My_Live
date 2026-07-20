@@ -40,6 +40,7 @@ import com.mylive.app.ui.navigation.Route
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import com.mylive.app.ui.screen.settings.SettingsViewModel
 
 data class BottomNavItem(
@@ -78,6 +79,7 @@ fun IndexScreen(
     var homeRefreshSignal by rememberSaveable { mutableIntStateOf(0) }
     var followRefreshSignal by rememberSaveable { mutableIntStateOf(0) }
     var categoryRefreshSignal by rememberSaveable { mutableIntStateOf(0) }
+    val tabStateHolder = rememberSaveableStateHolder()
     var homePlatformAccentColor by remember { mutableStateOf<Color?>(null) }
     LaunchedEffect(bottomNavItems) {
         if (bottomNavItems.none { it.key == selectedPageKey }) {
@@ -101,6 +103,9 @@ fun IndexScreen(
     val homeLiveRoomGridColumns = indexHomeLiveRoomGridColumns(configuration.screenWidthDp)
     val followCardColumns = followCardGridColumns(useSideNavigation)
     val topRoute = navigator.backStack.lastOrNull()
+    // When a non-Index route covers Index, skip heavy tab composition so Home/Follow
+    // collectors and grids do not keep working under a live room.
+    val composeIndexTabContent = shouldComposeIndexTabContent(topRoute)
     var sawLiveRoomOnTop by remember { mutableStateOf(false) }
     var suppressHomeInitialLoadingEffect by remember { mutableStateOf(false) }
 
@@ -227,37 +232,41 @@ fun IndexScreen(
                 }
 
                 Box(modifier = Modifier.fillMaxSize()) {
-                    when (selection.key) {
-                        "recommend" -> HomeScreen(
-                            navigator = navigator,
-                            suppressInitialLoadingEffect = suppressHomeInitialLoadingEffect,
-                            refreshSignal = homeRefreshSignal,
-                            onInitialLoadingEffectSettled = {
-                                suppressHomeInitialLoadingEffect = false
-                            },
-                            onPlatformAccentColorChange = {
-                                homePlatformAccentColor = it
-                            },
-                            onRevealBottomBar = revealBottomBar,
-                            contentBottomPadding = contentBottomPadding,
-                            homeLiveRoomGridColumns = homeLiveRoomGridColumns
-                        )
-                        "follow" -> FollowScreen(
-                            navigator = navigator,
-                            refreshSignal = followRefreshSignal,
-                            onRevealBottomBar = revealBottomBar,
-                            contentBottomPadding = contentBottomPadding,
-                            followCardColumns = followCardColumns
-                        )
-                        "category" -> CategoryScreen(
-                            navigator = navigator,
-                            refreshSignal = categoryRefreshSignal,
-                            contentBottomPadding = contentBottomPadding
-                        )
-                        "user" -> MineScreen(
-                            navigator = navigator,
-                            contentBottomPadding = contentBottomPadding
-                        )
+                    if (composeIndexTabContent) {
+                        tabStateHolder.SaveableStateProvider(selection.key) {
+                            when (selection.key) {
+                                "recommend" -> HomeScreen(
+                                    navigator = navigator,
+                                    suppressInitialLoadingEffect = suppressHomeInitialLoadingEffect,
+                                    refreshSignal = homeRefreshSignal,
+                                    onInitialLoadingEffectSettled = {
+                                        suppressHomeInitialLoadingEffect = false
+                                    },
+                                    onPlatformAccentColorChange = {
+                                        homePlatformAccentColor = it
+                                    },
+                                    onRevealBottomBar = revealBottomBar,
+                                    contentBottomPadding = contentBottomPadding,
+                                    homeLiveRoomGridColumns = homeLiveRoomGridColumns
+                                )
+                                "follow" -> FollowScreen(
+                                    navigator = navigator,
+                                    refreshSignal = followRefreshSignal,
+                                    onRevealBottomBar = revealBottomBar,
+                                    contentBottomPadding = contentBottomPadding,
+                                    followCardColumns = followCardColumns
+                                )
+                                "category" -> CategoryScreen(
+                                    navigator = navigator,
+                                    refreshSignal = categoryRefreshSignal,
+                                    contentBottomPadding = contentBottomPadding
+                                )
+                                "user" -> MineScreen(
+                                    navigator = navigator,
+                                    contentBottomPadding = contentBottomPadding
+                                )
+                            }
+                        }
                     }
                 }
             }

@@ -53,4 +53,24 @@ class QuickAccessPanelLayoutPolicyTest {
         assertTrue(disabledGuard.contains("if (!enabled) return"))
         assertFalse(disabledGuard.contains("if (!enabled) {\n        onDismiss()"))
     }
+
+    @Test
+    fun followQuickPanelPlacesRefreshBesideFilterChips() {
+        val source = File("src/main/java/com/mylive/app/ui/screen/room/quickaccess/QuickAccessPanel.kt").readText()
+        val panelSource = source.substringAfter("private fun FollowQuickPanel(")
+            .substringBefore("// ─── History Quick Panel")
+
+        assertFalse(panelSource.contains("PullToRefreshBox("))
+        assertFalse(panelSource.contains("LaunchedEffect(Unit)"))
+        assertTrue(panelSource.contains("listOf(\"全部\", \"直播中\", \"未开播\")"))
+        assertTrue(panelSource.contains("viewModel.updatingFollowStatus.collectAsStateWithLifecycle()"))
+        assertTrue(panelSource.contains("viewModel.updateFollowStatus()"))
+        assertTrue(panelSource.contains("contentDescription = \"刷新关注状态\""))
+        assertTrue(panelSource.contains("Icons.Default.Refresh"))
+
+        val chipRow = panelSource.substringAfter("listOf(\"全部\", \"直播中\", \"未开播\")")
+            .substringBefore("if (filteredFollows.isEmpty())")
+        assertTrue(chipRow.contains("updateFollowStatus()"))
+        assertTrue(chipRow.contains("Icons.Default.Refresh"))
+    }
 }

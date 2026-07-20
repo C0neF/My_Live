@@ -230,10 +230,15 @@ class WebSocketUtils(
         heartBeatTimer = Timer("ws-heartbeat", true).apply {
             schedule(object : TimerTask() {
                 override fun run() {
-                    val idleTimeout = connectIdleTimeoutMillis
-                    if (idleTimeout != null && idleTimeout > 0 && status == SocketStatus.CONNECTED) {
+                    if (status == SocketStatus.CONNECTED) {
                         val idleFor = System.currentTimeMillis() - lastMessageAtMillis
-                        if (idleFor >= idleTimeout) {
+                        if (
+                            shouldReconnectOnIdleTimeout(
+                                intentionalClose = intentionalClose,
+                                idleTimeoutMillis = connectIdleTimeoutMillis,
+                                idleForMillis = idleFor
+                            )
+                        ) {
                             onIdleTimeout()
                             return
                         }
@@ -258,7 +263,15 @@ class WebSocketUtils(
      * terminal close to the UI. Recreate it immediately so streams can resume.
      */
     private fun onIdleTimeout() {
-        if (intentionalClose) return
+        val idleFor = System.currentTimeMillis() - lastMessageAtMillis
+        if (!shouldReconnectOnIdleTimeout(
+                intentionalClose = intentionalClose,
+                idleTimeoutMillis = connectIdleTimeoutMillis,
+                idleForMillis = idleFor
+            )
+        ) {
+            return
+        }
         heartBeatTimer?.cancel()
         heartBeatTimer = null
         status = SocketStatus.FAILED
@@ -273,18 +286,35 @@ class WebSocketUtils(
      * Skips if we intentionally closed the socket.
      */
     private fun onError(t: Throwable) {
-        if (intentionalClose) return
         heartBeatTimer?.cancel()
         heartBeatTimer = null
-        if (currentUrlIndex < connectUrls.lastIndex) {
-            currentUrlIndex++
-            callbackReconnect?.invoke()
-            doConnectCurrentUrl()
-            return
+        when (
+            webSocketFailureAction(
+                intentionalClose = intentionalClose,
+                currentUrlIndex = currentUrlIndex,
+                urlCount = connectUrls.size,
+                reconnectAttemptsAlready = reconnectTime,
+                maxReconnectAttempts = maxReconnectTime
+            )
+        ) {
+            WebSocketFailureAction.GIVE_UP -> {
+                if (!intentionalClose) {
+                    status = SocketStatus.FAILED
+                    callbackClose?.invoke(t.toString())
+                    reconnect()
+                }
+            }
+            WebSocketFailureAction.TRY_NEXT_URL -> {
+                currentUrlIndex++
+                callbackReconnect?.invoke()
+                doConnectCurrentUrl()
+            }
+            WebSocketFailureAction.SCHEDULE_RECONNECT -> {
+                status = SocketStatus.FAILED
+                callbackClose?.invoke(t.toString())
+                reconnect()
+            }
         }
-        status = SocketStatus.FAILED
-        callbackClose?.invoke(t.toString())
-        reconnect()
     }
 
     /**
@@ -342,7 +372,7 @@ class WebSocketUtils(
      * After [maxReconnectTime] attempts, gives up and notifies [callbackClose].
      */
     private fun reconnect() {
-        if (intentionalClose) return
+        if (!shouldRunScheduledReconnect(intentionalClose)) return
         if (reconnectTime >= maxReconnectTime) {
             callbackClose?.invoke("重连超过最大次数，与服务器断开连接")
             reconnectTimer?.cancel()
@@ -351,12 +381,12 @@ class WebSocketUtils(
             return
         }
 
-        reconnectTime++
+        reconnectTime = nextReconnectAttemptCount(reconnectTime)
         reconnectTimer?.cancel()
         reconnectTimer = Timer("ws-reconnect", true).apply {
             schedule(object : TimerTask() {
                 override fun run() {
-                    if (intentionalClose) return
+                    if (!shouldRunScheduledReconnect(intentionalClose)) return
                     callbackReconnect?.invoke()
                     doConnect(retry = true)
                 }

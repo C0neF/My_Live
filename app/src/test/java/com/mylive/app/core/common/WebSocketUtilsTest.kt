@@ -21,10 +21,19 @@ class WebSocketUtilsTest {
     fun canDisableCompressionExtensionForIncompatibleServers() {
         val server = MockWebServer()
         val openLatch = CountDownLatch(1)
+        val closeLatch = CountDownLatch(1)
         server.enqueue(
             MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
                 override fun onOpen(webSocket: WebSocket, response: Response) {
                     openLatch.countDown()
+                }
+
+                override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                    webSocket.close(code, reason)
+                }
+
+                override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                    closeLatch.countDown()
                 }
             })
         )
@@ -42,6 +51,7 @@ class WebSocketUtilsTest {
             assertTrue(openLatch.await(2, TimeUnit.SECONDS))
             assertNull(server.takeRequest(2, TimeUnit.SECONDS)?.getHeader("Sec-WebSocket-Extensions"))
             socket.close()
+            assertTrue(closeLatch.await(2, TimeUnit.SECONDS))
         } finally {
             server.shutdown()
         }

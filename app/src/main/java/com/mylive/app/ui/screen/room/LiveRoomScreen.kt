@@ -194,10 +194,16 @@ private fun currentEpochMillis(): Long = System.currentTimeMillis()
 /**
  * Orientation policy for the live room.
  *
- * - Controls locked: freeze the current orientation so rotate-to-portrait is ignored.
- * - Fullscreen unlocked, still entering from portrait: force landscape first.
- * - Fullscreen unlocked, already landscape: free sensor so rotate-to-portrait can exit fullscreen.
+ * - Controls locked: freeze the current orientation.
+ * - Fullscreen, still entering from portrait: force landscape first so the layout switches.
+ * - Fullscreen, landscape reached: free full-sensor so the player can be watched in any physical
+ *   orientation — including portrait — without ever exiting fullscreen. The user decides when to
+ *   leave by tapping the fullscreen button or pressing back.
  * - Otherwise: system default.
+ *
+ * Note: SCREEN_ORIENTATION_FULL_SENSOR deliberately overrides the system rotation lock. That is
+ * intentional here — once the user taps "fullscreen", physical rotation should always be followed
+ * regardless of the lock setting, just like every major video player (YouTube, Bilibili, etc.).
  */
 internal fun liveRoomRequestedOrientation(
     fullscreen: Boolean,
@@ -207,25 +213,24 @@ internal fun liveRoomRequestedOrientation(
 ): Int {
     return when {
         controlsLocked -> ActivityInfo.SCREEN_ORIENTATION_LOCKED
-        fullscreen && !isLandscape && !hasReachedLandscapeInFullscreen ->
+        fullscreen && !hasReachedLandscapeInFullscreen ->
             ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         fullscreen -> ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
         else -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
     }
 }
 
-/** Exit fullscreen only after we have been landscape, and only while unlocked. */
+/**
+ * Portrait rotation while in fullscreen is no longer treated as an exit gesture — the user
+ * explicitly chose fullscreen and should leave it explicitly via the UI or back button.
+ * This function is kept for call-site compatibility but always returns false.
+ */
 internal fun shouldExitFullscreenOnPortraitRotation(
     fullscreen: Boolean,
     controlsLocked: Boolean,
     isLandscape: Boolean,
     hasReachedLandscapeInFullscreen: Boolean
-): Boolean {
-    return fullscreen &&
-        !controlsLocked &&
-        !isLandscape &&
-        hasReachedLandscapeInFullscreen
-}
+): Boolean = false
 
 private fun applyLiveRoomFullscreen(
     activity: Activity,
@@ -516,6 +521,8 @@ fun LiveRoomScreen(
             isLandscape = isLandscape,
             hasReachedLandscapeInFullscreen = hasReachedLandscapeInFullscreen
         )
+        // shouldExitFullscreenOnPortraitRotation always returns false: portrait rotation while in
+        // fullscreen is no longer an exit gesture. The user leaves fullscreen explicitly.
         if (
             shouldExitFullscreenOnPortraitRotation(
                 fullscreen = isFullscreen,

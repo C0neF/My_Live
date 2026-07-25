@@ -75,6 +75,7 @@ class LiveRoomAutoFullscreenPolicyTest {
                 hasReachedLandscapeInFullscreen = true
             )
         )
+        // Portrait rotation while in fullscreen is never an exit gesture.
         assertFalse(
             shouldExitFullscreenOnPortraitRotation(
                 fullscreen = true,
@@ -83,7 +84,7 @@ class LiveRoomAutoFullscreenPolicyTest {
                 hasReachedLandscapeInFullscreen = true
             )
         )
-        assertTrue(
+        assertFalse(
             shouldExitFullscreenOnPortraitRotation(
                 fullscreen = true,
                 controlsLocked = false,
@@ -99,6 +100,60 @@ class LiveRoomAutoFullscreenPolicyTest {
                 hasReachedLandscapeInFullscreen = false
             )
         )
+    }
+
+    @Test
+    fun fullscreenNeverExitsOnPortraitRotationRegardlessOfRotationLock() {
+        // Entering fullscreen from portrait: force landscape so the layout switches.
+        assertEquals(
+            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE,
+            liveRoomRequestedOrientation(
+                fullscreen = true,
+                controlsLocked = false,
+                isLandscape = false,
+                hasReachedLandscapeInFullscreen = false
+            )
+        )
+        // Once landscape is reached: FULL_SENSOR lets physical rotation change display orientation
+        // while staying in fullscreen. FULL_SENSOR overrides the system rotation lock by design,
+        // matching YouTube / Bilibili behavior.
+        assertEquals(
+            ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR,
+            liveRoomRequestedOrientation(
+                fullscreen = true,
+                controlsLocked = false,
+                isLandscape = true,
+                hasReachedLandscapeInFullscreen = true
+            )
+        )
+        // Portrait rotation is never an exit gesture in any configuration.
+        assertFalse(
+            shouldExitFullscreenOnPortraitRotation(
+                fullscreen = true,
+                controlsLocked = false,
+                isLandscape = false,
+                hasReachedLandscapeInFullscreen = true
+            )
+        )
+        assertFalse(
+            shouldExitFullscreenOnPortraitRotation(
+                fullscreen = true,
+                controlsLocked = true,
+                isLandscape = false,
+                hasReachedLandscapeInFullscreen = true
+            )
+        )
+    }
+
+    @Test
+    fun fullscreenOrientationPolicyIsDocumentedInSource() {
+        val source = File("src/main/java/com/mylive/app/ui/screen/room/LiveRoomScreen.kt").readText()
+
+        assertTrue(source.contains("SCREEN_ORIENTATION_FULL_SENSOR"))
+        assertTrue(source.contains("SCREEN_ORIENTATION_SENSOR_LANDSCAPE"))
+        assertTrue(source.contains("shouldExitFullscreenOnPortraitRotation"))
+        // Confirm the exit function is permanently disabled.
+        assertTrue(source.contains("): Boolean = false"))
     }
 
     @Test

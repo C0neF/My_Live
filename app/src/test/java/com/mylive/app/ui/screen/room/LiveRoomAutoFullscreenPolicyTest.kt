@@ -47,7 +47,7 @@ class LiveRoomAutoFullscreenPolicyTest {
     }
 
     @Test
-    fun lockedControlsFreezeOrientationAndUnlockedFullscreenAllowsPortraitExit() {
+    fun lockedControlsFreezeOrientationAndFullscreenFollowsPhysicalRotation() {
         assertEquals(
             ActivityInfo.SCREEN_ORIENTATION_LOCKED,
             liveRoomRequestedOrientation(
@@ -75,29 +75,15 @@ class LiveRoomAutoFullscreenPolicyTest {
                 hasReachedLandscapeInFullscreen = true
             )
         )
-        // Portrait rotation while in fullscreen is never an exit gesture.
-        assertFalse(
-            shouldExitFullscreenOnPortraitRotation(
-                fullscreen = true,
-                controlsLocked = true,
-                isLandscape = false,
-                hasReachedLandscapeInFullscreen = true
-            )
-        )
-        assertFalse(
-            shouldExitFullscreenOnPortraitRotation(
+        // Portrait while in fullscreen still reports FULL_SENSOR: the orientation policy has no
+        // branch that would drop out of fullscreen on rotation.
+        assertEquals(
+            ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR,
+            liveRoomRequestedOrientation(
                 fullscreen = true,
                 controlsLocked = false,
                 isLandscape = false,
                 hasReachedLandscapeInFullscreen = true
-            )
-        )
-        assertFalse(
-            shouldExitFullscreenOnPortraitRotation(
-                fullscreen = true,
-                controlsLocked = false,
-                isLandscape = false,
-                hasReachedLandscapeInFullscreen = false
             )
         )
     }
@@ -126,17 +112,10 @@ class LiveRoomAutoFullscreenPolicyTest {
                 hasReachedLandscapeInFullscreen = true
             )
         )
-        // Portrait rotation is never an exit gesture in any configuration.
-        assertFalse(
-            shouldExitFullscreenOnPortraitRotation(
-                fullscreen = true,
-                controlsLocked = false,
-                isLandscape = false,
-                hasReachedLandscapeInFullscreen = true
-            )
-        )
-        assertFalse(
-            shouldExitFullscreenOnPortraitRotation(
+        // Locked controls still freeze the orientation instead of leaving fullscreen.
+        assertEquals(
+            ActivityInfo.SCREEN_ORIENTATION_LOCKED,
+            liveRoomRequestedOrientation(
                 fullscreen = true,
                 controlsLocked = true,
                 isLandscape = false,
@@ -151,9 +130,9 @@ class LiveRoomAutoFullscreenPolicyTest {
 
         assertTrue(source.contains("SCREEN_ORIENTATION_FULL_SENSOR"))
         assertTrue(source.contains("SCREEN_ORIENTATION_SENSOR_LANDSCAPE"))
-        assertTrue(source.contains("shouldExitFullscreenOnPortraitRotation"))
-        // Confirm the exit function is permanently disabled.
-        assertTrue(source.contains("): Boolean = false"))
+        // The exit-on-portrait-rotation helper is gone entirely, not merely disabled, so no call
+        // site can reintroduce the old behaviour by accident.
+        assertFalse(source.contains("shouldExitFullscreenOnPortraitRotation"))
     }
 
     @Test

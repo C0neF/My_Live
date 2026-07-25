@@ -220,18 +220,6 @@ internal fun liveRoomRequestedOrientation(
     }
 }
 
-/**
- * Portrait rotation while in fullscreen is no longer treated as an exit gesture — the user
- * explicitly chose fullscreen and should leave it explicitly via the UI or back button.
- * This function is kept for call-site compatibility but always returns false.
- */
-internal fun shouldExitFullscreenOnPortraitRotation(
-    fullscreen: Boolean,
-    controlsLocked: Boolean,
-    isLandscape: Boolean,
-    hasReachedLandscapeInFullscreen: Boolean
-): Boolean = false
-
 private fun applyLiveRoomFullscreen(
     activity: Activity,
     fullscreen: Boolean,
@@ -521,18 +509,8 @@ fun LiveRoomScreen(
             isLandscape = isLandscape,
             hasReachedLandscapeInFullscreen = hasReachedLandscapeInFullscreen
         )
-        // shouldExitFullscreenOnPortraitRotation always returns false: portrait rotation while in
-        // fullscreen is no longer an exit gesture. The user leaves fullscreen explicitly.
-        if (
-            shouldExitFullscreenOnPortraitRotation(
-                fullscreen = isFullscreen,
-                controlsLocked = isControlsLocked,
-                isLandscape = isLandscape,
-                hasReachedLandscapeInFullscreen = hasReachedLandscapeInFullscreen
-            )
-        ) {
-            playerController?.toggleFullscreen()
-        }
+        // Rotating to portrait inside fullscreen is deliberately not an exit gesture; leaving
+        // fullscreen is always an explicit action (fullscreen button or back).
     }
 
     // Keep the screen on for the entire live-room stay (window flag + view flag).

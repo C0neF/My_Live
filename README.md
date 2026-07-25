@@ -6,7 +6,7 @@
 
 本项目源于 MiMo 赠送的 Token 太多用不完（笑），才决定复刻直播客户端 [Simple Live](https://github.com/xiaoyaocz/dart_simple_live)。在此基础上，完全根据个人的审美标准对 UI 界面与操作逻辑进行了重新设计与重构，旨在打造一个更精致、更符合个人使用习惯的直播聚合体验。
 
-当前版本：V1.1.4
+当前版本：V2.0.4
 
 ## 功能特性
 
@@ -53,7 +53,7 @@
 环境要求：
 
 - Android Studio 或命令行 Android SDK
-- JDK 17
+- JDK 21（Gradle 9 守护进程要求；工程自身的字节码目标仍为 Java 17）
 - Gradle Wrapper，仓库已内置
 
 常用命令：

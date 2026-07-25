@@ -400,8 +400,11 @@ class DouyuSite @Inject constructor(
             return cached.value
         }
 
+        // Remote code: the signer JS is evaluated by QuickJS, so keep the origin explicit and
+        // hand it to DouyuSign for HTTPS/size screening instead of trusting it implicitly.
+        val signScriptUrl = "https://www.douyu.com/swf_api/homeH5Enc?rids=$roomId"
         val jsEncResult = httpClient.getText(
-            "https://www.douyu.com/swf_api/homeH5Enc?rids=$roomId",
+            signScriptUrl,
             queryParameters = emptyMap(),
             header = mapOf(
                 "referer" to "https://www.douyu.com/$roomId",
@@ -410,7 +413,7 @@ class DouyuSite @Inject constructor(
         )
         val jsEncJson = JSONObject(jsEncResult)
         val crptext = jsEncJson.getJSONObject("data").optStringValue("room$roomId")
-        val signArgs = DouyuSign.getSign(crptext, roomId, jsEngineProvider.get())
+        val signArgs = DouyuSign.getSign(crptext, roomId, jsEngineProvider.get(), signScriptUrl)
         signArgsCache[roomId] = DouyuSignArgsCacheEntry(
             value = signArgs,
             createdAtMillis = nowMillis

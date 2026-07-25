@@ -4,10 +4,9 @@ import android.content.Context
 import com.whl.quickjs.android.QuickJSLoader
 import com.whl.quickjs.wrapper.QuickJSContext
 import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.Executors
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -16,12 +15,18 @@ import javax.inject.Singleton
  *
  * The native QuickJS runtime is THREAD-AFFINE — each context must only ever be touched from
  * the thread that created it. Every context/eval/call/close operation is therefore confined
- * to a single dedicated thread via [dispatcher].
+ * to a single dedicated engine thread owned by [guard].
  *
- * (The previous implementation merely `synchronized` on the runtime while running on the
+ * (The original implementation merely `synchronized` on the runtime while running on the
  * shared `Dispatchers.IO` pool. That serialized calls, but still invoked the native runtime
  * from many different OS threads, which can corrupt QuickJS state or crash with a native
- * `java.lang.Error` — the bug this rewrite fixes.)
+ * `java.lang.Error`.)
+ *
+ * Every call also runs under a hard deadline. Site-provided scripts (Douyu's signer) are remote
+ * input: a hostile or simply broken script could spin forever inside native code, where the JVM
+ * cannot interrupt it. [JsExecutionGuard] fails such a call fast and replaces the wedged thread so
+ * later playback attempts are not blocked behind it. Remote scripts are additionally screened by
+ * [RemoteScriptPolicy] before they are handed to the engine.
  */
 @Singleton
 class JsEngine @Inject constructor(
@@ -29,13 +34,12 @@ class JsEngine @Inject constructor(
 ) {
     private val appContext = context.applicationContext
 
-    // Single dedicated thread that owns the QuickJS runtime and all of its contexts.
-    private val jsThread = Executors.newSingleThreadExecutor { r ->
-        Thread(r, "quickjs").apply { isDaemon = true }
-    }
-    private val dispatcher = jsThread.asCoroutineDispatcher()
+    // Owns the single dedicated thread the QuickJS runtime lives on, and enforces deadlines.
+    private val guard = JsExecutionGuard(threadNamePrefix = "quickjs")
 
-    // Touched ONLY on the quickjs thread — no synchronization needed.
+    // QuickJSLoader.init() loads a process-global native library and may now be reached from a
+    // replacement engine thread, so guard it explicitly.
+    private val loaderLock = Any()
     private var loaderInitialized = false
 
     // Asset script sources, cached to avoid repeated reads. Safe to touch from any thread.
@@ -45,16 +49,21 @@ class JsEngine @Inject constructor(
      * Execute a JS function from a script file in assets/scripts/.
      * @return the function's String result (throws if it returns null).
      */
-    suspend fun execute(scriptName: String, functionName: String, vararg args: String): String =
-        withContext(dispatcher) {
-            evalAndCall(loadAssetScript(scriptName), functionName, args)
+    suspend fun execute(scriptName: String, functionName: String, vararg args: String): String {
+        val script = loadAssetScriptOffThread(scriptName)
+        return runOnEngineThread(BUNDLED_SCRIPT_TIMEOUT_MS, "$scriptName#$functionName") {
+            evalAndCall(script, functionName, args)
         }
+    }
 
     /**
      * Execute a JS function from a raw script string (e.g. Douyu's dynamically fetched signer).
+     *
+     * Callers that pass a script downloaded at runtime MUST screen it first with
+     * [RemoteScriptPolicy.requireTrustedRemoteScript].
      */
     suspend fun executeRaw(script: String, functionName: String, vararg args: String): String =
-        withContext(dispatcher) {
+        runOnEngineThread(REMOTE_SCRIPT_TIMEOUT_MS, "raw#$functionName") {
             evalAndCall(script, functionName, args)
         }
 
@@ -69,21 +78,41 @@ class JsEngine @Inject constructor(
         args: Array<String>,
         maxAttempts: Int,
         isValid: (String) -> Boolean
-    ): String = withContext(dispatcher) {
-        val ctx = createContext()
-        try {
-            ctx.evaluate(loadAssetScript(scriptName), scriptName)
-            var result = callFunction(ctx, functionName, args)
-            var attempts = 1
-            while (!isValid(result) && attempts < maxAttempts) {
-                result = callFunction(ctx, functionName, args)
-                attempts++
+    ): String {
+        val script = loadAssetScriptOffThread(scriptName)
+        return runOnEngineThread(RETRY_SCRIPT_TIMEOUT_MS, "$scriptName#$functionName x$maxAttempts") {
+            val ctx = createContext()
+            try {
+                ctx.evaluate(script, scriptName)
+                var result = callFunction(ctx, functionName, args)
+                var attempts = 1
+                while (!isValid(result) && attempts < maxAttempts) {
+                    result = callFunction(ctx, functionName, args)
+                    attempts++
+                }
+                result
+            } finally {
+                ctx.close()
             }
-            result
-        } finally {
-            ctx.close()
         }
     }
+
+    /** Number of engine threads abandoned so far because a script exceeded its deadline. */
+    val timedOutExecutionCount: Int
+        get() = guard.quarantinedThreadCount
+
+    // ── scheduling ───────────────────────────────────────────────────────────
+
+    private suspend fun <T> runOnEngineThread(
+        timeoutMs: Long,
+        label: String,
+        block: () -> T
+    ): T = withContext(Dispatchers.IO) {
+        guard.call(timeoutMs, label, block)
+    }
+
+    private suspend fun loadAssetScriptOffThread(scriptName: String): String =
+        withContext(Dispatchers.IO) { loadAssetScript(scriptName) }
 
     // ── quickjs-thread-only helpers ──────────────────────────────────────────
 
@@ -93,9 +122,11 @@ class JsEngine @Inject constructor(
     }
 
     private fun ensureLoaderInitialized() {
-        if (!loaderInitialized) {
-            QuickJSLoader.init()
-            loaderInitialized = true
+        synchronized(loaderLock) {
+            if (!loaderInitialized) {
+                QuickJSLoader.init()
+                loaderInitialized = true
+            }
         }
     }
 
@@ -136,6 +167,17 @@ class JsEngine @Inject constructor(
      */
     fun destroy() {
         scriptCache.clear()
-        jsThread.shutdown()
+        guard.shutdown()
+    }
+
+    companion object {
+        /** Bundled asset scripts are trusted but can still be heavy (webmssdk is ~625 KB). */
+        const val BUNDLED_SCRIPT_TIMEOUT_MS: Long = 10_000L
+
+        /** Site-provided scripts get a tighter budget; the Douyu signer runs in milliseconds. */
+        const val REMOTE_SCRIPT_TIMEOUT_MS: Long = 5_000L
+
+        /** Retry loops evaluate once and then call repeatedly inside one context. */
+        const val RETRY_SCRIPT_TIMEOUT_MS: Long = 20_000L
     }
 }

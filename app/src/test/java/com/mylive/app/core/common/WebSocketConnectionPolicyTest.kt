@@ -93,4 +93,32 @@ class WebSocketConnectionPolicyTest {
         assertTrue(source.contains("nextReconnectAttemptCount("))
         assertTrue(source.contains("shouldRunScheduledReconnect("))
     }
+
+    @Test
+    fun reconnectStateSharedAcrossThreadsIsVolatile() {
+        val source = File("src/main/java/com/mylive/app/core/common/WebSocketUtils.kt").readText()
+        val fields = listOf(
+            "private var currentUrlIndex",
+            "private var connectUrl",
+            "private var connectBackupUrl:",
+            "private var connectBackupUrls",
+            "private var connectHeartBeatTime",
+            "private var connectIdleTimeoutMillis",
+            "private var connectDisableCompression",
+            "private var connectHeaders",
+            "private var callbackMessage",
+            "private var callbackClose",
+            "private var callbackReconnect",
+            "private var callbackReady",
+            "private var callbackHeartBeat"
+        )
+
+        fields.forEach { field ->
+            val declaration = source.substringBefore(field)
+            assertTrue(
+                "$field is written by the caller thread and read from OkHttp/Timer threads, so it must be @Volatile",
+                declaration.trimEnd().endsWith("@Volatile")
+            )
+        }
+    }
 }

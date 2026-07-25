@@ -52,23 +52,41 @@ class WebSocketUtils(
     private var reconnectTimer: Timer? = null
     @Volatile
     private var reconnectTime: Int = 0
-    private var maxReconnectTime: Int = 5
+    private val maxReconnectTime: Int = 5
+
+    // Written by the caller thread in connect(), by OkHttp callback threads in onError()/onReady()
+    // and by Timer threads in reconnect(). Without @Volatile a reconnect could keep reading a
+    // stale index and reconnect to the wrong URL forever.
+    @Volatile
     private var currentUrlIndex: Int = 0
     @Volatile
     private var intentionalClose: Boolean = true
 
-    // Cached parameters for reconnect
+    // Cached parameters for reconnect. Published from the connect() caller thread and read from
+    // OkHttp callback and Timer threads, so every field has to be volatile.
+    @Volatile
     private var connectUrl: String = ""
+    @Volatile
     private var connectBackupUrl: String? = null
+    @Volatile
     private var connectBackupUrls: List<String> = emptyList()
+    @Volatile
     private var connectHeartBeatTime: Long = 30_000L
+    @Volatile
     private var connectIdleTimeoutMillis: Long? = null
+    @Volatile
     private var connectDisableCompression: Boolean = false
+    @Volatile
     private var connectHeaders: Map<String, String>? = null
+    @Volatile
     private var callbackMessage: ((Any) -> Unit)? = null
+    @Volatile
     private var callbackClose: ((String) -> Unit)? = null
+    @Volatile
     private var callbackReconnect: (() -> Unit)? = null
+    @Volatile
     private var callbackReady: (() -> Unit)? = null
+    @Volatile
     private var callbackHeartBeat: (() -> Unit)? = null
     @Volatile
     private var lastMessageAtMillis: Long = 0L

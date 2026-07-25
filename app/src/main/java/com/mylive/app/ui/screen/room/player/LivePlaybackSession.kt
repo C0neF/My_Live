@@ -135,7 +135,8 @@ class LivePlaybackSession private constructor(
         playerAutoPause: Boolean,
         roomTitle: String,
         anchorName: String,
-        platform: String
+        platform: String,
+        inPictureInPicture: Boolean = false
     ) {
         if (released) return
         val policy = PausedHostPolicy(
@@ -146,6 +147,14 @@ class LivePlaybackSession private constructor(
             platform = platform
         )
         pausedHostPolicy = policy
+        if (inPictureInPicture) {
+            // The PiP window is still an on-screen video surface, so ON_PAUSE here is not a
+            // background transition: never pause and never hand off to the foreground service.
+            pausedHostPolicy = null
+            resumePlaybackOnForeground = false
+            hostPaused = false
+            return
+        }
         if (hostPaused) return
         hostPaused = true
         val player = controller.player

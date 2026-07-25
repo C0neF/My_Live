@@ -6,7 +6,9 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.UiDevice
 import com.mylive.app.MainActivity
+import com.mylive.app.ui.navigation.Route
 import org.junit.After
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Before
@@ -37,11 +39,13 @@ class MainActivityPipTest {
     }
 
     @Test
-    fun testEnteringPipOnHomePress() {
+    fun testEnteringPipOnHomePressFromLiveRoom() {
         // Start MainActivity
         val scenario = ActivityScenario.launch(MainActivity::class.java)
 
         scenario.onActivity { activity ->
+            // The live room detail screen is the only destination allowed to auto-PiP.
+            activity.navigator.backStack.add(Route.LiveRoomDetail(roomId = "1", siteId = ""))
             // Enable PiP support state manually to trigger transition on user leave
             MainActivity.isPipSupportedAndActive = true
         }
@@ -53,6 +57,23 @@ class MainActivityPipTest {
         assertTrue(scenario.waitUntilInPictureInPictureMode(timeoutMs = 3_000))
 
         // Close scenario
+        scenario.close()
+    }
+
+    @Test
+    fun testHomePressOutsideLiveRoomDoesNotEnterPip() {
+        val scenario = ActivityScenario.launch(MainActivity::class.java)
+
+        scenario.onActivity { activity ->
+            // Stale host signal from a previous room, but the user is on Settings now.
+            activity.navigator.backStack.add(Route.Settings)
+            MainActivity.isPipSupportedAndActive = true
+        }
+
+        device.pressHome()
+
+        assertFalse(scenario.waitUntilInPictureInPictureMode(timeoutMs = 2_000))
+
         scenario.close()
     }
 

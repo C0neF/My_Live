@@ -4,6 +4,7 @@ import android.content.pm.ActivityInfo
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Test
 import java.io.File
 
@@ -47,80 +48,93 @@ class LiveRoomAutoFullscreenPolicyTest {
     }
 
     @Test
-    fun lockedControlsFreezeOrientationAndFullscreenFollowsPhysicalRotation() {
+    fun lockedControlsFreezeOrientationAndFullscreenStaysLandscape() {
         assertEquals(
             ActivityInfo.SCREEN_ORIENTATION_LOCKED,
+            liveRoomRequestedOrientation(fullscreen = true, controlsLocked = true)
+        )
+        assertEquals(
+            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE,
+            liveRoomRequestedOrientation(fullscreen = true, controlsLocked = false)
+        )
+        assertEquals(
+            ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED,
+            liveRoomRequestedOrientation(fullscreen = false, controlsLocked = false)
+        )
+    }
+
+    @Test
+    fun leavingFullscreenRequestsPortraitUntilPortraitIsReached() {
+        // Back key / fullscreen button leaves fullscreen and pulls the window back to portrait,
+        // even when the device is still held sideways.
+        assertEquals(
+            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT,
             liveRoomRequestedOrientation(
-                fullscreen = true,
-                controlsLocked = true,
-                isLandscape = true,
-                hasReachedLandscapeInFullscreen = true
+                fullscreen = false,
+                controlsLocked = false,
+                restorePortrait = true
             )
         )
+        // Once portrait is reached the request is dropped and the system owns rotation again.
+        assertEquals(
+            ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED,
+            liveRoomRequestedOrientation(
+                fullscreen = false,
+                controlsLocked = false,
+                restorePortrait = false
+            )
+        )
+        // Fullscreen and locked controls keep priority over the portrait restore request.
         assertEquals(
             ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE,
             liveRoomRequestedOrientation(
                 fullscreen = true,
                 controlsLocked = false,
-                isLandscape = false,
-                hasReachedLandscapeInFullscreen = false
+                restorePortrait = true
             )
         )
         assertEquals(
-            ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR,
+            ActivityInfo.SCREEN_ORIENTATION_LOCKED,
             liveRoomRequestedOrientation(
                 fullscreen = true,
-                controlsLocked = false,
-                isLandscape = true,
-                hasReachedLandscapeInFullscreen = true
-            )
-        )
-        // Portrait while in fullscreen still reports FULL_SENSOR: the orientation policy has no
-        // branch that would drop out of fullscreen on rotation.
-        assertEquals(
-            ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR,
-            liveRoomRequestedOrientation(
-                fullscreen = true,
-                controlsLocked = false,
-                isLandscape = false,
-                hasReachedLandscapeInFullscreen = true
+                controlsLocked = true,
+                restorePortrait = true
             )
         )
     }
 
     @Test
-    fun fullscreenNeverExitsOnPortraitRotationRegardlessOfRotationLock() {
-        // Entering fullscreen from portrait: force landscape so the layout switches.
-        assertEquals(
-            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE,
-            liveRoomRequestedOrientation(
-                fullscreen = true,
-                controlsLocked = false,
-                isLandscape = false,
-                hasReachedLandscapeInFullscreen = false
-            )
-        )
-        // Once landscape is reached: FULL_SENSOR lets physical rotation change display orientation
-        // while staying in fullscreen. FULL_SENSOR overrides the system rotation lock by design,
-        // matching YouTube / Bilibili behavior.
-        assertEquals(
-            ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR,
-            liveRoomRequestedOrientation(
-                fullscreen = true,
-                controlsLocked = false,
-                isLandscape = true,
-                hasReachedLandscapeInFullscreen = true
-            )
-        )
+    fun systemBackLeavesFullscreenAndTheRoomRestoresPortrait() {
+        val player = File("src/main/java/com/mylive/app/ui/screen/room/player/PlayerView.kt").readText()
+        val screen = File("src/main/java/com/mylive/app/ui/screen/room/LiveRoomScreen.kt").readText()
+
+        // The system back key exits fullscreen first instead of leaving the room.
+        assertTrue(player.contains("BackHandler(enabled = isFullscreen) {"))
+        // The room then requests portrait once, and releases it as soon as portrait is reached.
+        assertTrue(screen.contains("var restorePortraitAfterFullscreen by remember { mutableStateOf(false) }"))
+        assertTrue(screen.contains("restorePortraitAfterFullscreen = true"))
+        assertTrue(screen.contains("if (restorePortraitAfterFullscreen && !isLandscape) {"))
+        assertTrue(screen.contains("restorePortrait = restorePortraitAfterFullscreen"))
+        // Rotation itself still never exits fullscreen and never renders a portrait fullscreen.
+        assertFalse(screen.contains("OrientationEventListener"))
+    }
+
+    @Test
+    fun fullscreenNeverRendersPortraitAndNeverExitsOnRotation() {
+        // Fullscreen is landscape-only: SENSOR_LANDSCAPE allows the two landscape directions and
+        // nothing else, so holding the device upright cannot letterbox the player into a portrait
+        // window (the bug reported on the device with auto-rotate turned off).
+        val fullscreenOrientation =
+            liveRoomRequestedOrientation(fullscreen = true, controlsLocked = false)
+        assertEquals(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE, fullscreenOrientation)
+        assertNotEquals(ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR, fullscreenOrientation)
+        assertNotEquals(ActivityInfo.SCREEN_ORIENTATION_SENSOR, fullscreenOrientation)
+        assertNotEquals(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED, fullscreenOrientation)
+
         // Locked controls still freeze the orientation instead of leaving fullscreen.
         assertEquals(
             ActivityInfo.SCREEN_ORIENTATION_LOCKED,
-            liveRoomRequestedOrientation(
-                fullscreen = true,
-                controlsLocked = true,
-                isLandscape = false,
-                hasReachedLandscapeInFullscreen = true
-            )
+            liveRoomRequestedOrientation(fullscreen = true, controlsLocked = true)
         )
     }
 
@@ -128,11 +142,17 @@ class LiveRoomAutoFullscreenPolicyTest {
     fun fullscreenOrientationPolicyIsDocumentedInSource() {
         val source = File("src/main/java/com/mylive/app/ui/screen/room/LiveRoomScreen.kt").readText()
 
-        assertTrue(source.contains("SCREEN_ORIENTATION_FULL_SENSOR"))
         assertTrue(source.contains("SCREEN_ORIENTATION_SENSOR_LANDSCAPE"))
+        // Free-rotation modes must not come back: any of them lets a physically upright device
+        // turn fullscreen into a portrait window.
+        assertFalse(source.contains("SCREEN_ORIENTATION_FULL_SENSOR"))
+        assertFalse(source.contains("SCREEN_ORIENTATION_SENSOR,"))
         // The exit-on-portrait-rotation helper is gone entirely, not merely disabled, so no call
         // site can reintroduce the old behaviour by accident.
         assertFalse(source.contains("shouldExitFullscreenOnPortraitRotation"))
+        // The landscape-latch state is gone too; fullscreen no longer has a "free rotation later"
+        // phase that could drop into portrait.
+        assertFalse(source.contains("hasReachedLandscapeInFullscreen"))
     }
 
     @Test

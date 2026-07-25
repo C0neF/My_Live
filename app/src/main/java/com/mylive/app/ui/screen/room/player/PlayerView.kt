@@ -120,6 +120,12 @@ fun PlayerView(
     isFollowing: Boolean = false,
     followEnabled: Boolean = true,
     rightPadding: Dp = 0.dp,
+    /**
+     * Picture-in-picture renders a thumbnail-sized window: only the video surface (and danmaku,
+     * when enabled) belongs there. Controls, lock buttons and loading overlays are drawn at full
+     * size and would cover the whole floating window, so they are suppressed entirely.
+     */
+    isInPipMode: Boolean = false,
     isExiting: Boolean = false
 ) {
     val stateFlow = playerController?.state
@@ -421,9 +427,9 @@ fun PlayerView(
             }
         }
 
-        // Controls overlay
+        // Controls overlay (never shown in the PiP window, which only hosts the video surface)
         AnimatedVisibility(
-            visible = controlsVisible,
+            visible = controlsVisible && !isInPipMode,
             enter = fadeIn(),
             exit = fadeOut()
         ) {
@@ -553,8 +559,8 @@ fun PlayerView(
             }
         }
 
-        // Loading state
-        if (state.isLoading && state.error == null && playerController != null) {
+        // Loading state (a 48dp spinner would dominate the small PiP window)
+        if (state.isLoading && state.error == null && playerController != null && !isInPipMode) {
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center

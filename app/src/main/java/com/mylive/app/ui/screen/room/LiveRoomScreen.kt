@@ -195,27 +195,28 @@ private fun currentEpochMillis(): Long = System.currentTimeMillis()
  * Orientation policy for the live room.
  *
  * - Controls locked: freeze the current orientation.
- * - Fullscreen, still entering from portrait: force landscape first so the layout switches.
- * - Fullscreen, landscape reached: free full-sensor so the player can be watched in any physical
- *   orientation — including portrait — without ever exiting fullscreen. The user decides when to
- *   leave by tapping the fullscreen button or pressing back.
+ * - Fullscreen: always landscape. SCREEN_ORIENTATION_SENSOR_LANDSCAPE keeps the window in one of
+ *   the two landscape directions and lets physical rotation flip between them, while a device held
+ *   upright can never collapse the player into a letterboxed portrait window.
  * - Otherwise: system default.
  *
- * Note: SCREEN_ORIENTATION_FULL_SENSOR deliberately overrides the system rotation lock. That is
- * intentional here — once the user taps "fullscreen", physical rotation should always be followed
- * regardless of the lock setting, just like every major video player (YouTube, Bilibili, etc.).
+ * Note: SENSOR_LANDSCAPE follows the sensor even when the system rotation lock is on, but only
+ * within landscape. Portrait is never a valid fullscreen orientation, so rotating the device can
+ * change direction and nothing else. Leaving fullscreen stays an explicit action (fullscreen
+ * button or back).
  */
 internal fun liveRoomRequestedOrientation(
     fullscreen: Boolean,
     controlsLocked: Boolean,
-    isLandscape: Boolean,
-    hasReachedLandscapeInFullscreen: Boolean
+    restorePortrait: Boolean = false
 ): Int {
     return when {
         controlsLocked -> ActivityInfo.SCREEN_ORIENTATION_LOCKED
-        fullscreen && !hasReachedLandscapeInFullscreen ->
-            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-        fullscreen -> ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
+        fullscreen -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        // Leaving fullscreen (fullscreen button or system back) pulls the window back to portrait
+        // even if the device is still physically held sideways. Once portrait is actually reached
+        // the caller drops this request so the system owns the orientation again.
+        restorePortrait -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         else -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
     }
 }
@@ -224,14 +225,12 @@ private fun applyLiveRoomFullscreen(
     activity: Activity,
     fullscreen: Boolean,
     controlsLocked: Boolean,
-    isLandscape: Boolean,
-    hasReachedLandscapeInFullscreen: Boolean
+    restorePortrait: Boolean = false
 ) {
     activity.requestedOrientation = liveRoomRequestedOrientation(
         fullscreen = fullscreen,
         controlsLocked = controlsLocked,
-        isLandscape = isLandscape,
-        hasReachedLandscapeInFullscreen = hasReachedLandscapeInFullscreen
+        restorePortrait = restorePortrait
     )
     if (fullscreen) {
         WindowCompat.setDecorFitsSystemWindows(activity.window, false)
@@ -290,7 +289,6 @@ fun LiveRoomScreen(
 
     var isExiting by remember { mutableStateOf(false) }
     var isControlsLocked by remember { mutableStateOf(false) }
-    var hasReachedLandscapeInFullscreen by remember { mutableStateOf(false) }
     val settingsViewModel: SettingsViewModel = hiltViewModel()
     val liveRoomPreferences by settingsViewModel.liveRoomPreferences.collectAsStateWithLifecycle()
     val scaleMode = liveRoomPreferences.scaleMode
@@ -436,7 +434,9 @@ fun LiveRoomScreen(
                         playerAutoPause = playerAutoPause,
                         roomTitle = uiState.detail?.title ?: "",
                         anchorName = uiState.detail?.userName ?: "",
-                        platform = viewModel.siteId
+                        platform = viewModel.siteId,
+                        // Entering PiP also pauses the Activity, but the video is still on screen.
+                        inPictureInPicture = componentActivity?.isInPictureInPictureMode == true
                     )
                 }
                 Lifecycle.Event.ON_RESUME -> {
@@ -466,6 +466,14 @@ fun LiveRoomScreen(
         }
     }
 
+    // Safety net: some OEMs deliver ON_PAUSE before isInPictureInPictureMode flips to true,
+    // so re-assert the foreground policy once the PiP window is confirmed.
+    LaunchedEffect(isInPip, playbackSession) {
+        if (isInPip) {
+            playbackSession?.onHostResume()
+        }
+    }
+
     // Room idle auto exit state
     val roomAutoExitDuration = liveRoomPreferences.roomAutoExitDuration
     val lastInteractionTime = remember { AtomicLong(System.currentTimeMillis()) }
@@ -491,26 +499,37 @@ fun LiveRoomScreen(
         }
     }
 
-    LaunchedEffect(isFullscreen, isLandscape) {
-        if (!isFullscreen) {
-            hasReachedLandscapeInFullscreen = false
-        } else if (isLandscape) {
-            hasReachedLandscapeInFullscreen = true
+    // Leaving fullscreen (system back key or the fullscreen button) always returns to the portrait
+    // layout, even when the device is still physically held sideways.
+    var wasFullscreen by remember { mutableStateOf(false) }
+    var restorePortraitAfterFullscreen by remember { mutableStateOf(false) }
+    LaunchedEffect(isFullscreen) {
+        if (isFullscreen) {
+            restorePortraitAfterFullscreen = false
+        } else if (wasFullscreen) {
+            restorePortraitAfterFullscreen = true
+        }
+        wasFullscreen = isFullscreen
+    }
+    // Portrait reached: give the orientation back to the system so later rotation works normally.
+    LaunchedEffect(restorePortraitAfterFullscreen, isLandscape) {
+        if (restorePortraitAfterFullscreen && !isLandscape) {
+            restorePortraitAfterFullscreen = false
         }
     }
 
-    // Handle fullscreen/lock: orientation + system bars. Locked freezes rotation.
-    LaunchedEffect(isFullscreen, isControlsLocked, isLandscape, hasReachedLandscapeInFullscreen) {
+    // Handle fullscreen/lock: orientation + system bars. Fullscreen pins the window to landscape
+    // (either direction), locked freezes whatever orientation is current.
+    LaunchedEffect(isFullscreen, isControlsLocked, restorePortraitAfterFullscreen) {
         val act = activity ?: return@LaunchedEffect
         applyLiveRoomFullscreen(
             activity = act,
             fullscreen = isFullscreen,
             controlsLocked = isControlsLocked,
-            isLandscape = isLandscape,
-            hasReachedLandscapeInFullscreen = hasReachedLandscapeInFullscreen
+            restorePortrait = restorePortraitAfterFullscreen
         )
-        // Rotating to portrait inside fullscreen is deliberately not an exit gesture; leaving
-        // fullscreen is always an explicit action (fullscreen button or back).
+        // Holding the device upright in fullscreen only keeps the current landscape direction; it
+        // is never an exit gesture. Leaving fullscreen is always explicit (fullscreen button/back).
     }
 
     // Keep the screen on for the entire live-room stay (window flag + view flag).
@@ -642,6 +661,7 @@ fun LiveRoomScreen(
                 onDanmakuControllerCreated = { pipDanmakuController = it },
                 isFullscreenOverride = isFullscreen,
                 onFullscreenClick = { playerController?.toggleFullscreen() },
+                isInPipMode = true,
                 isExiting = isExiting
             )
         } else if (isLandscape || isFullscreen) {

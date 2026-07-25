@@ -12,9 +12,11 @@ import androidx.compose.runtime.getValue
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.navigation3.runtime.NavKey
 import com.mylive.app.data.repository.SettingsRepository
 import com.mylive.app.ui.navigation.AppNavGraph
 import com.mylive.app.ui.navigation.Navigator
+import com.mylive.app.ui.navigation.Route
 import com.mylive.app.ui.screen.room.player.LivePlaybackHostSignals
 import com.mylive.app.ui.theme.MyLiveTheme
 import dagger.hilt.android.AndroidEntryPoint
@@ -122,7 +124,11 @@ class MainActivity : ComponentActivity() {
 
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        if (LivePlaybackHostSignals.autoPipOnLeave) {
+        val enterPip = shouldEnterPipOnUserLeave(
+            autoPipOnLeave = LivePlaybackHostSignals.autoPipOnLeave,
+            topRoute = navigator.backStack.lastOrNull()
+        )
+        if (enterPip) {
             try {
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
                     val params = android.app.PictureInPictureParams.Builder().build()
@@ -148,3 +154,16 @@ class MainActivity : ComponentActivity() {
             }
     }
 }
+
+/**
+ * Auto picture-in-picture is a live-room feature, not an app-wide one.
+ *
+ * Leaving for the launcher only shrinks the app into a floating window when the live room detail
+ * screen is the destination the user is actually on. Any other screen (index, settings, sync,
+ * search, ...) leaves normally, even if a room screen is still finishing its exit animation or a
+ * stale host signal is left behind.
+ */
+internal fun shouldEnterPipOnUserLeave(
+    autoPipOnLeave: Boolean,
+    topRoute: NavKey?
+): Boolean = autoPipOnLeave && topRoute is Route.LiveRoomDetail

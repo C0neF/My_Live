@@ -47,8 +47,12 @@ sealed class LivePlaybackStartAction {
 internal fun resolveLivePlaybackHostPauseAction(
     allowBackgroundPlayback: Boolean,
     playerAutoPause: Boolean,
-    hasPlaybackIntent: Boolean
+    hasPlaybackIntent: Boolean,
+    inPictureInPicture: Boolean = false
 ): LivePlaybackHostPauseAction {
+    // A PiP window is still an on-screen video surface: ON_PAUSE there is not a background
+    // transition, so playback must keep running without any foreground-service handoff.
+    if (inPictureInPicture) return LivePlaybackHostPauseAction.NoOp
     val lifecyclePausesPlayback = shouldLifecyclePauseLivePlayback(
         allowBackgroundPlayback = allowBackgroundPlayback,
         playerAutoPause = playerAutoPause

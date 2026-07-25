@@ -522,9 +522,17 @@ class LanSyncService : Service() {
                     e.message ?: "encrypted payload required",
                     Response.Status.BAD_REQUEST
                 )
+            } catch (e: org.json.JSONException) {
+                // Malformed input is the caller's fault, not ours: answer 400 rather than letting
+                // it fall through to the catch-all below, which used to report it as a 200.
+                CoreLog.w("LanSyncService: rejected malformed sync payload")
+                newJsonResponse(false, "malformed sync payload", Response.Status.BAD_REQUEST)
             } catch (e: Exception) {
+                // The exception text is produced by parsers and storage code reacting to attacker
+                // input, so it is never echoed back; it only goes to the local log. And a failure
+                // must not be reported as HTTP 200 — clients read that as "import accepted".
                 CoreLog.e("LanSyncService serve error", e)
-                newJsonResponse(false, e.message ?: "Unknown error")
+                newJsonResponse(false, "sync request failed", Response.Status.INTERNAL_ERROR)
             }
         }
 

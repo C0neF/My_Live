@@ -374,6 +374,45 @@ class LanSyncSecurityPolicyTest {
         assertTrue(source.contains("NanoHTTPD(hostname, port)"))
     }
 
+    /**
+     * The catch-all used to answer any unexpected failure with HTTP 200 and the raw exception
+     * text. That both leaked internal structure to an unauthenticated caller and made the peer
+     * record a failed import as a successful one.
+     */
+    @Test
+    fun unexpectedFailuresAreNeitherEchoedBackNorReportedAsSuccess() {
+        val source = File("src/main/java/com/mylive/app/service/LanSyncService.kt").readText()
+        // Anchor on serve()'s catch chain; other catch-alls elsewhere in the file are unrelated.
+        val serveCatchChain = source.substringAfter("} catch (e: LanSyncCryptoException) {")
+        val catchAll = serveCatchChain.substringAfter("} catch (e: Exception) {")
+            .substringBefore("newJsonResponse(")
+        val catchAllResponse = serveCatchChain.substringAfter("} catch (e: Exception) {")
+            .substringAfter("newJsonResponse(")
+            .substringBefore(")")
+
+        assertFalse(
+            "exception text is attacker-influenced and must not be echoed to the caller",
+            catchAllResponse.contains("e.message")
+        )
+        assertTrue(
+            "an internal failure must not be answered with the default HTTP 200",
+            catchAllResponse.contains("Response.Status.INTERNAL_ERROR")
+        )
+        assertTrue(catchAll.contains("CoreLog.e("))
+    }
+
+    /** Malformed JSON is a client error and must be answered as such, not as a server failure. */
+    @Test
+    fun malformedJsonPayloadsAreAnsweredAsBadRequests() {
+        val source = File("src/main/java/com/mylive/app/service/LanSyncService.kt").readText()
+        val jsonCatch = source.substringAfter("} catch (e: org.json.JSONException) {")
+            .substringBefore("} catch (e: Exception) {")
+
+        assertTrue(jsonCatch.contains("Response.Status.BAD_REQUEST"))
+        assertTrue(jsonCatch.contains("malformed sync payload"))
+        assertFalse(jsonCatch.contains("e.message"))
+    }
+
     private fun assertRejected(message: String, block: () -> Unit) {
         try {
             block()

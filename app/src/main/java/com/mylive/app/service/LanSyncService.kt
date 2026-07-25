@@ -8,6 +8,11 @@ import android.os.IBinder
 import androidx.compose.runtime.mutableStateListOf
 import com.mylive.app.BuildConfig
 import com.mylive.app.core.common.CoreLog
+import com.mylive.app.core.common.LanSyncAuth
+import com.mylive.app.core.common.LanSyncAuthException
+import com.mylive.app.core.common.LanSyncCrypto
+import com.mylive.app.core.common.LanSyncCryptoException
+import com.mylive.app.core.common.LanSyncReplayGuard
 import com.mylive.app.core.common.safePathForLog
 import com.mylive.app.data.local.entity.FollowUserEntity
 import com.mylive.app.data.local.entity.HistoryEntity
@@ -33,24 +38,12 @@ import org.json.JSONObject
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
-import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.UUID
 import javax.inject.Inject
 
 internal fun newLanSyncToken(): String = UUID.randomUUID().toString().replace("-", "")
-
-internal fun isValidLanSyncToken(
-    expectedToken: String,
-    providedToken: String
-): Boolean {
-    if (expectedToken.isEmpty() || providedToken.isEmpty()) return false
-    return MessageDigest.isEqual(
-        expectedToken.toByteArray(Charsets.UTF_8),
-        providedToken.toByteArray(Charsets.UTF_8)
-    )
-}
 
 internal fun decodeFollowsForLanSync(array: JSONArray): List<FollowUserEntity> = buildList {
     for (index in 0 until array.length()) {
@@ -104,6 +97,21 @@ class LanSyncService : Service() {
     private val pendingSyncJobCount = AtomicInteger(0)
     private val syncJobs = ConcurrentHashMap<String, SyncImportJob>()
 
+    /**
+     * The pairing code lives for the whole service lifetime, so a signature on its own would stay
+     * valid for as long as the server runs. Remembering the nonce of every accepted request makes
+     * a captured request single-use.
+     */
+    private val replayGuard = LanSyncReplayGuard()
+
+    /**
+     * A `hello` broadcast makes this device answer with its own broadcast. Since the packet is
+     * unauthenticated and trivially spoofed, an attacker could otherwise use the phone as a UDP
+     * amplifier by replaying hellos as fast as it can send them.
+     */
+    @Volatile
+    private var lastHelloResponseAt = 0L
+
     companion object {
         const val UDP_PORT = 23235
         const val HTTP_PORT = 23234
@@ -118,16 +126,29 @@ class LanSyncService : Service() {
         private const val MAX_RETAINED_SYNC_JOBS = 32
         private const val SYNC_IMPORT_TIMEOUT_MS = 30_000L
 
+        /**
+         * Discovery is driven by unauthenticated UDP broadcasts, so anyone on the LAN can spoof
+         * them. Bound both the number of remembered peers and the length of the name we render,
+         * otherwise a broadcast flood grows this list (and the scan UI) without limit.
+         */
+        private const val MAX_SCAN_CLIENTS = 32
+        private const val MAX_SCAN_DEVICE_NAME_CHARS = 48
+
+        /** Answer at most one spoofable `hello` per second so we cannot be used as an amplifier. */
+        private const val MIN_HELLO_RESPONSE_INTERVAL_MS = 1_000L
+
         val scanClients = mutableStateListOf<SyncClient>()
         var isRunning = false
         var ipAddress = ""
         var syncDeviceId = ""
 
         /**
-         * Pairing token. Generated per service start and surfaced ONLY in this device's
-         * "My Info" QR (a visual, out-of-band channel). Every write endpoint requires it, so a
-         * same-LAN attacker who never saw the QR cannot push data / overwrite account cookies.
-         * Deliberately NOT returned by /info or broadcast over UDP.
+         * Pairing code. Generated per service start and surfaced ONLY in this device's "My Info"
+         * QR (a visual, out-of-band channel).
+         *
+         * It is the root secret for both the payload key and the request signing key, and it is
+         * therefore NEVER transmitted: peers prove possession with a per-request HMAC (see
+         * [LanSyncAuth]). Deliberately not returned by /info and not broadcast over UDP either.
          */
         var syncToken = ""
 
@@ -194,6 +215,7 @@ class LanSyncService : Service() {
             syncDeviceId = UUID.randomUUID().toString().split("-").first()
         }
         syncToken = newLanSyncToken()
+        replayGuard.clear()
         CoreLog.d("LanSyncService: pair token generated")
         ipAddress = getLocalIpAddress()
         startHttpServer()
@@ -216,13 +238,21 @@ class LanSyncService : Service() {
         scanClients.clear()
         isRunning = false
         syncToken = ""
+        replayGuard.clear()
+        // Drop the stretched keys too: the code they came from is gone.
+        LanSyncCrypto.clearCachedKeys()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     private fun startHttpServer() {
         try {
-            httpServer = HttpServer(HTTP_PORT)
+            // Bind to this device's LAN address instead of every interface. Listening on 0.0.0.0
+            // also published the sync endpoints over VPN tunnels and USB/Wi-Fi tethering links the
+            // user never intended to share; we only fall back to a wildcard bind when the LAN
+            // address could not be determined at all.
+            val bindAddress = ipAddress.ifBlank { "0.0.0.0" }
+            httpServer = HttpServer(bindAddress, HTTP_PORT)
             httpServer?.start(NanoHTTPD.SOCKET_READ_TIMEOUT, false)
             CoreLog.d("LanSyncService: HTTP Server started on port $HTTP_PORT")
         } catch (e: Exception) {
@@ -256,18 +286,27 @@ class LanSyncService : Service() {
                 
                 val type = data.optString("type")
                 if (type == "hello") {
+                    val now = System.currentTimeMillis()
+                    if (now - lastHelloResponseAt < MIN_HELLO_RESPONSE_INTERVAL_MS) {
+                        CoreLog.w("LanSyncService: ignoring hello flood, already announced recently")
+                        return
+                    }
+                    lastHelloResponseAt = now
                     sendInfo()
                 } else {
-                    val name = data.optString("name")
                     val existing = scanClients.find { it.address == senderIp }
                     if (existing == null) {
+                        if (scanClients.size >= MAX_SCAN_CLIENTS) {
+                            CoreLog.w("LanSyncService: discovery list full, ignoring extra broadcast peer")
+                            return
+                        }
                         scanClients.add(
                             SyncClient(
-                                id = id,
-                                name = name.ifEmpty { "Android Device" },
+                                id = sanitizeBroadcastText(id, "unknown"),
+                                name = sanitizeBroadcastText(data.optString("name"), "Android Device"),
                                 address = senderIp,
                                 port = HTTP_PORT,
-                                type = type
+                                type = sanitizeBroadcastText(type, "unknown")
                             )
                         )
                     }
@@ -276,6 +315,16 @@ class LanSyncService : Service() {
         } catch (e: Exception) {
             CoreLog.e("LanSyncService: Parse UDP message failed", e)
         }
+    }
+
+    /**
+     * Broadcast fields come from an unauthenticated UDP packet, so they are attacker controlled.
+     * Strip control characters and clamp the length before we ever store or render them.
+     */
+    private fun sanitizeBroadcastText(raw: String, fallback: String): String {
+        val cleaned = raw.filter { !it.isISOControl() }.trim()
+        if (cleaned.isEmpty()) return fallback
+        return cleaned.take(MAX_SCAN_DEVICE_NAME_CHARS)
     }
 
     private fun getLocalIpAddress(): String {
@@ -297,7 +346,7 @@ class LanSyncService : Service() {
         return "127.0.0.1"
     }
 
-    private inner class HttpServer(port: Int) : NanoHTTPD(port) {
+    private inner class HttpServer(hostname: String, port: Int) : NanoHTTPD(hostname, port) {
         override fun serve(session: IHTTPSession): Response {
             val method = session.method
             val uri = session.uri
@@ -314,17 +363,35 @@ class LanSyncService : Service() {
                     }
                     newFixedLengthResponse(Response.Status.OK, "application/json", res.toString())
                 } else if (method == Method.GET && uri == "/info") {
+                    // Any device on the Wi-Fi can reach this endpoint without pairing, so the
+                    // unauthenticated answer carries no identity: the phone model, the install id
+                    // and the app version are fingerprinting material that used to be handed to
+                    // every port scanner on the network. A peer that can already prove it holds the
+                    // pairing code gets the details it needs to render the device.
+                    val identified = try {
+                        authorizeRequest(session, uri, overlay = false, rawBody = "")
+                        true
+                    } catch (e: LanSyncAuthException) {
+                        false
+                    }
                     val res = JSONObject().apply {
-                        put("id", syncDeviceId)
                         put("type", "android")
-                        put("name", Build.MODEL)
-                        put("version", BuildConfig.VERSION_NAME)
-                        put("address", ipAddress)
+                        put("app", "My Live")
+                        put("protocol", "MLSYNC2")
                         put("port", HTTP_PORT)
+                        put("paired", identified)
+                        if (identified) {
+                            put("id", syncDeviceId)
+                            put("name", Build.MODEL)
+                            put("version", BuildConfig.VERSION_NAME)
+                            put("address", ipAddress)
+                        }
                     }
                     newFixedLengthResponse(Response.Status.OK, "application/json", res.toString())
                 } else if (method == Method.GET && uri.startsWith(SYNC_JOB_PATH_PREFIX)) {
-                    rejectIfUnauthorized(session, uri)?.let { return it }
+                    // Job state can reveal what was just imported, so polling is signed too. A GET
+                    // has no body, which the canonical request models as the digest of "".
+                    authorizeRequest(session, uri, overlay = false, rawBody = "")
                     val jobId = uri.removePrefix(SYNC_JOB_PATH_PREFIX)
                     val job = syncJobs[jobId]
                     if (job == null) {
@@ -333,20 +400,35 @@ class LanSyncService : Service() {
                         newFixedLengthResponse(Response.Status.OK, "application/json", job.toJson().toString())
                     }
                 } else if (method == Method.POST) {
-                    // Every write requires the pairing token (shown only in this device's My Info
-                    // QR). Reject otherwise so a same-LAN attacker can't push data or overwrite
-                    // account cookies without having visually paired.
-                    rejectIfUnauthorized(session, uri)?.let { return it }
                     rejectIfBodyTooLarge(session)?.let { return it }
 
                     val files = mutableMapOf<String, String>()
                     session.parseBody(files)
-                    val body = files["postData"] ?: ""
+                    val rawBody = files["postData"] ?: ""
+                    if (rawBody.toByteArray(Charsets.UTF_8).size > MAX_SYNC_BODY_BYTES) {
+                        return newJsonResponse(false, "payload too large", Response.Status.PAYLOAD_TOO_LARGE)
+                    }
+
+                    // `overlay=1` wipes the local collection before importing, so it is far too
+                    // destructive to trust an unauthenticated query parameter with. It is read
+                    // here but immediately folded into the signed request context below: a
+                    // man-in-the-middle who flips it invalidates both the signature and the AEAD
+                    // tag, and the request is refused.
+                    val overlay = session.parameters["overlay"]?.firstOrNull() == "1"
+
+                    // Every write requires proof that the peer holds the pairing code shown in
+                    // this device's My Info QR. The proof covers the method, the path, the overlay
+                    // flag and the exact body bytes, and each nonce is accepted once.
+                    val requestContext = authorizeRequest(session, uri, overlay, rawBody)
+
+                    // The LAN transport is plain HTTP, so the body itself is sealed with a key
+                    // derived from the pairing code, bound to that same request context. Anything
+                    // that is not a valid envelope is rejected: personal data must never cross the
+                    // Wi-Fi in the clear.
+                    val body = openSealedSyncBody(rawBody, requestContext)
                     if (body.toByteArray(Charsets.UTF_8).size > MAX_SYNC_BODY_BYTES) {
                         return newJsonResponse(false, "payload too large", Response.Status.PAYLOAD_TOO_LARGE)
                     }
-                    val params = session.parameters
-                    val overlay = params["overlay"]?.firstOrNull() == "1"
                     
                     when (uri) {
                         "/sync/follow" -> {
@@ -424,10 +506,67 @@ class LanSyncService : Service() {
             } catch (e: PayloadTooLargeException) {
                 CoreLog.w("LanSyncService: rejected oversized import: ${e.message}")
                 newJsonResponse(false, e.message ?: "payload too large", Response.Status.PAYLOAD_TOO_LARGE)
+            } catch (e: LanSyncAuthException) {
+                CoreLog.w(
+                    "LanSyncService: rejected unauthorized sync request to ${safePathForLog(uri)}"
+                )
+                newJsonResponse(
+                    false,
+                    e.message ?: "unauthorized: pairing required",
+                    Response.Status.UNAUTHORIZED
+                )
+            } catch (e: LanSyncCryptoException) {
+                CoreLog.w("LanSyncService: rejected unsealed or unreadable sync payload")
+                newJsonResponse(
+                    false,
+                    e.message ?: "encrypted payload required",
+                    Response.Status.BAD_REQUEST
+                )
             } catch (e: Exception) {
                 CoreLog.e("LanSyncService serve error", e)
                 newJsonResponse(false, e.message ?: "Unknown error")
             }
+        }
+
+        /**
+         * Verifies the caller's proof of possession and returns the canonical request context that
+         * the body must have been sealed against.
+         *
+         * The pairing code is never accepted from the wire in any form. It used to be sent in an
+         * `X-Sync-Token` header while also being the key the body was sealed with, which meant a
+         * single captured plain-HTTP request handed a sniffer both the ciphertext and its key.
+         * Now only a signature travels.
+         *
+         * @throws LanSyncAuthException on any failure, answered as 401 by [serve].
+         */
+        private fun authorizeRequest(
+            session: IHTTPSession,
+            uri: String,
+            overlay: Boolean,
+            rawBody: String
+        ): String = LanSyncAuth.verifyProof(
+            token = syncToken,
+            headerValue = session.headers[LanSyncAuth.HEADER_KEY],
+            method = session.method.name,
+            path = uri,
+            overlay = overlay,
+            body = rawBody,
+            replayGuard = replayGuard
+        )
+
+        /**
+         * Opens a sealed sync body. Plain JSON is refused outright: an unsealed body either came
+         * from an attacker who does not hold the pairing key, or from a peer that would have put
+         * personal data on the wire in the clear. Either way we do not want it.
+         *
+         * [requestContext] is the authenticated request context, so a body sealed for another
+         * endpoint, another overlay flag or another nonce fails to open.
+         */
+        private fun openSealedSyncBody(rawBody: String, requestContext: String): String {
+            if (!LanSyncCrypto.isEncryptedEnvelope(rawBody)) {
+                throw LanSyncCryptoException("sync payload must be encrypted with the pairing key")
+            }
+            return LanSyncCrypto.decrypt(syncToken, rawBody, requestContext)
         }
 
         private fun newJsonResponse(
@@ -442,29 +581,30 @@ class LanSyncService : Service() {
             return newFixedLengthResponse(responseStatus, "application/json", res.toString())
         }
 
-        private fun rejectIfUnauthorized(session: IHTTPSession, uri: String): Response? {
-            val providedToken = session.headers["x-sync-token"]
-                ?: session.parameters["token"]?.firstOrNull()
-                ?: ""
-            if (
-                isValidLanSyncToken(
-                    expectedToken = syncToken,
-                    providedToken = providedToken
-                )
-            ) return null
-
-            CoreLog.w(
-                "LanSyncService: rejected unauthorized sync request to ${safePathForLog(uri)}"
-            )
-            return newJsonResponse(
-                false,
-                "unauthorized: pairing required",
-                Response.Status.UNAUTHORIZED
-            )
-        }
-
+        /**
+         * NanoHTTPD buffers the whole request body while parsing it, so the size has to be settled
+         * before [IHTTPSession.parseBody] is ever reached.
+         *
+         * A request that declares no length, or streams a chunked body, has nothing to check here:
+         * that is precisely how an unauthenticated peer would push an unbounded upload into memory
+         * and take the app down without ever holding the pairing code. Both are refused up front.
+         */
         private fun rejectIfBodyTooLarge(session: IHTTPSession): Response? {
-            val contentLength = session.headers["content-length"]?.toLongOrNull() ?: return null
+            val transferEncoding = session.headers["transfer-encoding"]?.lowercase()
+            if (transferEncoding?.contains("chunked") == true) {
+                return newJsonResponse(
+                    false,
+                    "chunked sync uploads are not accepted",
+                    Response.Status.LENGTH_REQUIRED
+                )
+            }
+
+            val contentLength = session.headers["content-length"]?.toLongOrNull()
+                ?: return newJsonResponse(
+                    false,
+                    "content-length required",
+                    Response.Status.LENGTH_REQUIRED
+                )
             if (contentLength <= MAX_SYNC_BODY_BYTES) return null
 
             return newJsonResponse(false, "payload too large", Response.Status.PAYLOAD_TOO_LARGE)

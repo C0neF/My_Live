@@ -7,6 +7,12 @@
         travel (or be downgraded to) plain HTTP, so the credential-bearing API and auth
         hosts below are pinned to HTTPS-only. None of these are playback CDN hosts, so
         this does not affect stream playback.
+
+        LAN sync (NanoHTTPD on a link-local address) also cannot use TLS, because no CA
+        will issue a certificate for a private IP. Confidentiality there is provided at the
+        payload level instead: every /sync/* body is sealed with AES-256-GCM using a key
+        derived from the out-of-band pairing token (see core/common/LanSyncCrypto.kt), so
+        cleartext being permitted here does not expose follows, history or settings.
     -->
     <base-config cleartextTrafficPermitted="true" />
 

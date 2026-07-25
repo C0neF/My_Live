@@ -21,6 +21,8 @@ import androidx.lifecycle.viewModelScope
 import com.mylive.app.ui.navigation.Navigator
 import com.mylive.app.ui.navigation.Route
 import com.mylive.app.R
+import com.mylive.app.core.common.LanSyncAuth
+import com.mylive.app.core.common.LanSyncCrypto
 import com.mylive.app.data.repository.FollowRepository
 import com.mylive.app.data.repository.HistoryRepository
 import com.mylive.app.data.repository.ProfileBackupManager
@@ -35,6 +37,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import okhttp3.HttpUrl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -75,7 +78,7 @@ class SyncDeviceViewModel @Inject constructor(
             _syncingKey.value = "profile"
             try {
                 val json = profileBackupManager.exportProfileJson()
-                postJson(buildUrl(address, port, "/sync/profile", overlay), json, token)
+                postJson(address, port, "/sync/profile", json, token, overlay)
                 _syncResults.value = _syncResults.value + ("profile" to "✅ 配置包同步成功")
             } catch (e: Exception) {
                 _syncResults.value = _syncResults.value + ("profile" to "❌ 配置包同步失败: ${e.message}")
@@ -103,11 +106,11 @@ class SyncDeviceViewModel @Inject constructor(
                         put("isSpecialFollow", f.isSpecialFollow)
                     })
                 }
-                postJson(buildUrl(address, port, "/sync/follow", overlay), jsonArray.toString(), token)
+                postJson(address, port, "/sync/follow", jsonArray.toString(), token, overlay)
 
                 // Also sync tags
                 val tags = followRepository.getAllTags().first()
-                postJson(buildUrl(address, port, "/sync/tag", overlay), encodeFollowTagsForLanSync(tags), token)
+                postJson(address, port, "/sync/tag", encodeFollowTagsForLanSync(tags), token, overlay)
 
                 _syncResults.value = _syncResults.value + ("follow" to "✅ 关注列表同步成功")
             } catch (e: Exception) {
@@ -134,7 +137,7 @@ class SyncDeviceViewModel @Inject constructor(
                         put("updateTime", h.updateTime.toString())
                     })
                 }
-                postJson(buildUrl(address, port, "/sync/history", overlay), jsonArray.toString(), token)
+                postJson(address, port, "/sync/history", jsonArray.toString(), token, overlay)
                 _syncResults.value = _syncResults.value + ("history" to "✅ 观看历史同步成功")
             } catch (e: Exception) {
                 _syncResults.value = _syncResults.value + ("history" to "❌ 观看历史同步失败: ${e.message}")
@@ -150,7 +153,7 @@ class SyncDeviceViewModel @Inject constructor(
             try {
                 val shields = shieldRepository.getAllShields().first()
                 val payload = encodeShieldKeywordsForLanSync(shields)
-                postJson(buildUrl(address, port, "/sync/blocked_word", overlay), payload, token)
+                postJson(address, port, "/sync/blocked_word", payload, token, overlay)
                 _syncResults.value = _syncResults.value + ("shield" to "✅ 屏蔽词同步成功")
             } catch (e: Exception) {
                 _syncResults.value = _syncResults.value + ("shield" to "❌ 屏蔽词同步失败: ${e.message}")
@@ -160,12 +163,59 @@ class SyncDeviceViewModel @Inject constructor(
         }
     }
 
-    private suspend fun postJson(url: String, json: String, token: String) {
+    /**
+     * Sends one sealed, signed sync request.
+     *
+     * The pairing code stays on this device: it is only used locally to derive the payload key and
+     * to sign the request. Putting the code itself in a header (as this used to do) handed anyone
+     * sniffing the plain-HTTP LAN traffic the key to the very ciphertext travelling beside it.
+     */
+    private suspend fun postJson(
+        address: String,
+        port: Int,
+        endpoint: String,
+        json: String,
+        token: String,
+        overlay: Boolean
+    ) {
+        if (token.isEmpty()) {
+            throw Exception("未配对，请先扫描对方二维码或填写配对码")
+        }
         withContext(Dispatchers.IO) {
-            val body = json.toRequestBody("application/json".toMediaType())
-            val builder = Request.Builder().url(url).post(body)
-            if (token.isNotEmpty()) builder.addHeader("X-Sync-Token", token)
-            val request = builder.build()
+            // One timestamp + nonce describes this exact request. The peer rebuilds the same
+            // context from the request line, so the endpoint and the destructive `overlay` flag
+            // are covered by both the signature and the AEAD tag, and the nonce makes the request
+            // single-use.
+            val timestamp = System.currentTimeMillis()
+            val nonce = LanSyncAuth.newNonce()
+            val requestContext = LanSyncAuth.requestContext(
+                method = "POST",
+                path = endpoint,
+                overlay = overlay,
+                timestampMillis = timestamp,
+                nonce = nonce
+            )
+
+            // LAN sync runs over plain HTTP, so seal the payload before it leaves the device.
+            // Follows / history / settings must not be readable (or forgeable) by anyone else on
+            // the same Wi-Fi.
+            val sealed = LanSyncCrypto.encrypt(token, json, requestContext)
+            val proof = LanSyncAuth.createProof(
+                token = token,
+                method = "POST",
+                path = endpoint,
+                overlay = overlay,
+                body = sealed,
+                timestampMillis = timestamp,
+                nonce = nonce
+            )
+
+            val body = sealed.toRequestBody("application/json".toMediaType())
+            val request = Request.Builder()
+                .url(buildUrl(address, port, endpoint, overlay))
+                .post(body)
+                .addHeader(LanSyncAuth.HEADER_NAME, proof.headerValue)
+                .build()
             client.newCall(request).execute().use { response ->
                 val acceptedJob = validateLanSyncResponse(
                     response.code,
@@ -173,7 +223,7 @@ class SyncDeviceViewModel @Inject constructor(
                     response.body?.string()
                 )
                 if (acceptedJob != null) {
-                    val jobUrl = response.request.url.resolve(acceptedJob.jobUrl)?.toString()
+                    val jobUrl = response.request.url.resolve(acceptedJob.jobUrl)
                         ?: throw Exception("invalid sync job url")
                     pollLanSyncJob(jobUrl, token)
                 }
@@ -181,12 +231,23 @@ class SyncDeviceViewModel @Inject constructor(
         }
     }
 
-    private suspend fun pollLanSyncJob(jobUrl: String, token: String) {
+    private suspend fun pollLanSyncJob(jobUrl: HttpUrl, token: String) {
         val deadline = System.currentTimeMillis() + LAN_SYNC_JOB_TIMEOUT_MS
         while (true) {
-            val builder = Request.Builder().url(jobUrl).get()
-            if (token.isNotEmpty()) builder.addHeader("X-Sync-Token", token)
-            val request = builder.build()
+            // Every poll is signed afresh: a GET carries no body, so the proof covers the job path
+            // plus a new timestamp and nonce.
+            val proof = LanSyncAuth.createProof(
+                token = token,
+                method = "GET",
+                path = jobUrl.encodedPath,
+                overlay = false,
+                body = ""
+            )
+            val request = Request.Builder()
+                .url(jobUrl)
+                .get()
+                .addHeader(LanSyncAuth.HEADER_NAME, proof.headerValue)
+                .build()
 
             client.newCall(request).execute().use { response ->
                 if (response.code == 401) {

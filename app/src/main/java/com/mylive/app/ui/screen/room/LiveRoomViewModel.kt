@@ -3,6 +3,7 @@ package com.mylive.app.ui.screen.room
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.os.SystemClock
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -27,6 +28,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -105,6 +107,16 @@ internal fun selectPreferredQualityIndex(
 
     return if (preferredLevel == 1) 0 else qualities.lastIndex
 }
+
+/**
+ * How much of the route transition window is still ahead, given how long the room load has
+ * already taken.
+ *
+ * Zero once the fetch has outlasted the animation, which is the point: on a real network the
+ * fetch usually does, and then the stagger costs nothing at all.
+ */
+internal fun routeTransitionRemainingMillis(elapsedMillis: Long): Long =
+    (AppMotion.LiveRoomDataStartupDelayMillis - elapsedMillis).coerceAtLeast(0L)
 
 private fun LiveRoomUiState.asLoadingStatePreservingFollow(): LiveRoomUiState {
     return loadingLiveRoomUiState(
@@ -302,15 +314,36 @@ class LiveRoomViewModel @Inject constructor(
             observeCurrentRoomFollowStatus(nextSiteId, nextRoomId, nextRoute)
         }
         loadRoomJob = viewModelScope.launch {
-            // Stagger API and database loading so the first route frames stay light.
-            kotlinx.coroutines.delay(AppMotion.LiveRoomDataStartupDelayMillis.toLong())
-            if (!isActiveRoute(nextRoute)) return@launch
-            loadRoomDetail(nextRoute)
+            // Fetching starts immediately and overlaps the route transition. Only the state
+            // emission that builds the room subtree waits for the animation — see
+            // [awaitRouteTransitionSettled].
+            loadRoomDetail(nextRoute, routeOpenedAtMillis = SystemClock.uptimeMillis())
         }
     }
 
     private fun isActiveRoute(route: Pair<String, String>): Boolean {
         return activeRoute == route
+    }
+
+    /**
+     * Holds back the first heavy state emission until the route transition has played out.
+     *
+     * Room entry used to `delay(320)` before it started loading at all, which put a fixed third of
+     * a second in front of the *network*, and the network is the long pole — three round trips
+     * before the first video frame. But the fetch never threatened the animation: it runs on
+     * [Dispatchers.IO] and costs the main thread nothing. Only publishing the detail does, because
+     * that rebuilds the room subtree.
+     *
+     * So the wait moved here, to the emission, and it is measured from when the route opened
+     * rather than counted from the start of the load. When the fetch takes longer than the
+     * animation — the common case on a real network — this returns immediately and the whole
+     * delay disappears.
+     */
+    private suspend fun awaitRouteTransitionSettled(routeOpenedAtMillis: Long) {
+        val remaining = routeTransitionRemainingMillis(
+            elapsedMillis = SystemClock.uptimeMillis() - routeOpenedAtMillis
+        )
+        if (remaining > 0) delay(remaining)
     }
 
     private fun startRuntimeCollectors() {
@@ -359,7 +392,7 @@ class LiveRoomViewModel @Inject constructor(
         }
     }
 
-    private suspend fun loadRoomDetail(route: Pair<String, String>) {
+    private suspend fun loadRoomDetail(route: Pair<String, String>, routeOpenedAtMillis: Long) {
         if (!isActiveRoute(route)) return
         val routeSiteId = route.first
         val routeRoomId = route.second
@@ -434,6 +467,11 @@ class LiveRoomViewModel @Inject constructor(
                 Timber.w(e, "Failed to add history")
             }
 
+            if (!isActiveRoute(route)) return
+
+            // Everything above was off-main-thread. This is the emission that rebuilds the room,
+            // so it is the one that has to let the route animation finish first.
+            awaitRouteTransitionSettled(routeOpenedAtMillis)
             if (!isActiveRoute(route)) return
 
             _uiState.value = _uiState.value.copy(

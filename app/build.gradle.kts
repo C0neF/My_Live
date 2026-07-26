@@ -61,6 +61,12 @@ android {
             if (hasReleaseSigning) {
                 signingConfig = signingConfigs.getByName("release")
             }
+            // Half the download was four copies of the same native library. QuickJS alone shipped
+            // at ~1.3 MB per ABI, and x86/x86_64 exist for emulators, which nobody installs a
+            // release build on. Debug keeps every ABI so emulator development is unaffected.
+            ndk {
+                abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+            }
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(

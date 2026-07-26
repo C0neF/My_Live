@@ -25,6 +25,7 @@ import com.mylive.app.data.repository.FollowRepository
 import com.mylive.app.data.repository.HistoryRepository
 import com.mylive.app.data.repository.ProfileBackupManager
 import com.mylive.app.data.repository.ShieldRepository
+import com.mylive.app.ui.navigation.Route
 import com.mylive.app.ui.screen.sync.decodeLanSyncShieldKeywords
 import com.mylive.app.ui.screen.sync.decodeFollowTagsForLanSync
 import dagger.hilt.android.AndroidEntryPoint
@@ -48,6 +49,23 @@ import java.util.UUID
 import javax.inject.Inject
 
 internal fun newLanSyncToken(): String = UUID.randomUUID().toString().replace("-", "")
+
+/**
+ * Whether the LAN sync server should still be listening, given the current back stack.
+ *
+ * The server used to be started when the sync screen opened and never stopped: combined with
+ * `START_STICKY`, one visit left the HTTP and UDP ports open — and the pairing code valid — for
+ * the rest of the process. Visiting a screen is not consent to keep a write endpoint reachable
+ * indefinitely.
+ *
+ * The whole flow keeps it alive, not just the screen that starts it: the device screen is reached
+ * *from* the sync screen and returns to it, and tearing the service down in between would rotate
+ * the pairing code out from under a peer that had already scanned the QR.
+ */
+internal fun shouldKeepLanSyncServerRunning(backStack: List<Any>): Boolean =
+    backStack.any { route ->
+        route is Route.LocalSync || route is Route.SyncScan || route is Route.SyncDevice
+    }
 
 /**
  * Interfaces the LAN sync server must never bind to or advertise: VPN tunnels, cellular data, and

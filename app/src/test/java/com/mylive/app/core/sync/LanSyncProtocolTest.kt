@@ -1,6 +1,7 @@
 package com.mylive.app.core.sync
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -52,6 +53,59 @@ class LanSyncProtocolTest {
         assertTrue(info.paired)
         assertEquals("device-1", info.deviceId)
         assertEquals("Pixel", info.name)
+    }
+
+    @Test
+    fun anUnpairedInfoAnswerIdentifiesNothingButTheProtocol() {
+        // Reachable without any credential, so a port scanner must not be able to confirm which
+        // app is listening. Only the protocol version survives — that much is needed to negotiate
+        // compatibility when connecting to a peer by IP.
+        val body = LanSyncProtocol.encodePeerInfo(
+            paired = false,
+            port = 23234,
+            deviceId = "device-1",
+            name = "Pixel",
+            appVersion = "2.0.6",
+            address = "192.168.1.2"
+        )
+
+        listOf("My Live", "android", "device-1", "Pixel", "2.0.6", "192.168.1.2").forEach {
+            assertFalse("unpaired /info leaked '$it'", body.contains(it))
+        }
+        assertTrue(body.contains(LanSyncProtocol.CURRENT_PROTOCOL))
+    }
+
+    @Test
+    fun anUnpairedAnswerStillNegotiatesAndDecodesWithSafeDefaults() {
+        // The manual "connect by IP" probe is unauthenticated, so it has to keep working.
+        val info = LanSyncProtocol.decodePeerInfo(
+            LanSyncProtocol.encodePeerInfo(paired = false, port = 23234)
+        )
+
+        assertEquals(LanSyncProtocol.CURRENT_PROTOCOL, info.protocol)
+        assertFalse(info.paired)
+        assertNull(info.name)
+        assertNull(info.deviceId)
+    }
+
+    @Test
+    fun aPairedAnswerStillCarriesTheDetailsTheUiRenders() {
+        val info = LanSyncProtocol.decodePeerInfo(
+            LanSyncProtocol.encodePeerInfo(
+                paired = true,
+                port = 23234,
+                deviceId = "device-1",
+                name = "Pixel",
+                appVersion = "2.0.6",
+                address = "192.168.1.2"
+            )
+        )
+
+        assertTrue(info.paired)
+        assertEquals("Pixel", info.name)
+        assertEquals("device-1", info.deviceId)
+        assertEquals("2.0.6", info.appVersion)
+        assertEquals(23234, info.port)
     }
 
     @Test

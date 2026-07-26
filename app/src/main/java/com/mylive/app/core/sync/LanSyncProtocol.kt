@@ -110,6 +110,14 @@ object LanSyncProtocol {
         }
     }
 
+    /**
+     * Encodes the `/info` answer.
+     *
+     * An unpaired caller learns only the protocol version — enough to negotiate compatibility
+     * when connecting to a peer by IP, and nothing more. The app name and platform used to be in
+     * this branch too, which handed every port scanner on the network a positive identification
+     * of the app; that is exactly the fingerprint the paired-only fields below were moved behind.
+     */
     fun encodePeerInfo(
         paired: Boolean,
         port: Int,
@@ -119,12 +127,12 @@ object LanSyncProtocol {
         address: String? = null
     ): String {
         return JSONObject().apply {
-            put("type", "android")
-            put("app", "My Live")
             put("protocol", CURRENT_PROTOCOL)
-            put("port", port)
             put("paired", paired)
             if (paired) {
+                put("type", "android")
+                put("app", "My Live")
+                put("port", port)
                 put("id", deviceId)
                 put("name", name)
                 put("version", appVersion)

@@ -28,6 +28,7 @@ import com.mylive.app.R
 import com.mylive.app.core.sync.LanSyncProtocol
 import com.mylive.app.service.LanSyncService
 import com.mylive.app.service.SyncClient
+import com.mylive.app.service.shouldKeepLanSyncServerRunning
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -57,10 +58,19 @@ fun LocalSyncScreen(
         handleBack()
     }
 
-    LaunchedEffect(Unit) {
+    DisposableEffect(Unit) {
         LanSyncService.start(context)
         clients.clear()
         LanSyncService.sendHello()
+        onDispose {
+            // Leaving the sync flow closes the listening ports and drops the pairing code.
+            // Descending into the scan/device screens does not: they are part of the same flow
+            // and return here, and restarting in between would invalidate a code a peer has
+            // already scanned.
+            if (!shouldKeepLanSyncServerRunning(navigator.backStack)) {
+                LanSyncService.stop(context)
+            }
+        }
     }
 
     Scaffold(

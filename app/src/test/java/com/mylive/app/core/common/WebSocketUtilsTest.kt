@@ -17,6 +17,25 @@ import java.util.concurrent.atomic.AtomicInteger
 
 class WebSocketUtilsTest {
 
+    private companion object {
+        /**
+         * How long to wait for an event that the test requires to happen.
+         *
+         * Generous on purpose. These latches only bound how long a *healthy* run waits — the
+         * assertion still fails if the event never arrives — so a tight budget buys nothing and
+         * costs a flake whenever the machine is busy (this suite failed under a concurrent
+         * lint + assemble run at two seconds).
+         */
+        const val EVENT_TIMEOUT_SECONDS = 15L
+
+        /**
+         * How long to watch for an event that must NOT happen. This one is a real trade-off
+         * (longer = slower suite, shorter = weaker assertion), so it stays short and is only
+         * used where the negative is checked after the positive events already landed.
+         */
+        const val ABSENCE_WINDOW_MILLIS = 300L
+    }
+
     @Test
     fun canDisableCompressionExtensionForIncompatibleServers() {
         val server = MockWebServer()
@@ -48,10 +67,10 @@ class WebSocketUtilsTest {
                 disableCompression = true
             )
 
-            assertTrue(openLatch.await(2, TimeUnit.SECONDS))
-            assertNull(server.takeRequest(2, TimeUnit.SECONDS)?.getHeader("Sec-WebSocket-Extensions"))
+            assertTrue(openLatch.await(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS))
+            assertNull(server.takeRequest(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS)?.getHeader("Sec-WebSocket-Extensions"))
             socket.close()
-            assertTrue(closeLatch.await(2, TimeUnit.SECONDS))
+            assertTrue(closeLatch.await(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS))
         } finally {
             server.shutdown()
         }
@@ -85,7 +104,7 @@ class WebSocketUtilsTest {
                 onClose = { closeLatch.countDown() }
             )
 
-            assertTrue(closeLatch.await(2, TimeUnit.SECONDS))
+            assertTrue(closeLatch.await(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS))
         } finally {
             server.shutdown()
         }
@@ -129,10 +148,10 @@ class WebSocketUtilsTest {
                 onHeartBeat = {}
             )
 
-            assertTrue(firstOpen.await(2, TimeUnit.SECONDS))
-            assertTrue(readyLatch.await(2, TimeUnit.SECONDS))
-            assertTrue(reconnectLatch.await(2, TimeUnit.SECONDS))
-            assertTrue(secondOpen.await(2, TimeUnit.SECONDS))
+            assertTrue(firstOpen.await(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS))
+            assertTrue(readyLatch.await(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS))
+            assertTrue(reconnectLatch.await(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS))
+            assertTrue(secondOpen.await(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS))
         } finally {
             server.shutdown()
         }
@@ -181,11 +200,11 @@ class WebSocketUtilsTest {
                 onHeartBeat = {}
             )
 
-            assertTrue(firstOpen.await(2, TimeUnit.SECONDS))
-            assertTrue(reconnectLatch.await(2, TimeUnit.SECONDS))
-            assertTrue(secondOpen.await(2, TimeUnit.SECONDS))
-            assertTrue(secondReady.await(2, TimeUnit.SECONDS))
-            assertFalse(closeLatch.await(200, TimeUnit.MILLISECONDS))
+            assertTrue(firstOpen.await(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS))
+            assertTrue(reconnectLatch.await(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS))
+            assertTrue(secondOpen.await(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS))
+            assertTrue(secondReady.await(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS))
+            assertFalse(closeLatch.await(ABSENCE_WINDOW_MILLIS, TimeUnit.MILLISECONDS))
         } finally {
             server.shutdown()
         }

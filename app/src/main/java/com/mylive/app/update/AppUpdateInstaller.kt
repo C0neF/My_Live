@@ -26,8 +26,8 @@ object AppUpdateInstaller {
     }
 
     fun canRequestPackageInstalls(context: Context): Boolean {
-        return Build.VERSION.SDK_INT < Build.VERSION_CODES.O ||
-            context.packageManager.canRequestPackageInstalls()
+        // minSdk is 26, so the pre-O branch this used to short-circuit on is unreachable.
+        return context.packageManager.canRequestPackageInstalls()
     }
 
     fun createInstallPermissionIntent(context: Context): Intent {

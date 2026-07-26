@@ -4,14 +4,14 @@ kotlin = "2.2.10"
 ksp = "2.2.10-2.0.2"
 hilt = "2.59.2"
 composeBom = "2024.10.01"
-navigationCompose = "2.8.3"
 room = "2.8.4"
-lifecycle = "2.8.6"
+# Kept in step with lifecycleViewmodelNav3 below: that artifact depends on lifecycle 2.10.0,
+# so pinning a lower number here was resolved away and only made the catalog misleading.
+lifecycle = "2.10.0"
 coreKtx = "1.13.1"
 activityCompose = "1.9.3"
 coroutines = "1.9.0"
 okhttp = "4.12.0"
-retrofit = "2.11.0"
 datastore = "1.1.1"
 media3 = "1.4.1"
 coil = "2.7.0"
@@ -29,7 +29,7 @@ androidxTestRules = "1.6.1"
 # Version 3.2.3 ships 16 KB page-size aligned native libraries.
 quickjsWrapper = "3.2.3"
 nav3Core = "1.0.0-alpha01"
-lifecycleViewmodelNav3 = "2.10.0"
+lifecycleViewmodelNav3 = "2.10.0"  # must match `lifecycle`
 
 [libraries]
 # Core Android
@@ -47,7 +47,6 @@ compose-material3 = { group = "androidx.compose.material3", name = "material3" }
 compose-material-icons-extended = { group = "androidx.compose.material", name = "material-icons-extended" }
 
 # Navigation
-navigation-compose = { group = "androidx.navigation", name = "navigation-compose", version.ref = "navigationCompose" }
 androidx-navigation3-runtime = { group = "androidx.navigation3", name = "navigation3-runtime", version.ref = "nav3Core" }
 androidx-navigation3-ui = { group = "androidx.navigation3", name = "navigation3-ui", version.ref = "nav3Core" }
 androidx-lifecycle-viewmodel-navigation3 = { group = "androidx.lifecycle", name = "lifecycle-viewmodel-navigation3", version.ref = "lifecycleViewmodelNav3" }
@@ -70,8 +69,6 @@ datastore-preferences = { group = "androidx.datastore", name = "datastore-prefer
 # Network
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
 okhttp-logging = { group = "com.squareup.okhttp3", name = "logging-interceptor", version.ref = "okhttp" }
-retrofit = { group = "com.squareup.retrofit2", name = "retrofit", version.ref = "retrofit" }
-retrofit-gson = { group = "com.squareup.retrofit2", name = "converter-gson", version.ref = "retrofit" }
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "serialization" }
 gson = { group = "com.google.code.gson", name = "gson", version.ref = "gson" }
 

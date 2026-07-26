@@ -14,23 +14,18 @@
     <string name="search_type_anchor">主播</string>
     <string name="search_no_results">无搜索结果</string>
     <string name="home_no_recommendations">暂无推荐</string>
-    <string name="load_failed">加载失败</string>
     <string name="follow_empty">暂无关注</string>
     <string name="follow_group_live">直播中</string>
     <string name="follow_group_unknown">未知</string>
     <string name="follow_group_offline">未开播</string>
-    <string name="status_live">直播中</string>
-    <string name="status_offline">未开播</string>
     <string name="category_no_categories">暂无分类</string>
     <string name="category_no_rooms">暂无房间</string>
     <string name="history_title">历史记录</string>
     <string name="history_empty">暂无观看记录</string>
-    <string name="history_platform_label">平台: %1$s</string>
     <string name="mine_history">历史记录</string>
     <string name="mine_account">账号管理</string>
     <string name="mine_sync">数据同步</string>
     <string name="mine_settings">设置</string>
-    <string name="mine_about">关于</string>
     <string name="mine_version">My Live v%1$s</string>
 
     <!-- Settings -->
@@ -55,22 +50,14 @@
     <string name="settings_other_subtitle">调试、日志与聊天样式</string>
 
     <!-- Live Room -->
-    <string name="room_chat_hint">发个弹幕~</string>
-    <string name="room_chat_send">发送</string>
     <string name="room_quality_sheet_title">选择画质</string>
-    <string name="room_quality_label">画质</string>
     <string name="room_follow">关注</string>
     <string name="room_following">已关注</string>
-    <string name="room_online_count">%1$d 人观看</string>
 
     <!-- Account -->
     <string name="account_title">账号管理</string>
-    <string name="account_bilibili">哔哩哔哩</string>
-    <string name="account_douyin">抖音</string>
     <string name="account_clear_bilibili_cookie">清除B站Cookie</string>
     <string name="account_clear_douyin_cookie">清除抖音 Cookie</string>
-    <string name="account_paste_bilibili_cookie">手动粘贴 Cookie</string>
-    <string name="account_paste_douyin_cookie">粘贴抖音 Cookie</string>
     <string name="account_bilibili_cookie_input_title">输入 B站Cookie</string>
     <string name="account_douyin_cookie_input_title">输入 抖音 Cookie</string>
     <string name="account_cookie_placeholder">粘贴 Cookie 到此处</string>
@@ -88,43 +75,15 @@
     <string name="danmu_hide_top_title">屏蔽顶部弹幕</string>
     <string name="danmu_size_title">弹幕字号</string>
     <string name="danmu_speed_title">弹幕速度</string>
-    <string name="danmu_speed_fastest">最快</string>
-    <string name="danmu_speed_faster">较快</string>
-    <string name="danmu_speed_normal">正常</string>
-    <string name="danmu_speed_slower">较慢</string>
-    <string name="danmu_speed_slowest">最慢</string>
     <string name="danmu_area_title">弹幕区域</string>
-    <string name="danmu_area_quarter">1/4屏</string>
-    <string name="danmu_area_third">1/3屏</string>
-    <string name="danmu_area_half">1/2屏</string>
-    <string name="danmu_area_two_thirds">2/3屏</string>
-    <string name="danmu_area_full">全屏</string>
     <string name="danmu_font_weight_title">弹幕字重</string>
-    <string name="danmu_font_weight_thin">细体</string>
-    <string name="danmu_font_weight_normal">常规</string>
-    <string name="danmu_font_weight_medium">中粗</string>
-    <string name="danmu_font_weight_bold">粗体</string>
     <string name="danmu_stroke_title">弹幕描边</string>
-    <string name="danmu_stroke_none">无描边</string>
-    <string name="danmu_stroke_thin">细描边</string>
-    <string name="danmu_stroke_medium">中描边</string>
-    <string name="danmu_stroke_thick">粗描边</string>
 
     <!-- Play Settings -->
     <string name="play_quality_title">画质选择</string>
     <string name="play_quality_subtitle">选择默认播放画质</string>
-    <string name="play_quality_auto">自动</string>
-    <string name="play_quality_bluray">蓝光</string>
-    <string name="play_quality_ultra">超清</string>
-    <string name="play_quality_hd">高清</string>
-    <string name="play_quality_sd">标清</string>
-    <string name="play_quality_ld">流畅</string>
     <string name="play_scale_title">画面比例</string>
     <string name="play_scale_subtitle">调整视频画面显示比例</string>
-    <string name="play_scale_fill">填充</string>
-    <string name="play_scale_crop">裁剪</string>
-    <string name="play_scale_4_3">4:3</string>
-    <string name="play_scale_16_9">16:9</string>
     <string name="play_hw_decode_title">硬件解码</string>
     <string name="play_compat_title">兼容模式</string>
     <string name="play_auto_pause_title">自动暂停</string>
@@ -132,48 +91,27 @@
     <string name="play_bg_title">后台播放</string>
     <string name="play_bg_subtitle">切换到后台时继续播放音频</string>
     <string name="play_force_https_title">强制HTTPS</string>
-    <string name="value_enabled">开启</string>
-    <string name="value_disabled">关闭</string>
 
     <!-- Appearance Settings -->
     <string name="theme_mode_title">主题模式</string>
     <string name="theme_mode_subtitle">切换亮色、暗色或跟随系统</string>
-    <string name="theme_mode_system">跟随系统</string>
-    <string name="theme_mode_light">亮色模式</string>
-    <string name="theme_mode_dark">暗色模式</string>
-    <string name="theme_color_title">自选主题强调色</string>
     <string name="theme_color_selected">已选择</string>
 
     <!-- Auto Exit -->
-    <string name="auto_exit_room_title">房间内自动退出</string>
-    <string name="auto_exit_room_never">不退出</string>
-    <string name="auto_exit_room_5m">5分钟</string>
-    <string name="auto_exit_room_10m">10分钟</string>
-    <string name="auto_exit_room_15m">15分钟</string>
-    <string name="auto_exit_room_30m">30分钟</string>
-    <string name="auto_exit_room_1h">1小时</string>
 
     <!-- Other Settings -->
     <string name="debug_mode_title">调试级日志</string>
     <string name="debug_mode_subtitle">日志开关关闭时，仅记录 DEBUG 级日志</string>
     <string name="log_enable_subtitle">记录运行日志用于排查问题</string>
-    <string name="value_show">显示</string>
-    <string name="value_hide">隐藏</string>
-    <string name="value_newest">最新在上</string>
-    <string name="value_oldest">最早在上</string>
     <string name="chat_text_size_title">聊天字号</string>
     <string name="chat_text_size_subtitle">聊天消息文字大小</string>
     <string name="chat_bubble_title">聊天气泡样式</string>
     <string name="chat_bubble_subtitle">聊天消息气泡显示方式</string>
-    <string name="value_bubble">气泡</string>
-    <string name="value_simple">简洁</string>
 
     <!-- Sync Hub -->
     <string name="sync_title">数据同步</string>
     <string name="sync_local_title">局域网同步</string>
     <string name="sync_local_subtitle">通过局域网发现和同步设备</string>
-    <string name="sync_remote_title">远程同步房间</string>
-    <string name="sync_remote_subtitle">通过WebSocket远程同步</string>
     <string name="sync_create_room_title">创建房间</string>
     <string name="sync_create_room_subtitle">其他设备可以通过房间号/二维码加入</string>
     <string name="sync_join_room_title">加入房间</string>
@@ -216,7 +154,6 @@
     <!-- Content descriptions (accessibility) -->
     <string name="cd_back">返回</string>
     <string name="cd_search">搜索</string>
-    <string name="cd_send">发送</string>
     <string name="cd_delete">删除</string>
 
     <!-- Account screen extras -->
@@ -305,10 +242,6 @@
         <item>16:9</item>
     </string-array>
     <string name="play_scale_default">默认</string>
-    <string-array name="play_hw_decode_options">
-        <item>开启</item>
-        <item>关闭</item>
-    </string-array>
     <string name="play_hw_decode_subtitle">使用GPU加速解码视频</string>
     <string name="play_compat_subtitle">遇到播放异常时可尝试开启</string>
     <string name="play_force_https_subtitle">仅使用HTTPS协议加载直播流</string>
@@ -320,8 +253,6 @@
         <item>暗色模式</item>
     </string-array>
     <string name="theme_mode_default">跟随系统</string>
-    <string name="dynamic_color_title">动态颜色</string>
-    <string name="dynamic_color_subtitle">使用Material You取色（Android 12+）</string>
     <string name="theme_color_picker_title">主题色</string>
     <string name="theme_color_picker_subtitle">自选主题强调色</string>
 
@@ -403,13 +334,6 @@ https://webcast.amemv.com/webcast/reflow/xxxxx</string>
     <string name="settings_debug_log_subtitle">查看应用运行日志</string>
 
     <!-- User Remarks -->
-    <string name="remark_title">用户备注</string>
-    <string name="remark_add">添加备注</string>
-    <string name="remark_edit">编辑备注</string>
-    <string name="remark_hint">输入备注内容</string>
-    <string name="remark_block_user">屏蔽该用户</string>
-    <string name="remark_copy_username">复制用户名</string>
-    <string name="remark_copy_message">复制弹幕内容</string>
 
     <!-- Shield Settings Screen -->
     <string name="shield_title">弹幕屏蔽设置</string>
@@ -425,7 +349,6 @@ https://webcast.amemv.com/webcast/reflow/xxxxx</string>
     <string name="shield_preset_save">保存当前屏蔽为预设</string>
     <string name="shield_preset_name_hint">输入预设名称</string>
     <string name="shield_preset_apply">启用</string>
-    <string name="shield_preset_delete">删除</string>
     <string name="shield_preset_import">导入预设</string>
     <string name="shield_preset_export">导出预设</string>
     <string name="shield_preset_copied">已复制预设 JSON 到剪贴板</string>

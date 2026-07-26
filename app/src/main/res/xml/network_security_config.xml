@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<network-security-config>
+<network-security-config xmlns:tools="http://schemas.android.com/tools">
     <!--
         Live playback CDNs (Huya/Douyu FLV, Douyin pull URLs, etc.) hand back dynamic
         http:// hosts that cannot be enumerated, so cleartext stays permitted by default
@@ -14,7 +14,13 @@
         derived from the out-of-band pairing token (see core/common/LanSyncCrypto.kt), so
         cleartext being permitted here does not expose follows, history or settings.
     -->
-    <base-config cleartextTrafficPermitted="true" />
+    <!--
+        Suppressed deliberately, not overlooked: the two cleartext consumers are documented above
+        and both are covered by other means (credential hosts are pinned HTTPS below, LAN sync is
+        sealed at the payload level). Leaving the warning unfiled would let it mask a future
+        genuinely insecure config change.
+    -->
+    <base-config cleartextTrafficPermitted="true" tools:ignore="InsecureBaseConfiguration" />
 
     <!-- API / auth endpoints that carry login cookies or signing tokens: HTTPS only. -->
     <domain-config cleartextTrafficPermitted="false">

@@ -43,14 +43,13 @@ class FollowUpdateWorker @AssistedInject constructor(
         val manager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val channelId = "follow_channel"
         
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                channelId,
-                "特别关注开播提醒",
-                NotificationManager.IMPORTANCE_HIGH
-            )
-            manager.createNotificationChannel(channel)
-        }
+        // minSdk is 26: notification channels are always required.
+        val channel = NotificationChannel(
+            channelId,
+            "特别关注开播提醒",
+            NotificationManager.IMPORTANCE_HIGH
+        )
+        manager.createNotificationChannel(channel)
 
         val route = "/room/detail/${follow.roomId}?siteId=${follow.siteId}"
         val intent = Intent(applicationContext, MainActivity::class.java).apply {

@@ -53,7 +53,7 @@
 环境要求：
 
 - Android Studio 或命令行 Android SDK
-- JDK 21（Gradle 9 守护进程要求；工程自身的字节码目标仍为 Java 17）
+- JDK 17 或更高（Gradle 9 的最低要求；CI 使用 JDK 17，工程字节码目标同为 Java 17）
 - Gradle Wrapper，仓库已内置
 
 常用命令：

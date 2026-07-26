@@ -78,6 +78,14 @@ object LanSyncCrypto {
      * Stretches [token] into the encryption and authentication keys.
      *
      * Exposed for [LanSyncAuth] and tests; payload callers should prefer [encrypt] / [decrypt].
+     *
+     * **The salt is a fixed domain constant, identical on every install.** That is only safe
+     * because the pairing code is a full 122-bit random UUID (see `LanSyncService.newLanSyncToken`)
+     * — there is no candidate space to precompute. It stops being safe the moment the pairing code
+     * becomes short enough to type comfortably: with, say, a six-digit code, one rainbow table
+     * built once would open captured traffic from *every* device running this app, because they
+     * all derive keys under the same salt. **If the pairing code is ever shortened, mix a
+     * per-device value into the salt in the same change** and carry it in the pairing QR.
      */
     fun deriveKeys(token: String): LanSyncKeys {
         if (token.isEmpty()) {

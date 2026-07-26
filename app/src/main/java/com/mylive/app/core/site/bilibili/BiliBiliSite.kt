@@ -76,12 +76,44 @@ class BiliBiliSite @Inject constructor(
         requestedRoomId: String,
         detail: LiveRoomDetail
     ): LiveDanmakuSession {
-        val args = danmakuArgsByRoom[detail.roomId]
-            ?: danmakuArgsByRoom[requestedRoomId]
-            ?: error("Missing Bilibili danmaku handshake for room ${detail.roomId}")
-        return LiveDanmakuSession(
-            danmaku = BiliBiliDanmaku(WebSocketUtils(okHttpClient)),
-            args = args
+        val realRoomId = detail.roomId
+        return LiveDanmakuSession(danmaku = BiliBiliDanmaku(WebSocketUtils(okHttpClient))) {
+            danmakuArgsByRoom[realRoomId]
+                ?: fetchDanmakuArgs(realRoomId).also { danmakuArgsByRoom[realRoomId] = it }
+        }
+    }
+
+    /**
+     * Fetches the WebSocket handshake for a room: server host list plus the auth token.
+     *
+     * Deliberately not called from [getRoomDetail]. Nothing about playback needs it, and calling
+     * it there put its round trip in front of the first video frame.
+     */
+    private suspend fun fetchDanmakuArgs(realRoomId: String): DanmakuArgs.BiliBili {
+        val danmuInfoBaseUrl =
+            "https://api.live.bilibili.com/xlive/web-room/v1/index/getDanmuInfo"
+        val queryParams = getWbiSign("$danmuInfoBaseUrl?id=$realRoomId")
+        val result = httpClient.getJson(
+            danmuInfoBaseUrl,
+            queryParameters = queryParams,
+            header = getHeader()
+        ) as JSONObject
+
+        val data = result.getJSONObject("data")
+        val hostList = data.getJSONArray("host_list")
+        val serverHosts = buildList {
+            for (i in 0 until hostList.length()) {
+                add(hostList.getJSONObject(i).getString("host"))
+            }
+        }
+
+        return DanmakuArgs.BiliBili(
+            roomId = realRoomId.toIntOrNull() ?: 0,
+            uid = userId,
+            token = data.optString("token", ""),
+            serverHost = serverHosts.firstOrNull() ?: "broadcastlv.chat.bilibili.com",
+            buvid = buvid3,
+            cookie = cookie
         )
     }
 
@@ -320,32 +352,11 @@ class BiliBiliSite @Inject constructor(
         val roomInfoData = roomInfo.getJSONObject("room_info")
         val realRoomId = roomInfoData.optStringValue("room_id")
 
-        val danmuInfoBaseUrl =
-            "https://api.live.bilibili.com/xlive/web-room/v1/index/getDanmuInfo"
-        val danmuInfoUrl = "$danmuInfoBaseUrl?id=$realRoomId"
-        val queryParams = getWbiSign(danmuInfoUrl)
-        val roomDanmakuResult = httpClient.getJson(
-            danmuInfoBaseUrl,
-            queryParameters = queryParams,
-            header = getHeader()
-        ) as JSONObject
-
-        val hostList = roomDanmakuResult.getJSONObject("data").getJSONArray("host_list")
-        val serverHosts = mutableListOf<String>()
-        for (i in 0 until hostList.length()) {
-            serverHosts.add(hostList.getJSONObject(i).getString("host"))
-        }
-
-        val danmakuArgs = DanmakuArgs.BiliBili(
-            roomId = realRoomId.toIntOrNull() ?: 0,
-            uid = userId,
-            token = roomDanmakuResult.getJSONObject("data").optString("token", ""),
-            serverHost = serverHosts.firstOrNull() ?: "broadcastlv.chat.bilibili.com",
-            buvid = buvid3,
-            cookie = cookie
-        )
-        danmakuArgsByRoom[roomId] = danmakuArgs
-        danmakuArgsByRoom[realRoomId] = danmakuArgs
+        // The danmaku handshake (getDanmuInfo) used to be fetched here. It is worth nothing to
+        // playback, but it sat between the room detail and the play URLs, so every room paid a
+        // round trip for it before the first video frame. It is resolved on demand now — see
+        // [fetchDanmakuArgs] — which both shortens the playback path and lets the handshake
+        // overlap it.
 
         val liveStartTime = roomInfoData.optNullableStringValue("live_start_time")
 

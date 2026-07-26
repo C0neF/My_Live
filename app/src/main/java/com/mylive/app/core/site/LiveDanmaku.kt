@@ -19,11 +19,20 @@ interface LiveDanmaku {
 /**
  * A configured danmaku connection. Platform-specific arguments stay inside the
  * site adapter; room consumers only manage callbacks and connection lifetime.
+ *
+ * The arguments are resolved by [resolveArgs] when the connection actually starts, not when the
+ * session is created. That matters for platforms whose handshake costs a request of its own:
+ * Bilibili's `getDanmuInfo` used to be fetched inside `getRoomDetail`, which put a round trip that
+ * only danmaku needs directly in front of the first video frame. Deferring it takes that hop off
+ * the playback path and lets the handshake run alongside it instead.
  */
 class LiveDanmakuSession internal constructor(
     private val danmaku: LiveDanmaku,
-    private val args: DanmakuArgs
+    private val resolveArgs: suspend () -> DanmakuArgs
 ) {
+    /** For platforms whose handshake data already came back with the room detail. */
+    internal constructor(danmaku: LiveDanmaku, args: DanmakuArgs) : this(danmaku, { args })
+
     var onMessage: ((LiveMessage) -> Unit)?
         get() = danmaku.onMessage
         set(value) {
@@ -43,7 +52,7 @@ class LiveDanmakuSession internal constructor(
         }
 
     suspend fun start() {
-        danmaku.start(args)
+        danmaku.start(resolveArgs())
     }
 
     suspend fun stop() {

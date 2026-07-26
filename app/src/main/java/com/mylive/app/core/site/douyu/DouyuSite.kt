@@ -2,6 +2,10 @@ package com.mylive.app.core.site.douyu
 
 import com.mylive.app.core.common.CoreLog
 import com.mylive.app.core.common.HttpClient
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import com.mylive.app.core.model.DanmakuArgs
 import com.mylive.app.core.model.LiveAnchorItem
 import com.mylive.app.core.model.LiveCategory
@@ -74,6 +78,45 @@ internal fun resolveDouyuRoomFaceUrl(item: JSONObject): String {
 
 internal fun resolveDouyuRoomCoverUrl(item: JSONObject): String {
     return firstJsonImageUrlByKeys(item, DOUYU_COVER_KEYS).orEmpty()
+}
+
+/**
+ * Resolves one playable URL per CDN, issuing the requests together instead of one after another.
+ *
+ * Douyu has no endpoint that hands back every CDN at once — each costs its own POST. They do not
+ * depend on each other, but they used to run in a sequential loop, so a room with five CDNs put
+ * five round trips in front of the first video frame rather than one.
+ *
+ * The burst this creates is bounded by OkHttp, not by this function: `NetworkModule` installs no
+ * custom `Dispatcher`, so `maxRequestsPerHost` is the default 5 and Douyu never sees more than
+ * that at once — the same shape a browser produces. Raising that limit in `NetworkModule` would
+ * quietly widen this burst too.
+ *
+ * Two behaviours are preserved on purpose:
+ * - **Order.** The result doubles as the CDN preference order — [getPlayQualites] sorts `scdn`
+ *   last — and the player treats earlier entries as better lines.
+ * - **Partial failure.** A CDN that throws is skipped rather than failing the room, so one dead
+ *   line cannot cost the others.
+ */
+internal suspend fun resolveDouyuPlayUrls(
+    cdns: List<String>,
+    fetchUrl: suspend (cdn: String) -> String
+): List<String> = coroutineScope {
+    cdns
+        .map { cdn ->
+            async {
+                try {
+                    fetchUrl(cdn)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    CoreLog.e("Failed to get play URL for CDN $cdn", e)
+                    ""
+                }
+            }
+        }
+        .awaitAll()
+        .filter { it.isNotEmpty() }
 }
 
 private fun douyuSearchHasMore(itemCount: Int): Boolean {
@@ -357,17 +400,11 @@ class DouyuSite @Inject constructor(
         val signArgs = getFreshSignArgs(detail.roomId)
         val playData = quality.data as PlayQualityData.Douyu
 
-        val urls = mutableListOf<String>()
-        for (cdn in playData.cdns) {
-            try {
-                val url = getPlayUrl(detail.roomId, signArgs, playData.rate, cdn)
-                if (url.isNotEmpty()) urls.add(url)
-            } catch (e: Exception) {
-                CoreLog.e("Failed to get play URL for CDN $cdn", e)
+        return LivePlayUrl(
+            urls = resolveDouyuPlayUrls(playData.cdns) { cdn ->
+                getPlayUrl(detail.roomId, signArgs, playData.rate, cdn)
             }
-        }
-
-        return LivePlayUrl(urls = urls)
+        )
     }
 
     /**

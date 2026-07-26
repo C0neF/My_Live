@@ -1,5 +1,6 @@
 package com.mylive.app.core.site.bilibili
 
+import com.mylive.app.core.common.BoundedLruCache
 import com.mylive.app.core.common.CoreLog
 import com.mylive.app.core.common.HttpClient
 import com.mylive.app.core.common.WebSocketUtils
@@ -16,8 +17,9 @@ import com.mylive.app.core.model.LiveSearchRoomResult
 import com.mylive.app.core.model.LiveSubCategory
 import com.mylive.app.core.model.LiveSuperChatMessage
 import com.mylive.app.core.model.PlayQualityData
-import com.mylive.app.core.site.LiveDanmaku
-import com.mylive.app.core.site.LiveSite
+import com.mylive.app.core.site.AccountAwareLiveSite
+import com.mylive.app.core.site.LiveDanmakuSession
+import com.mylive.app.core.site.LiveSiteAccount
 import com.mylive.app.core.site.optNullableStringValue
 import com.mylive.app.core.site.optStringValue
 import okhttp3.OkHttpClient
@@ -32,21 +34,27 @@ import javax.inject.Singleton
 class BiliBiliSite @Inject constructor(
     private val httpClient: HttpClient,
     private val okHttpClient: OkHttpClient
-) : LiveSite {
-
-    override fun getDanmaku(): LiveDanmaku = BiliBiliDanmaku(WebSocketUtils(okHttpClient))
+) : AccountAwareLiveSite {
 
     override val id: String = "bilibili"
     override val name: String = "哔哩哔哩直播"
 
-    var cookie: String = ""
+    /**
+     * Danmaku handshake per room, keyed by both the requested id and the resolved real id.
+     * Bounded: this site is a `@Singleton`, and the follow-refresh worker resolves every followed
+     * room on a timer, so an unbounded map would keep a copy of the account cookie for every room
+     * the process has ever seen.
+     */
+    private val danmakuArgsByRoom = BoundedLruCache<String, DanmakuArgs.BiliBili>(MAX_CACHED_ROOMS)
+
+    private var cookie: String = ""
         set(value) {
             val nextCookie = value.trim()
             if (field != nextCookie) {
                 buvid3 = ""
                 buvid4 = ""
                 accessId = ""
-                lastDanmakuArgs = null
+                danmakuArgsByRoom.clear()
             }
             field = nextCookie
             userId = parseBilibiliUserIdFromCookie(nextCookie)
@@ -58,7 +66,29 @@ class BiliBiliSite @Inject constructor(
     private var buvid4: String = ""
     private var accessId: String = ""
 
+    override val accountKey: LiveSiteAccount = LiveSiteAccount.BILIBILI
+
+    override fun updateAccountCookie(cookie: String) {
+        this.cookie = cookie
+    }
+
+    override fun createDanmakuSession(
+        requestedRoomId: String,
+        detail: LiveRoomDetail
+    ): LiveDanmakuSession {
+        val args = danmakuArgsByRoom[detail.roomId]
+            ?: danmakuArgsByRoom[requestedRoomId]
+            ?: error("Missing Bilibili danmaku handshake for room ${detail.roomId}")
+        return LiveDanmakuSession(
+            danmaku = BiliBiliDanmaku(WebSocketUtils(okHttpClient)),
+            args = args
+        )
+    }
+
     companion object {
+        /** Upper bound on per-room handshake entries retained by this singleton. */
+        private const val MAX_CACHED_ROOMS = 32
+
         private const val kDefaultUserAgent =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 Edg/126.0.0.0"
         private const val kDefaultReferer = "https://live.bilibili.com/"
@@ -306,8 +336,7 @@ class BiliBiliSite @Inject constructor(
             serverHosts.add(hostList.getJSONObject(i).getString("host"))
         }
 
-        // Store danmaku args for later retrieval by LiveRoomViewModel
-        lastDanmakuArgs = DanmakuArgs.BiliBili(
+        val danmakuArgs = DanmakuArgs.BiliBili(
             roomId = realRoomId.toIntOrNull() ?: 0,
             uid = userId,
             token = roomDanmakuResult.getJSONObject("data").optString("token", ""),
@@ -315,6 +344,8 @@ class BiliBiliSite @Inject constructor(
             buvid = buvid3,
             cookie = cookie
         )
+        danmakuArgsByRoom[roomId] = danmakuArgs
+        danmakuArgsByRoom[realRoomId] = danmakuArgs
 
         val liveStartTime = roomInfoData.optNullableStringValue("live_start_time")
 
@@ -338,72 +369,6 @@ class BiliBiliSite @Inject constructor(
             categoryParentId = roomInfoData.optNullableStringValue("parent_area_id"),
             categoryParentName = roomInfoData.optNullableStringValue("parent_area_name")
         )
-    }
-
-    /**
-     * Returns the DanmakuArgs for the most recently fetched room detail.
-     * Call this after [getRoomDetail] to obtain the args needed by [LiveDanmaku.start].
-     */
-    var lastDanmakuArgs: DanmakuArgs.BiliBili? = null
-        private set
-
-    /**
-     * Fetches room detail and also stores the danmaku args for later retrieval.
-     */
-    suspend fun getRoomDetailWithDanmakuArgs(roomId: String): Pair<LiveRoomDetail, DanmakuArgs.BiliBili> {
-        val roomInfo = getRoomInfo(roomId)
-        val roomInfoData = roomInfo.getJSONObject("room_info")
-        val realRoomId = roomInfoData.optStringValue("room_id")
-
-        val danmuInfoBaseUrl =
-            "https://api.live.bilibili.com/xlive/web-room/v1/index/getDanmuInfo"
-        val danmuInfoUrl = "$danmuInfoBaseUrl?id=$realRoomId"
-        val queryParams = getWbiSign(danmuInfoUrl)
-        val roomDanmakuResult = httpClient.getJson(
-            danmuInfoBaseUrl,
-            queryParameters = queryParams,
-            header = getHeader()
-        ) as JSONObject
-
-        val hostList = roomDanmakuResult.getJSONObject("data").getJSONArray("host_list")
-        val serverHosts = mutableListOf<String>()
-        for (i in 0 until hostList.length()) {
-            serverHosts.add(hostList.getJSONObject(i).getString("host"))
-        }
-
-        val liveStartTime = roomInfoData.optNullableStringValue("live_start_time")
-
-        val anchorInfo = roomInfo.getJSONObject("anchor_info")
-        val baseInfo = anchorInfo.getJSONObject("base_info")
-
-        val detail = LiveRoomDetail(
-            roomId = realRoomId,
-            title = roomInfoData.optString("title", ""),
-            cover = roomInfoData.optString("cover", ""),
-            userName = baseInfo.optString("uname", ""),
-            userAvatar = "${baseInfo.optString("face", "")}@100w.jpg",
-            online = roomInfoData.optStringValue("online").toIntOrNull() ?: 0,
-            status = (roomInfoData.optStringValue("live_status").toIntOrNull() ?: 0) == 1,
-            url = "https://live.bilibili.com/$roomId",
-            introduction = roomInfoData.optString("description", ""),
-            notice = "",
-            showTime = liveStartTime,
-            categoryId = roomInfoData.optNullableStringValue("area_id"),
-            categoryName = roomInfoData.optNullableStringValue("area_name"),
-            categoryParentId = roomInfoData.optNullableStringValue("parent_area_id"),
-            categoryParentName = roomInfoData.optNullableStringValue("parent_area_name")
-        )
-
-        val danmakuArgs = DanmakuArgs.BiliBili(
-            roomId = realRoomId.toIntOrNull() ?: 0,
-            uid = userId,
-            token = roomDanmakuResult.getJSONObject("data").optString("token", ""),
-            serverHost = serverHosts.firstOrNull() ?: "broadcastlv.chat.bilibili.com",
-            buvid = buvid3,
-            cookie = cookie
-        )
-        lastDanmakuArgs = danmakuArgs
-        return Pair(detail, danmakuArgs)
     }
 
     private suspend fun getRoomInfo(roomId: String): JSONObject {

@@ -2,6 +2,7 @@ package com.mylive.app.ui.screen.room.player
 
 import java.io.File
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -73,35 +74,60 @@ class LivePlaybackPipPolicyTest {
 
     @Test
     fun theRoomReportsPictureInPictureWhenTheHostPauses() {
-        val screen = File(
-            "src/main/java/com/mylive/app/ui/screen/room/LiveRoomScreen.kt"
+        val host = File(
+            "src/main/java/com/mylive/app/ui/screen/room/player/LivePlaybackHost.kt"
         ).readText()
         assertTrue(
-            screen.contains("inPictureInPicture = componentActivity?.isInPictureInPictureMode == true")
+            host.contains("componentActivity?.isInPictureInPictureMode == true")
         )
-        assertTrue(screen.contains("playbackSession?.onHostResume()"))
+        assertTrue(host.contains("playbackSession?.onHostResume()"))
     }
 
     @Test
     fun thePipWindowRendersOnlyTheVideoSurface() {
+        // Controls and the loading spinner are laid out at full size and would cover the whole
+        // floating window. Asserted through the rules themselves rather than by matching the
+        // rendering code's text, which broke on an unrelated reformat.
+        assertFalse(
+            shouldShowPlayerControls(controlsVisible = true, isInPictureInPicture = true)
+        )
+        assertFalse(
+            shouldShowPlayerLoading(
+                isLoading = true,
+                hasError = false,
+                hasController = true,
+                isInPictureInPicture = true
+            )
+        )
+
+        // ...and both are drawn normally in the full-size window.
+        assertTrue(
+            shouldShowPlayerControls(controlsVisible = true, isInPictureInPicture = false)
+        )
+        assertTrue(
+            shouldShowPlayerLoading(
+                isLoading = true,
+                hasError = false,
+                hasController = true,
+                isInPictureInPicture = false
+            )
+        )
+    }
+
+    @Test
+    fun aSurfaceIsPictureInPictureOnlyWhenItsCallerSaysSo() {
+        // Default false: every non-PiP call site gets the full-size treatment without opting in.
+        assertFalse(PlayerViewUiState().isInPictureInPicture)
+        assertTrue(PlayerViewUiState(isInPictureInPicture = true).isInPictureInPicture)
+    }
+
+    @Test
+    fun theRoomDeclaresItsPipSurface() {
+        // Wiring check: some call site has to actually pass the flag. Kept to a single stable
+        // named-argument token instead of slicing the file into branches by brace text.
         val screen = File(
             "src/main/java/com/mylive/app/ui/screen/room/LiveRoomScreen.kt"
         ).readText()
-        // The PiP layout branch is the one that ends at the landscape/fullscreen branch.
-        val pipBranch = screen.substringBefore("} else if (isLandscape || isFullscreen) {")
-            .substringAfterLast("if (isInPip) {")
-        assertTrue(pipBranch.contains("isInPipMode = true"))
-
-        val player = File(
-            "src/main/java/com/mylive/app/ui/screen/room/player/PlayerView.kt"
-        ).readText()
-        assertTrue(player.contains("isInPipMode: Boolean = false"))
-        // Controls, lock buttons and the loading spinner are all suppressed in the small window.
-        assertTrue(player.contains("visible = controlsVisible && !isInPipMode"))
-        assertTrue(
-            player.contains(
-                "if (state.isLoading && state.error == null && playerController != null && !isInPipMode) {"
-            )
-        )
+        assertTrue(screen.contains("isInPictureInPicture = true"))
     }
 }

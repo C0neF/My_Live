@@ -43,12 +43,20 @@ class LiveRoomRoutePolicyTest {
         val sessionSource = File(
             "src/main/java/com/mylive/app/ui/screen/room/player/LivePlaybackSession.kt"
         ).readText()
+        val hostSource = File(
+            "src/main/java/com/mylive/app/ui/screen/room/player/LivePlaybackHost.kt"
+        ).readText()
         val viewModelSource = File(
             "src/main/java/com/mylive/app/ui/screen/room/LiveRoomViewModel.kt"
         ).readText()
 
-        assertTrue(screenSource.contains("onPlaybackSourceExhausted = {"))
-        assertTrue(screenSource.contains("viewModel.recoverPlaybackAfterSourceFailure()"))
+        assertTrue(
+            screenSource.contains(
+                "onPlaybackSourceExhausted = viewModel::recoverPlaybackAfterSourceFailure"
+            )
+        )
+        assertTrue(hostSource.contains("onPlaybackSourceExhausted = {"))
+        assertTrue(hostSource.contains("currentSourceExhausted.value()"))
         assertTrue(
             "session owns detach of the playback engine from the ViewModel",
             sessionSource.contains("binding?.unbindPlaybackEngine(engine)")

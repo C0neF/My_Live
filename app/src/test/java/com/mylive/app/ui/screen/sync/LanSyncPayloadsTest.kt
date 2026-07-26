@@ -1,5 +1,7 @@
 package com.mylive.app.ui.screen.sync
 
+import com.mylive.app.core.sync.LanSyncAcceptedJob
+import com.mylive.app.core.sync.LanSyncProtocol
 import com.mylive.app.data.local.entity.FollowUserTagEntity
 import com.mylive.app.data.local.entity.ShieldEntity
 import org.junit.Assert.assertEquals
@@ -91,7 +93,7 @@ class LanSyncPayloadsTest {
     @Test
     fun validateLanSyncResponseThrowsWhenJsonStatusIsFalse() {
         assertThrows(Exception::class.java) {
-            validateLanSyncResponse(
+            LanSyncProtocol.decodeImportResponse(
                 statusCode = 200,
                 isSuccessful = true,
                 body = """{"status":false,"message":"tag failed"}"""
@@ -101,7 +103,7 @@ class LanSyncPayloadsTest {
 
     @Test
     fun validateLanSyncResponseReturnsAcceptedJobForAsyncImport() {
-        val acceptedJob = validateLanSyncResponse(
+        val acceptedJob = LanSyncProtocol.decodeImportResponse(
             statusCode = 202,
             isSuccessful = true,
             body = """{"status":true,"jobUrl":"/sync/job/job-1"}"""

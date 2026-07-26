@@ -1,8 +1,6 @@
 package com.mylive.app.ui.screen.room
 
 import android.app.Activity
-import android.content.pm.ActivityInfo
-import android.view.WindowManager
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.expandVertically
@@ -31,6 +29,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -44,7 +43,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.progressBarRangeInfo
@@ -64,9 +62,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.mylive.app.ui.navigation.Navigator
-import androidx.core.view.WindowCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.WindowInsetsControllerCompat
 import coil.compose.AsyncImage
 import com.mylive.app.R
 import com.mylive.app.core.common.buildLiveMessageDisplaySpans
@@ -78,10 +73,15 @@ import com.mylive.app.core.model.LivePlayQuality
 import com.mylive.app.data.repository.LiveRoomPreferences
 import com.mylive.app.ui.emoji.EmojiImage
 import com.mylive.app.ui.screen.room.player.LiveDanmakuSurfaceFeed
-import com.mylive.app.ui.screen.room.player.LivePlaybackSession
+import com.mylive.app.ui.screen.room.player.LivePlaybackHostContent
+import com.mylive.app.ui.screen.room.player.DanmakuConfig
+import com.mylive.app.ui.screen.room.player.PlayerDanmakuActions
 import com.mylive.app.ui.screen.room.player.PlayerController
 import com.mylive.app.ui.screen.room.player.PlayerView
+import com.mylive.app.ui.screen.room.player.PlayerViewActions
+import com.mylive.app.ui.screen.room.player.PlayerViewUiState
 import com.mylive.app.ui.screen.room.player.DanmakuController
+import com.mylive.app.ui.screen.room.player.rememberLivePlaybackHost
 import com.mylive.app.ui.screen.room.player.shouldFeedLiveDanmakuSurface
 import com.mylive.app.ui.screen.room.player.shouldFeedPipDanmakuSurface
 import com.mylive.app.ui.screen.settings.SettingsViewModel
@@ -94,7 +94,6 @@ import com.mylive.app.ui.screen.follow.FollowViewModel
 import com.mylive.app.data.local.entity.FollowUserEntity
 import com.mylive.app.core.model.LiveSuperChatMessage
 import com.mylive.app.ui.navigation.Route
-import com.mylive.app.ui.motion.AppMotion
 import com.mylive.app.ui.screen.room.quickaccess.QuickAccessExtraTab
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.animation.core.Animatable
@@ -104,14 +103,8 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.EaseOutCubic
 import kotlinx.coroutines.launch
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.flow.map
 import kotlin.math.roundToInt
 import java.util.concurrent.atomic.AtomicLong
 
@@ -177,11 +170,6 @@ internal fun resolveLandscapeLiveRoomTabs(): List<LiveRoomTabType> {
     return listOf(LiveRoomTabType.CHAT)
 }
 
-internal fun shouldResumeLivePlaybackOnForeground(
-    lifecyclePausedPlayback: Boolean,
-    wasPlayingBeforePause: Boolean
-): Boolean = lifecyclePausedPlayback && wasPlayingBeforePause
-
 internal fun liveRoomQuickAccessAction(
     enabled: Boolean,
     action: () -> Unit
@@ -190,76 +178,6 @@ internal fun liveRoomQuickAccessAction(
 val LocalRoomAccentColor = compositionLocalOf { Color.Unspecified }
 
 private fun currentEpochMillis(): Long = System.currentTimeMillis()
-
-/**
- * Orientation policy for the live room.
- *
- * - Controls locked: freeze the current orientation.
- * - Fullscreen: always landscape. SCREEN_ORIENTATION_SENSOR_LANDSCAPE keeps the window in one of
- *   the two landscape directions and lets physical rotation flip between them, while a device held
- *   upright can never collapse the player into a letterboxed portrait window.
- * - Otherwise: system default.
- *
- * Note: SENSOR_LANDSCAPE follows the sensor even when the system rotation lock is on, but only
- * within landscape. Portrait is never a valid fullscreen orientation, so rotating the device can
- * change direction and nothing else. Leaving fullscreen stays an explicit action (fullscreen
- * button or back).
- */
-internal fun liveRoomRequestedOrientation(
-    fullscreen: Boolean,
-    controlsLocked: Boolean,
-    restorePortrait: Boolean = false
-): Int {
-    return when {
-        controlsLocked -> ActivityInfo.SCREEN_ORIENTATION_LOCKED
-        fullscreen -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-        // Leaving fullscreen (fullscreen button or system back) pulls the window back to portrait
-        // even if the device is still physically held sideways. Once portrait is actually reached
-        // the caller drops this request so the system owns the orientation again.
-        restorePortrait -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-        else -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-    }
-}
-
-private fun applyLiveRoomFullscreen(
-    activity: Activity,
-    fullscreen: Boolean,
-    controlsLocked: Boolean,
-    restorePortrait: Boolean = false
-) {
-    activity.requestedOrientation = liveRoomRequestedOrientation(
-        fullscreen = fullscreen,
-        controlsLocked = controlsLocked,
-        restorePortrait = restorePortrait
-    )
-    if (fullscreen) {
-        WindowCompat.setDecorFitsSystemWindows(activity.window, false)
-        val controller = WindowCompat.getInsetsController(activity.window, activity.window.decorView)
-        controller.hide(WindowInsetsCompat.Type.systemBars())
-        controller.systemBarsBehavior =
-            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-    } else {
-        WindowCompat.setDecorFitsSystemWindows(activity.window, true)
-        WindowCompat.getInsetsController(activity.window, activity.window.decorView)
-            .show(WindowInsetsCompat.Type.systemBars())
-    }
-}
-
-private fun restoreLiveRoomSystemUi(activity: Activity) {
-    activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-    WindowCompat.setDecorFitsSystemWindows(activity.window, true)
-    WindowCompat.getInsetsController(activity.window, activity.window.decorView)
-        .show(WindowInsetsCompat.Type.systemBars())
-}
-
-private fun keepLiveRoomScreenAwake(activity: Activity?, keepAwake: Boolean) {
-    val window = activity?.window ?: return
-    if (keepAwake) {
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-    } else {
-        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-    }
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -285,7 +203,6 @@ fun LiveRoomScreen(
     val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
     val context = LocalContext.current
     val activity = context as? Activity
-    val liveRoomView = LocalView.current
 
     var isExiting by remember { mutableStateOf(false) }
     var isControlsLocked by remember { mutableStateOf(false) }
@@ -316,8 +233,6 @@ fun LiveRoomScreen(
     val pipDanmuDedupeStrictMode = liveRoomPreferences.danmuDedupeStrictMode
     val pipDanmuRenderEmoji = liveRoomPreferences.danmuRenderEmoji
 
-    val componentActivity = context as? androidx.activity.ComponentActivity
-    var isInPip by remember { mutableStateOf(componentActivity?.isInPictureInPictureMode == true) }
     var pipDanmakuController by remember { mutableStateOf<DanmakuController?>(null) }
     val resolvedPipDanmuDelay = remember(pipDanmuDelay, pipDanmuDelayBySiteJson, viewModel.siteId) {
         resolveDanmuDelayMs(
@@ -335,15 +250,25 @@ fun LiveRoomScreen(
         defaultAccentColor = MaterialTheme.colorScheme.primary
     )
 
-    DisposableEffect(componentActivity) {
-        val listener = androidx.core.util.Consumer<androidx.core.app.PictureInPictureModeChangedInfo> { info ->
-            isInPip = info.isInPictureInPictureMode
-        }
-        componentActivity?.addOnPictureInPictureModeChangedListener(listener)
-        onDispose {
-            componentActivity?.removeOnPictureInPictureModeChangedListener(listener)
-        }
-    }
+    val playbackHost = rememberLivePlaybackHost(
+        content = LivePlaybackHostContent(
+            routeRoomId = key.roomId,
+            routeSiteId = key.siteId,
+            roomReady = uiState.detail != null,
+            title = uiState.detail?.title ?: "",
+            anchorName = uiState.detail?.userName ?: "",
+            platform = viewModel.siteId
+        ),
+        preferences = liveRoomPreferences,
+        controlsLocked = isControlsLocked,
+        exiting = isExiting,
+        binding = viewModel,
+        settingsRepository = viewModel.settingsRepository,
+        onPlaybackSourceExhausted = viewModel::recoverPlaybackAfterSourceFailure
+    )
+    val playerController = playbackHost.playerController
+    val isInPip = playbackHost.isInPictureInPicture
+    val isFullscreen = playbackHost.isFullscreen
 
     LiveDanmakuSurfaceFeed(
         messages = viewModel.newDanmakuMessages,
@@ -357,210 +282,21 @@ fun LiveRoomScreen(
         clearWhenInactive = true
     )
 
-    val autoPipOnExit = liveRoomPreferences.autoPipOnExit
-    val autoFullScreen = liveRoomPreferences.autoFullScreen
-    val autoPipOwner = remember { Any() }
-    DisposableEffect(autoPipOnExit, autoPipOwner) {
-        LivePlaybackSession.setAutoPipActive(autoPipOwner, autoPipOnExit)
-        onDispose {
-            LivePlaybackSession.setAutoPipActive(autoPipOwner, false)
-        }
-    }
-
-    // Playback session owns PlayerController create/release, VM bind, and FGS handoff.
-    var playbackSession by remember { mutableStateOf<LivePlaybackSession?>(null) }
-    val playerController = playbackSession?.playerController
-    val allowBackgroundPlayback = liveRoomPreferences.allowBackgroundPlayback
-    val playerAutoPause = liveRoomPreferences.playerAutoPause
-    val playerForceHttps = liveRoomPreferences.playerForceHttps
-    val lifecycleOwner = LocalLifecycleOwner.current
-
-    LaunchedEffect(isExiting) {
-        if (isExiting) {
-            playbackSession?.stop()
-        }
-    }
-
-    LaunchedEffect(Unit) {
-        kotlinx.coroutines.delay(AppMotion.LiveRoomPlayerStartupDelayMillis.toLong())
-        val startupPreferences = viewModel.settingsRepository.liveRoomPreferences.first()
-        val session = LivePlaybackSession.create(
-            context = context,
-            hardwareDecodeEnabled = startupPreferences.hardwareDecode,
-            forceHttps = startupPreferences.playerForceHttps,
-            onPlaybackSourceExhausted = {
-                viewModel.recoverPlaybackAfterSourceFailure()
-            }
-        )
-        if (!lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
-            session.onHostPause(
-                allowBackgroundPlayback = startupPreferences.allowBackgroundPlayback,
-                playerAutoPause = startupPreferences.playerAutoPause,
-                roomTitle = uiState.detail?.title ?: "",
-                anchorName = uiState.detail?.userName ?: "",
-                platform = viewModel.siteId
-            )
-        }
-        playbackSession = session
-        session.attach(viewModel)
-    }
-
-    DisposableEffect(playbackSession) {
-        val session = playbackSession
-        onDispose {
-            session?.release()
-        }
-    }
-
-    // Sync playback auto-pause & background play settings with Lifecycle
-    LaunchedEffect(playbackSession, playerForceHttps) {
-        playbackSession?.setForceHttps(playerForceHttps)
-    }
-
-    DisposableEffect(
-        lifecycleOwner,
-        playbackSession,
-        allowBackgroundPlayback,
-        playerAutoPause,
-        uiState.detail,
-        activity,
-        liveRoomView
-    ) {
-        val observer = LifecycleEventObserver { _, event ->
-            when (event) {
-                Lifecycle.Event.ON_PAUSE -> {
-                    playbackSession?.onHostPause(
-                        allowBackgroundPlayback = allowBackgroundPlayback,
-                        playerAutoPause = playerAutoPause,
-                        roomTitle = uiState.detail?.title ?: "",
-                        anchorName = uiState.detail?.userName ?: "",
-                        platform = viewModel.siteId,
-                        // Entering PiP also pauses the Activity, but the video is still on screen.
-                        inPictureInPicture = componentActivity?.isInPictureInPictureMode == true
-                    )
-                }
-                Lifecycle.Event.ON_RESUME -> {
-                    // Re-assert screen-on after lifecycle transitions that may clear window flags.
-                    liveRoomView.keepScreenOn = true
-                    keepLiveRoomScreenAwake(activity, true)
-                    playbackSession?.onHostResume()
-                }
-                else -> {}
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
-            playbackSession?.onHostResume()
-        } else {
-            playbackSession?.onHostPause(
-                allowBackgroundPlayback = allowBackgroundPlayback,
-                playerAutoPause = playerAutoPause,
-                roomTitle = uiState.detail?.title ?: "",
-                anchorName = uiState.detail?.userName ?: "",
-                platform = viewModel.siteId
-            )
-        }
-        onDispose {
-            lifecycleOwner.lifecycle.removeObserver(observer)
-            playbackSession?.stopForegroundService()
-        }
-    }
-
-    // Safety net: some OEMs deliver ON_PAUSE before isInPictureInPictureMode flips to true,
-    // so re-assert the foreground policy once the PiP window is confirmed.
-    LaunchedEffect(isInPip, playbackSession) {
-        if (isInPip) {
-            playbackSession?.onHostResume()
-        }
-    }
-
     // Room idle auto exit state
     val roomAutoExitDuration = liveRoomPreferences.roomAutoExitDuration
     val lastInteractionTime = remember { AtomicLong(System.currentTimeMillis()) }
 
-    // Collect only the fullscreen flag at root so volume/brightness/loading do not
-    // recompose the entire room layout branch selection.
-    val isFullscreen by remember(playerController) {
-        playerController?.state?.map { it.isFullscreen } ?: flowOf(false)
-    }.collectAsStateWithLifecycle(initialValue = false)
-    var autoFullscreenAppliedRoute by remember { mutableStateOf<Pair<String, String>?>(null) }
-
-    LaunchedEffect(autoFullScreen, playerController, uiState.detail, key.roomId, key.siteId, isFullscreen) {
-        val route = key.siteId to key.roomId
-        if (
-            autoFullScreen &&
-            playerController != null &&
-            uiState.detail != null &&
-            autoFullscreenAppliedRoute != route &&
-            !isFullscreen
-        ) {
-            autoFullscreenAppliedRoute = route
-            playerController?.toggleFullscreen()
-        }
-    }
-
-    // Leaving fullscreen (system back key or the fullscreen button) always returns to the portrait
-    // layout, even when the device is still physically held sideways.
-    var wasFullscreen by remember { mutableStateOf(false) }
-    var restorePortraitAfterFullscreen by remember { mutableStateOf(false) }
-    LaunchedEffect(isFullscreen) {
-        if (isFullscreen) {
-            restorePortraitAfterFullscreen = false
-        } else if (wasFullscreen) {
-            restorePortraitAfterFullscreen = true
-        }
-        wasFullscreen = isFullscreen
-    }
-    // Portrait reached: give the orientation back to the system so later rotation works normally.
-    LaunchedEffect(restorePortraitAfterFullscreen, isLandscape) {
-        if (restorePortraitAfterFullscreen && !isLandscape) {
-            restorePortraitAfterFullscreen = false
-        }
-    }
-
-    // Handle fullscreen/lock: orientation + system bars. Fullscreen pins the window to landscape
-    // (either direction), locked freezes whatever orientation is current.
-    LaunchedEffect(isFullscreen, isControlsLocked, restorePortraitAfterFullscreen) {
-        val act = activity ?: return@LaunchedEffect
-        applyLiveRoomFullscreen(
-            activity = act,
-            fullscreen = isFullscreen,
-            controlsLocked = isControlsLocked,
-            restorePortrait = restorePortraitAfterFullscreen
-        )
-        // Holding the device upright in fullscreen only keeps the current landscape direction; it
-        // is never an exit gesture. Leaving fullscreen is always explicit (fullscreen button/back).
-    }
-
-    // Keep the screen on for the entire live-room stay (window flag + view flag).
-    DisposableEffect(activity, liveRoomView) {
-        liveRoomView.keepScreenOn = true
-        keepLiveRoomScreenAwake(activity, true)
-        onDispose {
-            liveRoomView.keepScreenOn = false
-            keepLiveRoomScreenAwake(activity, false)
-            activity?.let { restoreLiveRoomSystemUi(it) }
-        }
-    }
-
-
-
-    // Shared back handler: stop playback, restore orientation, then navigate
-    val handleBack: () -> Unit = remember(navigator, playerController) {
+    // Shared back handler: stop playback, restore orientation, then navigate.
+    // Remembered so it keeps a stable identity across the recompositions this screen does per
+    // room-state update; it is passed down as `onBack`, and a fresh lambda each pass would
+    // invalidate every layout below it.
+    val handleBack: () -> Unit = remember(navigator, playbackHost) {
         {
             if (!isExiting) {
                 isExiting = true
-                // Restore portrait orientation and show system bars only if currently in landscape
-                if (activity?.resources?.configuration?.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE) {
-                    activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-                    activity.window?.let { window ->
-                        WindowCompat.setDecorFitsSystemWindows(window, true)
-                        WindowCompat.getInsetsController(window, window.decorView)
-                            .show(WindowInsetsCompat.Type.systemBars())
-                    }
-                }
+                playbackHost.prepareToLeave()
                 if (!navigator.goBack()) {
-                    playerController?.pause()
+                    playbackHost.pause()
                 }
             }
         }
@@ -583,7 +319,7 @@ fun LiveRoomScreen(
 
     BackHandler {
         if (isFullscreen) {
-            playerController?.toggleFullscreen()
+            playbackHost.toggleFullscreen()
         } else {
             handleBack()
         }
@@ -623,46 +359,45 @@ fun LiveRoomScreen(
             val currentQualityName = uiState.playQualities.getOrNull(uiState.currentQualityIndex)?.quality ?: "画质"
             PlayerView(
                 playerController = playerController,
-                modifier = Modifier.fillMaxSize(),
-                title = uiState.detail?.title ?: "",
-                onBack = {},
-                currentQualityName = currentQualityName,
-                onQualityClick = {},
-                onRefreshClick = {},
-                danmuEnable = pipDanmuEnable && !pipHideDanmu,
-                onDanmuToggle = {},
-                accentColor = roomPlatformAccentColor,
-                danmuSize = pipDanmuSize,
-                onDanmuSizeChange = {},
-                danmuSpeed = pipDanmuSpeed,
-                onDanmuSpeedChange = {},
-                danmuArea = pipDanmuArea,
-                onDanmuAreaChange = {},
-                danmuLineCount = pipDanmuLineCount,
-                danmuDelayMs = resolvedPipDanmuDelay,
-                danmuOpacity = pipDanmuOpacity,
-                onDanmuOpacityChange = {},
-                danmuFontWeight = pipDanmuFontWeight,
-                danmuStrokeWidth = pipDanmuStrokeWidth,
-                danmuTopMargin = pipDanmuTopMargin,
-                danmuBottomMargin = pipDanmuBottomMargin,
-                danmuHideScroll = pipDanmuHideScroll,
-                danmuHideTop = pipDanmuHideTop,
-                danmuHideBottom = pipDanmuHideBottom,
-                danmuDedupeEnable = pipDanmuDedupeEnable,
-                danmuDedupeWindow = pipDanmuDedupeWindow,
-                danmuDedupeStep = pipDanmuDedupeStep,
-                danmuDedupeStrictMode = pipDanmuDedupeStrictMode,
-                scaleMode = scaleMode,
-                playerCompatMode = playerCompatMode,
-                danmuRenderEmoji = pipDanmuRenderEmoji,
-                chatBubbleStyle = chatBubbleStyle,
-                onChatBubbleStyleChange = { settingsViewModel.setChatBubbleStyle(it) },
-                onDanmakuControllerCreated = { pipDanmakuController = it },
-                isFullscreenOverride = isFullscreen,
-                onFullscreenClick = { playerController?.toggleFullscreen() },
-                isInPipMode = true,
-                isExiting = isExiting
+                viewState = PlayerViewUiState(
+                    title = uiState.detail?.title ?: "",
+                    currentQualityName = currentQualityName,
+                    danmakuEnabled = pipDanmuEnable && !pipHideDanmu,
+                    danmaku = DanmakuConfig(
+                        size = pipDanmuSize,
+                        speed = pipDanmuSpeed,
+                        area = pipDanmuArea,
+                        lineCount = pipDanmuLineCount,
+                        delayMs = resolvedPipDanmuDelay,
+                        opacity = pipDanmuOpacity,
+                        fontWeight = pipDanmuFontWeight,
+                        strokeWidth = pipDanmuStrokeWidth,
+                        topMargin = pipDanmuTopMargin,
+                        bottomMargin = pipDanmuBottomMargin,
+                        hideScroll = pipDanmuHideScroll,
+                        hideTop = pipDanmuHideTop,
+                        hideBottom = pipDanmuHideBottom,
+                        dedupeEnable = pipDanmuDedupeEnable,
+                        dedupeWindow = pipDanmuDedupeWindow,
+                        dedupeStep = pipDanmuDedupeStep,
+                        dedupeStrictMode = pipDanmuDedupeStrictMode,
+                        renderEmoji = pipDanmuRenderEmoji
+                    ),
+                    accentColor = roomPlatformAccentColor,
+                    scaleMode = scaleMode,
+                    playerCompatMode = playerCompatMode,
+                    chatBubbleStyle = chatBubbleStyle,
+                    fullscreenOverride = isFullscreen,
+                    isInPictureInPicture = true
+                ),
+                actions = PlayerViewActions(
+                    danmaku = PlayerDanmakuActions(
+                        onChatBubbleStyleChange = settingsViewModel::setChatBubbleStyle,
+                        onControllerCreated = { pipDanmakuController = it }
+                    ),
+                    onFullscreenClick = { playerController?.toggleFullscreen() }
+                ),
+                modifier = Modifier.fillMaxSize()
             )
         } else if (isLandscape || isFullscreen) {
             LandscapeLayout(
@@ -860,46 +595,53 @@ private fun PortraitLayout(
             val currentQualityName = uiState.playQualities.getOrNull(uiState.currentQualityIndex)?.quality ?: "画质"
             PlayerView(
                 playerController = playerController,
-                modifier = Modifier.fillMaxSize(),
-                title = uiState.detail?.title ?: "",
-                onBack = onBack,
-                currentQualityName = currentQualityName,
-                onQualityClick = onQualityClick,
-                onRefreshClick = { viewModel.refreshPlay() },
-                danmuEnable = danmuEnable,
-                onDanmuToggle = { settingsViewModel.setDanmuEnable(it) },
-                accentColor = roomPlatformAccentColor,
-                danmuSize = danmuSize,
-                onDanmuSizeChange = { settingsViewModel.setDanmuSize(it) },
-                danmuSpeed = danmuSpeed,
-                onDanmuSpeedChange = { settingsViewModel.setDanmuSpeed(it) },
-                danmuArea = danmuArea,
-                onDanmuAreaChange = { settingsViewModel.setDanmuArea(it) },
-                danmuLineCount = danmuLineCount,
-                danmuDelayMs = resolvedDanmuDelay,
-                danmuOpacity = danmuOpacity,
-                onDanmuOpacityChange = { settingsViewModel.setDanmuOpacity(it) },
-                danmuFontWeight = danmuFontWeight,
-                danmuStrokeWidth = danmuStrokeWidth,
-                danmuTopMargin = danmuTopMargin,
-                danmuBottomMargin = danmuBottomMargin,
-                danmuHideScroll = danmuHideScroll,
-                danmuHideTop = danmuHideTop,
-                danmuHideBottom = danmuHideBottom,
-                danmuDedupeEnable = danmuDedupeEnable,
-                danmuDedupeWindow = danmuDedupeWindow,
-                danmuDedupeStep = danmuDedupeStep,
-                danmuDedupeStrictMode = danmuDedupeStrictMode,
-                scaleMode = scaleMode,
-                playerCompatMode = playerCompatMode,
-                danmuRenderEmoji = danmuRenderEmoji,
-                chatBubbleStyle = chatBubbleStyle,
-                onChatBubbleStyleChange = { settingsViewModel.setChatBubbleStyle(it) },
-                onDanmakuControllerCreated = { danmakuController = it },
-                isFullscreenOverride = false,
-                onFullscreenClick = { playerController?.toggleFullscreen() },
-                onControlsLockChange = onControlsLockChange,
-                isExiting = isExiting
+                viewState = PlayerViewUiState(
+                    title = uiState.detail?.title ?: "",
+                    currentQualityName = currentQualityName,
+                    danmakuEnabled = danmuEnable,
+                    danmaku = DanmakuConfig(
+                        size = danmuSize,
+                        speed = danmuSpeed,
+                        area = danmuArea,
+                        lineCount = danmuLineCount,
+                        delayMs = resolvedDanmuDelay,
+                        opacity = danmuOpacity,
+                        fontWeight = danmuFontWeight,
+                        strokeWidth = danmuStrokeWidth,
+                        topMargin = danmuTopMargin,
+                        bottomMargin = danmuBottomMargin,
+                        hideScroll = danmuHideScroll,
+                        hideTop = danmuHideTop,
+                        hideBottom = danmuHideBottom,
+                        dedupeEnable = danmuDedupeEnable,
+                        dedupeWindow = danmuDedupeWindow,
+                        dedupeStep = danmuDedupeStep,
+                        dedupeStrictMode = danmuDedupeStrictMode,
+                        renderEmoji = danmuRenderEmoji
+                    ),
+                    accentColor = roomPlatformAccentColor,
+                    scaleMode = scaleMode,
+                    playerCompatMode = playerCompatMode,
+                    chatBubbleStyle = chatBubbleStyle,
+                    fullscreenOverride = false
+                ),
+                actions = PlayerViewActions(
+                    onBack = onBack,
+                    onQualityClick = onQualityClick,
+                    onRefreshClick = viewModel::refreshPlay,
+                    danmaku = PlayerDanmakuActions(
+                        onEnabledChange = settingsViewModel::setDanmuEnable,
+                        onSizeChange = settingsViewModel::setDanmuSize,
+                        onSpeedChange = settingsViewModel::setDanmuSpeed,
+                        onAreaChange = settingsViewModel::setDanmuArea,
+                        onOpacityChange = settingsViewModel::setDanmuOpacity,
+                        onChatBubbleStyleChange = settingsViewModel::setChatBubbleStyle,
+                        onControllerCreated = { danmakuController = it }
+                    ),
+                    onFullscreenClick = { playerController?.toggleFullscreen() },
+                    onControlsLockChange = onControlsLockChange
+                ),
+                modifier = Modifier.fillMaxSize()
             )
         }
 
@@ -918,6 +660,7 @@ private fun PortraitLayout(
 
         ChatPanel(
             messagesFlow = viewModel.danmakuMessages,
+            noticeFlow = viewModel.danmakuNotice,
             modifier = Modifier
                 .weight(1f)
                 .background(MaterialTheme.colorScheme.background),
@@ -947,6 +690,7 @@ private fun LiveRoomTabPage(
         LiveRoomTabType.CHAT -> {
             ChatPanel(
                 messagesFlow = viewModel.danmakuMessages,
+                noticeFlow = viewModel.danmakuNotice,
                 modifier = modifier,
                 hostName = uiState.detail?.userName ?: "",
                 chatTextSize = chatTextSize,
@@ -1126,79 +870,87 @@ private fun LandscapeLayout(
             val currentQualityName = uiState.playQualities.getOrNull(uiState.currentQualityIndex)?.quality ?: "画质"
             PlayerView(
                 playerController = playerController,
-                modifier = Modifier.fillMaxSize(),
-                title = uiState.detail?.title ?: "",
-                onBack = onBack,
-                currentQualityName = currentQualityName,
-                onQualityClick = onQualityClick,
-                onRefreshClick = { viewModel.refreshPlay() },
-                danmuEnable = danmuEnable,
-                onDanmuToggle = { settingsViewModel.setDanmuEnable(it) },
-                accentColor = roomPlatformAccentColor,
-                danmuSize = danmuSize,
-                onDanmuSizeChange = { settingsViewModel.setDanmuSize(it) },
-                danmuSpeed = danmuSpeed,
-                onDanmuSpeedChange = { settingsViewModel.setDanmuSpeed(it) },
-                danmuArea = danmuArea,
-                onDanmuAreaChange = { settingsViewModel.setDanmuArea(it) },
-                danmuLineCount = danmuLineCount,
-                danmuDelayMs = resolvedDanmuDelay,
-                danmuOpacity = danmuOpacity,
-                onDanmuOpacityChange = { settingsViewModel.setDanmuOpacity(it) },
-                danmuFontWeight = danmuFontWeight,
-                danmuStrokeWidth = danmuStrokeWidth,
-                danmuTopMargin = danmuTopMargin,
-                danmuBottomMargin = danmuBottomMargin,
-                danmuHideScroll = danmuHideScroll,
-                danmuHideTop = danmuHideTop,
-                danmuHideBottom = danmuHideBottom,
-                danmuDedupeEnable = danmuDedupeEnable,
-                danmuDedupeWindow = danmuDedupeWindow,
-                danmuDedupeStep = danmuDedupeStep,
-                danmuDedupeStrictMode = danmuDedupeStrictMode,
-                scaleMode = scaleMode,
-                playerCompatMode = playerCompatMode,
-                danmuRenderEmoji = danmuRenderEmoji,
-                chatBubbleStyle = chatBubbleStyle,
-                onChatBubbleStyleChange = { settingsViewModel.setChatBubbleStyle(it) },
-                onDanmakuControllerCreated = { danmakuController = it },
-                onQuickAccessClick = quickAccessAction,
-                onFollowClick = { viewModel.toggleFollow() },
-                isFollowing = uiState.isFollowing,
-                followEnabled = uiState.detail != null && uiState.isFollowStatusKnown,
-                onControlsLockChange = onControlsLockChange,
-                onHorizontalDragDelta = { deltaX ->
-                    coroutineScope.launch {
-                        val newOffset = liveRoomSidePanelOffsetAfterDrag(
-                            currentOffsetPx = panelOffset.value,
-                            deltaX = deltaX,
-                            panelWidthPx = panelWidthPx
-                        )
-                        panelOffset.snapTo(newOffset)
-                    }
-                },
-                onHorizontalDragEnd = {
-                    coroutineScope.launch {
-                        val threshold = panelWidthPx * 0.7f
-                        if (panelOffset.value < threshold) {
-                            panelOffset.animateTo(
-                                targetValue = 0f,
-                                animationSpec = spring(
-                                    dampingRatio = Spring.DampingRatioNoBouncy,
-                                    stiffness = Spring.StiffnessMedium
-                                )
+                viewState = PlayerViewUiState(
+                    title = uiState.detail?.title ?: "",
+                    currentQualityName = currentQualityName,
+                    danmakuEnabled = danmuEnable,
+                    danmaku = DanmakuConfig(
+                        size = danmuSize,
+                        speed = danmuSpeed,
+                        area = danmuArea,
+                        lineCount = danmuLineCount,
+                        delayMs = resolvedDanmuDelay,
+                        opacity = danmuOpacity,
+                        fontWeight = danmuFontWeight,
+                        strokeWidth = danmuStrokeWidth,
+                        topMargin = danmuTopMargin,
+                        bottomMargin = danmuBottomMargin,
+                        hideScroll = danmuHideScroll,
+                        hideTop = danmuHideTop,
+                        hideBottom = danmuHideBottom,
+                        dedupeEnable = danmuDedupeEnable,
+                        dedupeWindow = danmuDedupeWindow,
+                        dedupeStep = danmuDedupeStep,
+                        dedupeStrictMode = danmuDedupeStrictMode,
+                        renderEmoji = danmuRenderEmoji
+                    ),
+                    accentColor = roomPlatformAccentColor,
+                    scaleMode = scaleMode,
+                    playerCompatMode = playerCompatMode,
+                    chatBubbleStyle = chatBubbleStyle,
+                    isFollowing = uiState.isFollowing,
+                    followEnabled = uiState.detail != null && uiState.isFollowStatusKnown
+                ),
+                actions = PlayerViewActions(
+                    onBack = onBack,
+                    onQualityClick = onQualityClick,
+                    onRefreshClick = viewModel::refreshPlay,
+                    danmaku = PlayerDanmakuActions(
+                        onEnabledChange = settingsViewModel::setDanmuEnable,
+                        onSizeChange = settingsViewModel::setDanmuSize,
+                        onSpeedChange = settingsViewModel::setDanmuSpeed,
+                        onAreaChange = settingsViewModel::setDanmuArea,
+                        onOpacityChange = settingsViewModel::setDanmuOpacity,
+                        onChatBubbleStyleChange = settingsViewModel::setChatBubbleStyle,
+                        onControllerCreated = { danmakuController = it }
+                    ),
+                    onQuickAccessClick = quickAccessAction,
+                    onFollowClick = viewModel::toggleFollow,
+                    onControlsLockChange = onControlsLockChange,
+                    onHorizontalDragDelta = { deltaX ->
+                        coroutineScope.launch {
+                            val newOffset = liveRoomSidePanelOffsetAfterDrag(
+                                currentOffsetPx = panelOffset.value,
+                                deltaX = deltaX,
+                                panelWidthPx = panelWidthPx
                             )
-                        } else {
-                            panelOffset.animateTo(
-                                targetValue = panelWidthPx,
-                                animationSpec = spring(
-                                    dampingRatio = Spring.DampingRatioNoBouncy,
-                                    stiffness = Spring.StiffnessMedium
+                            panelOffset.snapTo(newOffset)
+                        }
+                    },
+                    onHorizontalDragEnd = {
+                        coroutineScope.launch {
+                            val threshold = panelWidthPx * 0.7f
+                            if (panelOffset.value < threshold) {
+                                panelOffset.animateTo(
+                                    targetValue = 0f,
+                                    animationSpec = spring(
+                                        dampingRatio = Spring.DampingRatioNoBouncy,
+                                        stiffness = Spring.StiffnessMedium
+                                    )
                                 )
-                            )
+                            } else {
+                                panelOffset.animateTo(
+                                    targetValue = panelWidthPx,
+                                    animationSpec = spring(
+                                        dampingRatio = Spring.DampingRatioNoBouncy,
+                                        stiffness = Spring.StiffnessMedium
+                                    )
+                                )
+                            }
                         }
                     }
-                }
+                ),
+                modifier = Modifier.fillMaxSize()
             )
         }
 
@@ -1228,6 +980,7 @@ private fun LandscapeLayout(
                     if (roomTabs.contains(LiveRoomTabType.CHAT)) {
                         ChatPanel(
                             messagesFlow = viewModel.danmakuMessages,
+                            noticeFlow = viewModel.danmakuNotice,
                             hostName = uiState.detail?.userName ?: "",
                             chatTextSize = chatTextSize,
                             chatTextGap = chatTextGap,
@@ -1629,6 +1382,7 @@ private const val ChatPanelMaxMessages = 200
 @Composable
 fun ChatPanel(
     messagesFlow: StateFlow<List<DisplayLiveMessage>>,
+    noticeFlow: StateFlow<String?>,
     modifier: Modifier = Modifier,
     hostName: String = "",
     chatTextSize: Double = 14.0,
@@ -1637,6 +1391,7 @@ fun ChatPanel(
 ) {
     // Collect at the chat leaf so message snapshots do not recompose room chrome.
     val messages by messagesFlow.collectAsStateWithLifecycle()
+    val notice by noticeFlow.collectAsStateWithLifecycle()
     val listState = rememberLazyListState()
     var previousLastMessageId by remember { mutableStateOf<Long?>(null) }
     var autoScrollDisabled by remember { mutableStateOf(false) }
@@ -1707,6 +1462,20 @@ fun ChatPanel(
     }
 
     Box(modifier = modifier.fillMaxWidth()) {
+        notice?.let { noticeText ->
+            Text(
+                text = noticeText,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f))
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
+            )
+        }
+
         LazyColumn(
             state = listState,
             modifier = Modifier

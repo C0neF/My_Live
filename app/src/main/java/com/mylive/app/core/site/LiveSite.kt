@@ -6,7 +6,14 @@ interface LiveSite {
     val id: String
     val name: String
 
-    fun getDanmaku(): LiveDanmaku
+    /**
+     * Creates a ready-to-start connection for the room that was just resolved.
+     * Implementations own aliases, cached handshake data, and fallback policy.
+     */
+    fun createDanmakuSession(
+        requestedRoomId: String,
+        detail: LiveRoomDetail
+    ): LiveDanmakuSession = error("Danmaku is not supported by $name")
 
     suspend fun getCategories(): List<LiveCategory>
 
@@ -27,6 +34,28 @@ interface LiveSite {
     suspend fun getLiveStatus(roomId: String): Boolean
 
     suspend fun getSuperChatMessage(roomId: String, detail: LiveRoomDetail? = null): List<LiveSuperChatMessage>
+}
+
+/**
+ * The stored account credentials a site can consume.
+ *
+ * An enum rather than a site-id string so that adding a credential is a compile error everywhere
+ * it has to be handled, instead of a silently missing map entry.
+ */
+enum class LiveSiteAccount {
+    BILIBILI,
+    DOUYIN
+}
+
+/**
+ * Optional capability for sites whose API and danmaku handshake use a signed-in
+ * account cookie.
+ */
+interface AccountAwareLiveSite : LiveSite {
+    /** Which stored credential this site consumes. */
+    val accountKey: LiveSiteAccount
+
+    fun updateAccountCookie(cookie: String)
 }
 
 private val defaultSiteOrder = listOf("bilibili", "douyu", "huya", "douyin")

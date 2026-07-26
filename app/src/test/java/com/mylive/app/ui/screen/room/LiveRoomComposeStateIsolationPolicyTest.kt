@@ -23,19 +23,19 @@ class LiveRoomComposeStateIsolationPolicyTest {
     @Test
     fun rootCollectsFullscreenFlagInsteadOfFullPlayerState() {
         val source = File("src/main/java/com/mylive/app/ui/screen/room/LiveRoomScreen.kt").readText()
+        val host = File(
+            "src/main/java/com/mylive/app/ui/screen/room/player/LivePlaybackHost.kt"
+        ).readText()
         val topLevel = source.substringAfter("fun LiveRoomScreen(")
             .substringBefore("private fun PortraitLayout(")
 
-        assertTrue(
-            topLevel.contains("map { it.isFullscreen }") ||
-                topLevel.contains(".map { state -> state.isFullscreen }") ||
-                topLevel.contains("it.isFullscreen")
-        )
+        assertTrue(topLevel.contains("val isFullscreen = playbackHost.isFullscreen"))
         assertFalse(
             "root should not collect full PlayerState just for layout branching",
             topLevel.contains("playerController?.state?.collectAsStateWithLifecycle()?.value")
         )
-        assertTrue(topLevel.contains("collectAsStateWithLifecycle(initialValue"))
+        assertTrue(host.contains("playerController?.state?.map { it.isFullscreen }"))
+        assertTrue(host.contains("collectAsStateWithLifecycle(initialValue"))
     }
 
     @Test

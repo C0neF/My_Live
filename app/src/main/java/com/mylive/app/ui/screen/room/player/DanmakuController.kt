@@ -315,7 +315,11 @@ class DanmakuController(
         val drawStroke = danmuStrokeWidth > 0f
 
         val iterator = activeDanmakus.iterator()
-        val nowMs = frameTimeNanos / 1_000_000L
+        // Read the same clock that stamped `expiresAtMs` in drainPending(). Deriving "now" from
+        // `frameTimeNanos` instead happened to agree on-device (both are CLOCK_MONOTONIC), but it
+        // bypassed the injectable [clock] entirely: under a test clock, fixed-position danmaku
+        // were compared against real vsync time and expired immediately or never.
+        val nowMs = clock.uptimeMillis()
         while (iterator.hasNext()) {
             val item = iterator.next()
             if (!shouldDisplayDanmakuPosition(

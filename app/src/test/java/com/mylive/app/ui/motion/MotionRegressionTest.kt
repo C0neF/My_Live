@@ -93,10 +93,12 @@ class MotionRegressionTest {
 
     @Test
     fun liveRoomFullscreenUsesWindowInsetsInsteadOfDeprecatedFlags() {
-        val source = readMainSource("com/mylive/app/ui/screen/room/LiveRoomScreen.kt")
+        val screen = readMainSource("com/mylive/app/ui/screen/room/LiveRoomScreen.kt")
+        val host = readMainSource("com/mylive/app/ui/screen/room/player/LivePlaybackHost.kt")
 
-        assertFalse(source.contains("FLAG_FULLSCREEN"))
-        assertTrue(source.contains("WindowCompat.setDecorFitsSystemWindows"))
+        assertFalse(screen.contains("FLAG_FULLSCREEN"))
+        assertFalse(host.contains("FLAG_FULLSCREEN"))
+        assertTrue(host.contains("WindowCompat.setDecorFitsSystemWindows"))
     }
 
     @Test

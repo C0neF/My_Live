@@ -25,13 +25,13 @@ import androidx.compose.ui.window.Dialog
 import com.mylive.app.ui.navigation.Navigator
 import com.mylive.app.ui.navigation.Route
 import com.mylive.app.R
+import com.mylive.app.core.sync.LanSyncProtocol
 import com.mylive.app.service.LanSyncService
 import com.mylive.app.service.SyncClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import org.json.JSONObject
 import java.net.URI
 import timber.log.Timber
 
@@ -419,7 +419,7 @@ private fun connectToManualAddress(
 
     // Make network request in background
     val request = Request.Builder()
-        .url("http://$host:$port/info")
+        .url("http://$host:$port${LanSyncProtocol.INFO_PATH}")
         .build()
 
     // Run async task
@@ -428,10 +428,8 @@ private fun connectToManualAddress(
             okHttpClient.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) throw Exception("HTTP ${response.code}")
                 val body = response.body?.string() ?: ""
-                val json = JSONObject(body)
-                val id = json.optString("id", "unknown")
-                val name = json.optString("name", "Android Device")
-                val platform = json.optString("type", "android")
+                val peerInfo = LanSyncProtocol.decodePeerInfo(body)
+                val name = peerInfo.name ?: "Android Device"
 
                 // Navigate back on main thread
                 android.os.Handler(android.os.Looper.getMainLooper()).post {

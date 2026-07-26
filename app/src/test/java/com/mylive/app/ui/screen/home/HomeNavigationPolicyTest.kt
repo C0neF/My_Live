@@ -8,7 +8,6 @@ import com.mylive.app.core.model.LiveRoomDetail
 import com.mylive.app.core.model.LiveSearchAnchorResult
 import com.mylive.app.core.model.LiveSearchRoomResult
 import com.mylive.app.core.model.LiveSuperChatMessage
-import com.mylive.app.core.site.LiveDanmaku
 import com.mylive.app.core.site.LiveSite
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -53,7 +52,6 @@ class HomeNavigationPolicyTest {
 
     private class FakeLiveSite(override val id: String) : LiveSite {
         override val name: String = id
-        override fun getDanmaku(): LiveDanmaku = error("not used")
         override suspend fun getCategories(): List<LiveCategory> = error("not used")
         override suspend fun searchRooms(keyword: String, page: Int): LiveSearchRoomResult = error("not used")
         override suspend fun searchAnchors(keyword: String, page: Int): LiveSearchAnchorResult = error("not used")

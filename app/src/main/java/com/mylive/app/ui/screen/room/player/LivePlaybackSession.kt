@@ -2,7 +2,6 @@ package com.mylive.app.ui.screen.room.player
 
 import android.content.Context
 import com.mylive.app.service.PlaybackForegroundService
-import com.mylive.app.ui.screen.room.shouldResumeLivePlaybackOnForeground
 import kotlinx.coroutines.flow.StateFlow
 
 /**
@@ -175,15 +174,26 @@ class LivePlaybackSession private constructor(
         }
     }
 
+    /**
+     * Hands playback to the foreground service, pausing instead if the platform refuses.
+     *
+     * Without the service, background audio would keep running under no foreground-service
+     * notification, which Android will kill on its own schedule. Pausing makes the outcome
+     * predictable and matches what the user gets with background playback disabled.
+     */
     private fun startForegroundService(policy: PausedHostPolicy) {
         val player = controller.player ?: return
-        PlaybackForegroundService.start(
+        val started = PlaybackForegroundService.start(
             appContext,
             player,
             policy.roomTitle,
             policy.anchorName,
             policy.platform
         )
+        if (!started) {
+            resumePlaybackOnForeground = controller.player?.playWhenReady == true
+            controller.pause()
+        }
     }
 
     /**
@@ -243,17 +253,6 @@ class LivePlaybackSession private constructor(
             return LivePlaybackSession(appContext, controller)
         }
 
-        /**
-         * Host PiP eligibility used by [com.mylive.app.MainActivity.onUserLeaveHint]
-         * via [LivePlaybackHostSignals].
-         */
-        fun setAutoPipActive(active: Boolean) {
-            LivePlaybackHostSignals.setAutoPipOnLeave(active)
-        }
-
-        fun setAutoPipActive(owner: Any, active: Boolean) {
-            LivePlaybackHostSignals.setAutoPipOnLeave(owner, active)
-        }
     }
 }
 

@@ -67,8 +67,8 @@ class LivePlaybackSessionPolicyTest {
         assertTrue(source.contains("fun onHostResume()"))
         assertTrue(source.contains("if (resumePlaybackOnForeground)"))
         assertTrue(source.contains("controller.release()"))
-        assertTrue(source.contains("fun setAutoPipActive(owner: Any, active: Boolean)"))
-        assertTrue(source.contains("LivePlaybackHostSignals.setAutoPipOnLeave"))
+        assertFalse(source.contains("fun setAutoPipActive(owner: Any, active: Boolean)"))
+        assertFalse(source.contains("LivePlaybackHostSignals.setAutoPipOnLeave"))
         assertFalse(source.contains("MainActivity.isPipSupportedAndActive"))
     }
 
@@ -130,30 +130,33 @@ class LivePlaybackSessionPolicyTest {
     }
 
     @Test
-    fun liveRoomScreenDelegatesPlaybackOwnershipToSession() {
+    fun livePlaybackHostOwnsPlaybackSession() {
+        val host = readMainSource(
+            "com/mylive/app/ui/screen/room/player/LivePlaybackHost.kt"
+        )
         val screen = File("src/main/java/com/mylive/app/ui/screen/room/LiveRoomScreen.kt").readText()
 
-        assertTrue(screen.contains("LivePlaybackSession.create("))
-        assertTrue(screen.contains("onPlaybackSourceExhausted = {"))
-        assertTrue(screen.contains("viewModel.recoverPlaybackAfterSourceFailure()"))
-        assertTrue(screen.contains("session.attach(viewModel)"))
-        assertTrue(screen.contains("session?.release()") || screen.contains("session.release()"))
-        assertTrue(screen.contains("playbackSession?.onHostPause("))
-        assertTrue(screen.contains("playbackSession?.onHostResume()"))
-        assertTrue(screen.contains("Lifecycle.State.RESUMED"))
-        assertTrue(screen.contains("LivePlaybackSession.setAutoPipActive(autoPipOwner,"))
-        val startupBlock = screen.substringAfter("LaunchedEffect(Unit)")
+        assertTrue(host.contains("LivePlaybackSession.create("))
+        assertTrue(host.contains("onPlaybackSourceExhausted = {"))
+        assertTrue(screen.contains("viewModel::recoverPlaybackAfterSourceFailure"))
+        assertTrue(host.contains("session.attach(binding)"))
+        assertTrue(host.contains("session?.release()"))
+        assertTrue(host.contains("playbackSession?.pauseForHost("))
+        assertTrue(host.contains("playbackSession?.onHostResume()"))
+        assertTrue(host.contains("Lifecycle.State.RESUMED"))
+        assertTrue(host.contains("LivePlaybackHostSignals.setAutoPipOnLeave(autoPipOwner,"))
+        val startupBlock = host.substringAfter("LaunchedEffect(binding, settingsRepository)")
             .substringBefore("DisposableEffect(playbackSession)")
-        assertTrue(startupBlock.indexOf("session.onHostPause(") in 0 until startupBlock.indexOf("session.attach(viewModel)"))
-        assertTrue(startupBlock.contains("allowBackgroundPlayback = startupPreferences.allowBackgroundPlayback"))
-        assertTrue(startupBlock.contains("playerAutoPause = startupPreferences.playerAutoPause"))
-        val lifecycleBlock = screen.substringAfter("lifecycleOwner.lifecycle.addObserver(observer)")
+        assertTrue(startupBlock.indexOf("session.pauseForHost(") in 0 until startupBlock.indexOf("session.attach(binding)"))
+        assertTrue(startupBlock.contains("preferences = startupPreferences"))
+        val lifecycleBlock = host.substringAfter("lifecycleOwner.lifecycle.addObserver(observer)")
             .substringBefore("onDispose {")
         assertTrue(lifecycleBlock.contains("playbackSession?.onHostResume()"))
         assertFalse(
             "Screen must not construct PlayerController directly after session extraction",
             screen.contains("PlayerController(\n") || screen.contains("PlayerController(context")
         )
+        assertTrue(screen.contains("rememberLivePlaybackHost("))
     }
 
     private fun readMainSource(relativePath: String): String {

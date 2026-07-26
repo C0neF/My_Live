@@ -161,7 +161,7 @@ class LiveRoomPortraitToolbarPolicyTest {
         assertTrue(landscapeSource.contains("val liveRoomQuickAccessEnabled = liveRoomPreferences.liveRoomQuickAccessEnabled"))
         assertTrue(landscapeSource.contains("val quickAccessAction = liveRoomQuickAccessAction("))
         assertTrue(landscapeSource.contains("onQuickAccessClick = quickAccessAction"))
-        assertTrue(landscapeSource.contains("onFollowClick = { viewModel.toggleFollow() }"))
+        assertTrue(landscapeSource.contains("onFollowClick = viewModel::toggleFollow"))
         assertTrue(landscapeSource.contains("isFollowing = uiState.isFollowing"))
         assertFalse(landscapeSource.contains("quickAccessInitialTabKey = \"room_settings\""))
         assertFalse(landscapeSource.contains("onRoomSettingsClick = {"))

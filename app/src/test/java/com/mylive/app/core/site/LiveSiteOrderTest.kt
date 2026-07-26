@@ -67,7 +67,6 @@ class LiveSiteOrderTest {
         override val id: String,
         override val name: String
     ) : LiveSite {
-        override fun getDanmaku(): LiveDanmaku = error("Not needed")
         override suspend fun getCategories(): List<LiveCategory> = emptyList()
         override suspend fun searchRooms(keyword: String, page: Int): LiveSearchRoomResult = LiveSearchRoomResult()
         override suspend fun searchAnchors(keyword: String, page: Int): LiveSearchAnchorResult = LiveSearchAnchorResult()

@@ -36,7 +36,7 @@ class LanSyncSecurityPolicyTest {
     @Test
     fun thePairingCodeIsNeverPutOnTheWireByEitherSide() {
         val receiveSource = File("src/main/java/com/mylive/app/service/LanSyncService.kt").readText()
-        val sendSource = File("src/main/java/com/mylive/app/ui/screen/sync/SyncDeviceScreen.kt").readText()
+        val sendSource = File("src/main/java/com/mylive/app/data/sync/LanSyncClient.kt").readText()
         val authBlock = receiveSource.substringAfter("private fun authorizeRequest(")
             .substringBefore("private fun openSealedSyncBody(")
 
@@ -69,11 +69,13 @@ class LanSyncSecurityPolicyTest {
         val overlayRead = postBlock.indexOf("val overlay = session.parameters[\"overlay\"]")
         val authorize = postBlock.indexOf("authorizeRequest(session, uri, overlay, rawBody)")
         val decrypt = postBlock.indexOf("openSealedSyncBody(rawBody, requestContext)")
-        val routing = postBlock.indexOf("\"/sync/follow\" -> {")
+        val routing = postBlock.indexOf("val importType = LanSyncImportType.fromPath(uri)")
+        val dispatch = postBlock.indexOf("when (importType)")
 
         assertTrue("overlay must be parsed before it is authenticated", overlayRead in 0 until authorize)
         assertTrue("the request must be verified before the body is opened", authorize < decrypt)
-        assertTrue("nothing may be imported before verification", decrypt < routing)
+        assertTrue("the route must be resolved after decryption", decrypt < routing)
+        assertTrue("nothing may be imported before verification", routing < dispatch)
     }
 
     @Test
@@ -88,7 +90,7 @@ class LanSyncSecurityPolicyTest {
             "Spoofed UDP broadcasts must not grow the discovery list without limit",
             udpBlock.contains("scanClients.size >= MAX_SCAN_CLIENTS")
         )
-        assertTrue(udpBlock.contains("sanitizeBroadcastText(data.optString(\"name\")"))
+        assertTrue(udpBlock.contains("sanitizeBroadcastText(message.name"))
         assertFalse(
             "Broadcast-supplied names must be sanitized before they reach the scan UI",
             udpBlock.contains("name.ifEmpty")
@@ -109,6 +111,9 @@ class LanSyncSecurityPolicyTest {
     @Test
     fun lanSyncWriteEndpointsRunAsBoundedBackgroundImports() {
         val source = File("src/main/java/com/mylive/app/service/LanSyncService.kt").readText()
+        val protocolSource = File(
+            "src/main/java/com/mylive/app/core/sync/LanSyncProtocol.kt"
+        ).readText()
         val postBlock = source.substringAfter("} else if (method == Method.POST) {")
             .substringBefore("} else {")
 
@@ -120,7 +125,8 @@ class LanSyncSecurityPolicyTest {
         assertTrue(source.contains("syncImportSemaphore.withPermit"))
         assertTrue(source.contains("pendingSyncJobCount"))
         assertTrue(source.contains("Response.Status.ACCEPTED"))
-        assertTrue(source.contains("\"/sync/job/\""))
+        assertTrue(source.contains("LanSyncProtocol.JOB_PATH_PREFIX"))
+        assertTrue(protocolSource.contains("""const val JOB_PATH_PREFIX = "/sync/job/""""))
     }
 
     @Test
@@ -153,12 +159,12 @@ class LanSyncSecurityPolicyTest {
     @Test
     fun lanSyncOverlayClearsExistingCollectionsBeforeImporting() {
         val source = File("src/main/java/com/mylive/app/service/LanSyncService.kt").readText()
-        val followBlock = source.substringAfter("\"/sync/follow\" -> {")
-            .substringBefore("\"/sync/tag\" -> {")
-        val tagBlock = source.substringAfter("\"/sync/tag\" -> {")
-            .substringBefore("\"/sync/history\" -> {")
-        val historyBlock = source.substringAfter("\"/sync/history\" -> {")
-            .substringBefore("\"/sync/blocked_word\" -> {")
+        val followBlock = source.substringAfter("LanSyncImportType.FOLLOW -> {")
+            .substringBefore("LanSyncImportType.TAG -> {")
+        val tagBlock = source.substringAfter("LanSyncImportType.TAG -> {")
+            .substringBefore("LanSyncImportType.HISTORY -> {")
+        val historyBlock = source.substringAfter("LanSyncImportType.HISTORY -> {")
+            .substringBefore("LanSyncImportType.BLOCKED_WORD -> {")
 
         assertTrue(followBlock.contains("if (overlay)"))
         assertTrue(followBlock.contains("followRepository.clearAllFollows()"))
@@ -257,14 +263,14 @@ class LanSyncSecurityPolicyTest {
 
     @Test
     fun lanSyncBodiesAreSealedBeforeTheyLeaveTheDeviceAndUnsealedBodiesAreRejected() {
-        val sendSource = File("src/main/java/com/mylive/app/ui/screen/sync/SyncDeviceScreen.kt").readText()
+        val sendSource = File("src/main/java/com/mylive/app/data/sync/LanSyncClient.kt").readText()
         val receiveSource = File("src/main/java/com/mylive/app/service/LanSyncService.kt").readText()
 
         // Sender seals every payload against the signed request context and refuses to send while
         // unpaired.
-        assertTrue(sendSource.contains("LanSyncCrypto.encrypt(token, json, requestContext)"))
-        assertTrue(sendSource.contains("sealed.toRequestBody"))
-        assertFalse(sendSource.contains("json.toRequestBody"))
+        assertTrue(sendSource.contains("LanSyncCrypto.encrypt(token, payload, requestContext)"))
+        assertTrue(sendSource.contains("sealedPayload.toRequestBody"))
+        assertFalse(sendSource.contains("payload.toRequestBody"))
 
         // Receiver only accepts sealed envelopes bound to the verified context, and reports a 400
         // for anything else.
@@ -300,23 +306,29 @@ class LanSyncSecurityPolicyTest {
     @Test
     fun theUnauthenticatedInfoEndpointDoesNotFingerprintTheDevice() {
         val source = File("src/main/java/com/mylive/app/service/LanSyncService.kt").readText()
-        val infoBlock = source.substringAfter("uri == \"/info\"")
-            .substringBefore("uri.startsWith(SYNC_JOB_PATH_PREFIX)")
+        val protocolSource = File(
+            "src/main/java/com/mylive/app/core/sync/LanSyncProtocol.kt"
+        ).readText()
+        val infoBlock = source.substringAfter("uri == LanSyncProtocol.INFO_PATH")
+            .substringBefore("uri.startsWith(LanSyncProtocol.JOB_PATH_PREFIX)")
+        val encoder = protocolSource.substringAfter("fun encodePeerInfo(")
+            .substringBefore("fun decodePeerInfo(")
 
-        val gate = infoBlock.indexOf("if (identified) {")
-        assertTrue("identity must sit behind a proof of possession", gate > 0)
         assertTrue(infoBlock.contains("authorizeRequest(session, uri, overlay = false, rawBody = \"\")"))
+        assertTrue(infoBlock.contains("paired = identified"))
+        val gate = encoder.indexOf("if (paired) {")
+        assertTrue("identity must sit behind a proof of possession", gate > 0)
         assertTrue(
             "the phone model must only be answered to a paired peer",
-            infoBlock.indexOf("put(\"name\", Build.MODEL)") > gate
+            encoder.indexOf("put(\"name\", name)") > gate
         )
         assertTrue(
             "the install id identifies this device across scans",
-            infoBlock.indexOf("put(\"id\", syncDeviceId)") > gate
+            encoder.indexOf("put(\"id\", deviceId)") > gate
         )
         assertTrue(
             "the app version tells an attacker which bugs this build still has",
-            infoBlock.indexOf("put(\"version\", BuildConfig.VERSION_NAME)") > gate
+            encoder.indexOf("put(\"version\", appVersion)") > gate
         )
     }
 

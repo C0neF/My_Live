@@ -1,5 +1,6 @@
 package com.mylive.app.core.site.douyin
 
+import com.mylive.app.core.common.BoundedLruCache
 import com.mylive.app.core.common.CoreLog
 import com.mylive.app.core.common.CoreError
 import com.mylive.app.core.common.HttpClient
@@ -18,9 +19,10 @@ import com.mylive.app.core.model.LiveSubCategory
 import com.mylive.app.core.model.LiveSuperChatMessage
 import com.mylive.app.core.model.PlayQualityData
 import com.mylive.app.core.script.JsEngine
+import com.mylive.app.core.site.AccountAwareLiveSite
 import com.mylive.app.core.site.firstSiteImageUrl
-import com.mylive.app.core.site.LiveDanmaku
-import com.mylive.app.core.site.LiveSite
+import com.mylive.app.core.site.LiveDanmakuSession
+import com.mylive.app.core.site.LiveSiteAccount
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeout
 import okhttp3.OkHttpClient
@@ -29,7 +31,6 @@ import org.json.JSONObject
 import java.net.URI
 import java.net.URLEncoder
 import java.security.SecureRandom
-import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Provider
@@ -124,13 +125,13 @@ class DouyinSite @Inject constructor(
     private val httpClient: HttpClient,
     private val jsEngineProvider: Provider<JsEngine>,
     private val okHttpClient: OkHttpClient
-) : LiveSite {
+) : AccountAwareLiveSite {
 
     override val id: String = "douyin"
     override val name: String = "抖音直播"
 
     /** User-provided cookie. When non-empty, overrides the default ttwid cookie. */
-    var cookie: String = ""
+    private var cookie: String = ""
 
     /** DouyinSign helper for A-Bogus and signature generation. */
     private val douyinSign: DouyinSign
@@ -149,8 +150,11 @@ class DouyinSite @Inject constructor(
      * other and make [getPlayQualites] hand back another room's stream URL.
      * Mirrors the Dart reference, which carries the data on each returned
      * `LiveRoomDetail` instead of on the singleton site.
+     *
+     * Bounded, because this site is a `@Singleton` and the follow-refresh worker resolves every
+     * followed room on a timer: an unbounded map would grow for the life of the process.
      */
-    private val streamDataByRoom = ConcurrentHashMap<String, JSONObject>()
+    private val streamDataByRoom = BoundedLruCache<String, JSONObject>(MAX_CACHED_ROOMS)
 
     /**
      * Short-TTL cache of the per-room web cookie (ttwid/__ac_nonce/msToken),
@@ -158,15 +162,15 @@ class DouyinSite @Inject constructor(
      * fresh HEAD request to live.douyin.com on every room-detail resolution,
      * which raises the chance of HTTP 444 throttling during room entry.
      */
-    private val webCookieCache = ConcurrentHashMap<String, String>()
-    private val webCookieCacheAt = ConcurrentHashMap<String, Long>()
+    private val webCookieCache = BoundedLruCache<String, String>(MAX_CACHED_ROOMS)
+    private val webCookieCacheAt = BoundedLruCache<String, Long>(MAX_CACHED_ROOMS)
 
     /**
-     * Stores the danmaku args from the last [getRoomDetail] call.
+     * Danmaku handshake per room, keyed by both the requested id and the resolved web_rid.
+     * Bounded for the same reason as [streamDataByRoom]; entries additionally carry the account
+     * cookie, so they must not be retained for every room the process has ever seen.
      */
-    @Volatile
-    var lastDanmakuArgs: DanmakuArgs.Douyin? = null
-        private set
+    private val danmakuArgsByRoom = BoundedLruCache<String, DanmakuArgs.Douyin>(MAX_CACHED_ROOMS)
 
     companion object {
         private const val DEFAULT_USER_AGENT =
@@ -188,13 +192,38 @@ class DouyinSite @Inject constructor(
         /** TTL for the per-room web cookie cache (milliseconds). Mirrors Dart's 5 minutes. */
         private const val WEB_COOKIE_CACHE_TTL_MS = 5 * 60 * 1000L
 
+        /** Upper bound on per-room entries retained by this singleton. */
+        private const val MAX_CACHED_ROOMS = 32
+
         /** Timestamp of the last room detail request (companion-level, shared across instances). */
         private val lastRoomDetailRequestAt = AtomicLong(0L)
     }
 
     // ── Danmaku ─────────────────────────────────────────────────────────────
 
-    override fun getDanmaku(): LiveDanmaku = DouyinDanmaku(WebSocketUtils(okHttpClient), jsEngineProvider.get())
+    override val accountKey: LiveSiteAccount = LiveSiteAccount.DOUYIN
+
+    override fun updateAccountCookie(cookie: String) {
+        val nextCookie = cookie.trim()
+        if (this.cookie == nextCookie) return
+        this.cookie = nextCookie
+        webCookieCache.clear()
+        webCookieCacheAt.clear()
+        danmakuArgsByRoom.clear()
+    }
+
+    override fun createDanmakuSession(
+        requestedRoomId: String,
+        detail: LiveRoomDetail
+    ): LiveDanmakuSession {
+        val args = danmakuArgsByRoom[detail.roomId]
+            ?: danmakuArgsByRoom[requestedRoomId]
+            ?: error("Missing Douyin danmaku handshake for room ${detail.roomId}")
+        return LiveDanmakuSession(
+            danmaku = DouyinDanmaku(WebSocketUtils(okHttpClient), jsEngineProvider.get()),
+            args = args
+        )
+    }
 
     // ── Headers & Cookie management ─────────────────────────────────────────
 
@@ -614,7 +643,8 @@ class DouyinSite @Inject constructor(
             userId = userUniqueId,
             cookie = danmakuCookie
         )
-        lastDanmakuArgs = danmakuArgs
+        danmakuArgsByRoom[roomId] = danmakuArgs
+        danmakuArgsByRoom[webRid] = danmakuArgs
         streamDataByRoom[webRid] = (if (roomStatus) room.optJSONObject("stream_url") else null) ?: JSONObject()
 
         return LiveRoomDetail(
@@ -706,7 +736,8 @@ class DouyinSite @Inject constructor(
             userId = userUniqueId,
             cookie = danmakuCookie
         )
-        lastDanmakuArgs = danmakuArgs
+        danmakuArgsByRoom[webRid] = danmakuArgs
+        danmakuArgsByRoom[roomId] = danmakuArgs
         streamDataByRoom[webRid] = (if (roomStatus) roomData.optJSONObject("stream_url") else null) ?: JSONObject()
 
         return LiveRoomDetail(
@@ -813,7 +844,8 @@ class DouyinSite @Inject constructor(
             userId = userUniqueId,
             cookie = danmakuCookie
         )
-        lastDanmakuArgs = danmakuArgs
+        danmakuArgsByRoom[webRid] = danmakuArgs
+        danmakuArgsByRoom[roomId] = danmakuArgs
         streamDataByRoom[webRid] = (if (roomStatus) room.optJSONObject("stream_url") else null) ?: JSONObject()
 
         return LiveRoomDetail(

@@ -7,12 +7,10 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.mylive.app.core.model.*
-import com.mylive.app.core.site.LiveDanmaku
+import com.mylive.app.core.site.AccountAwareLiveSite
+import com.mylive.app.core.site.LiveDanmakuSession
 import com.mylive.app.core.site.LiveSite
-import com.mylive.app.core.site.bilibili.BiliBiliSite
-import com.mylive.app.core.site.douyin.DouyinSite
-import com.mylive.app.core.site.douyu.DouyuSite
-import com.mylive.app.core.site.huya.HuyaSite
+import com.mylive.app.core.site.LiveSiteAccount
 import com.mylive.app.data.repository.AccountRepository
 import com.mylive.app.data.repository.FollowRepository
 import com.mylive.app.data.repository.HistoryRepository
@@ -43,6 +41,12 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import javax.inject.Inject
+
+/**
+ * Shown in the chat panel when the danmaku connection could not be established. Playback is not
+ * affected, so this is deliberately a panel-local notice rather than a room-level error.
+ */
+internal const val DANMAKU_UNAVAILABLE_NOTICE = "弹幕连接失败，不影响观看，可尝试刷新"
 
 data class LiveRoomUiState(
     val isLoading: Boolean = true,
@@ -181,6 +185,17 @@ class LiveRoomViewModel @Inject constructor(
     val newDanmakuMessages: SharedFlow<LiveMessage> = _messages.asSharedFlow()
 
     /**
+     * Non-fatal danmaku notice, shown inside the chat panel.
+     *
+     * A danmaku failure must not enter [LiveRoomUiState.error]: the stream is still playing and
+     * the room is still usable, so a room-level error would be wrong. But it must not be silent
+     * either — before this existed, a failed handshake produced nothing but a log line and the
+     * user just saw a chat panel that never filled.
+     */
+    private val _danmakuNotice = MutableStateFlow<String?>(null)
+    val danmakuNotice: StateFlow<String?> = _danmakuNotice.asStateFlow()
+
+    /**
      * Independent scope for cleanup work that must run after [viewModelScope] is
      * cancelled in [onCleared]. A [SupervisorJob] prevents a failure in one child
      * (e.g. danmaku stop) from cancelling siblings, and the scope is GC'd with the
@@ -190,7 +205,10 @@ class LiveRoomViewModel @Inject constructor(
     private val liveMessageShieldConfig = MutableStateFlow(LiveMessageShieldConfig())
 
     private var currentSite: LiveSite? = null
-    private var currentDanmaku: LiveDanmaku? = null
+    private var currentDanmaku: LiveDanmakuSession? = null
+    private val accountAwareSites = sites
+        .filterIsInstance<AccountAwareLiveSite>()
+        .associateBy { it.accountKey }
     private var activeRoute: Pair<String, String>? = null
     private var loadRoomJob: Job? = null
     private var followStatusJob: Job? = null
@@ -263,6 +281,7 @@ class LiveRoomViewModel @Inject constructor(
         currentSite = null
         playbackEngine?.stop()
         _danmakuMessages.value = liveMessageBuffer.clear()
+        _danmakuNotice.value = null
         _superChats.value = emptyList()
         _onlineCount.value = 0
 
@@ -336,15 +355,7 @@ class LiveRoomViewModel @Inject constructor(
         }
 
         viewModelScope.launch {
-            accountRepository.bilibiliCookie.collect { cookie ->
-                sites.filterIsInstance<BiliBiliSite>().forEach { it.cookie = cookie }
-            }
-        }
-
-        viewModelScope.launch {
-            accountRepository.douyinCookie.collect { cookie ->
-                sites.filterIsInstance<DouyinSite>().forEach { it.cookie = cookie }
-            }
+            accountRepository.liveSiteAccountCookies.collect(::applyAccountCookies)
         }
     }
 
@@ -511,11 +522,13 @@ class LiveRoomViewModel @Inject constructor(
     }
 
     private suspend fun applyAccountCookies() {
-        val bilibiliCookie = accountRepository.bilibiliCookie.first()
-        sites.filterIsInstance<BiliBiliSite>().forEach { it.cookie = bilibiliCookie }
+        applyAccountCookies(accountRepository.liveSiteAccountCookies.first())
+    }
 
-        val douyinCookie = accountRepository.douyinCookie.first()
-        sites.filterIsInstance<DouyinSite>().forEach { it.cookie = douyinCookie }
+    private fun applyAccountCookies(cookiesByAccount: Map<LiveSiteAccount, String>) {
+        cookiesByAccount.forEach { (account, cookie) ->
+            accountAwareSites[account]?.updateAccountCookie(cookie)
+        }
     }
 
     private suspend fun loadPlayQualities(detail: LiveRoomDetail, route: Pair<String, String>) {
@@ -641,10 +654,13 @@ class LiveRoomViewModel @Inject constructor(
         val site = currentSite ?: return
         val routeRoomId = route.second
         val danmaku = try {
-            site.getDanmaku()
+            site.createDanmakuSession(routeRoomId, detail)
         } catch (e: Throwable) {
             if (e is CancellationException) throw e
             Timber.e(e, "Failed to create danmaku")
+            if (isActiveRoute(route)) {
+                _danmakuNotice.value = DANMAKU_UNAVAILABLE_NOTICE
+            }
             return
         }
         if (!isActiveRoute(route)) {
@@ -678,40 +694,19 @@ class LiveRoomViewModel @Inject constructor(
 
         danmaku.onReady = onReady@ {
             if (!isActiveRoute(route)) return@onReady
+            _danmakuNotice.value = null
             Timber.d("Danmaku connected")
         }
 
-        // Start danmaku with appropriate args
         viewModelScope.launch {
             try {
                 if (!isActiveRoute(route)) return@launch
-                val args = when (site.id) {
-                    "bilibili" -> {
-                        val biliSite = site as? BiliBiliSite
-                        biliSite?.lastDanmakuArgs ?: DanmakuArgs.BiliBili(
-                            roomId = routeRoomId.toIntOrNull() ?: 0,
-                            uid = 0, token = "", buvid = "", serverHost = "broadcastlv.chat.bilibili.com", cookie = ""
-                        )
-                    }
-                    "douyu" -> DanmakuArgs.Douyu(roomId = routeRoomId)
-                    "huya" -> {
-                        val huyaSite = site as? HuyaSite
-                        huyaSite?.getDanmakuArgs(routeRoomId) ?: DanmakuArgs.Huya(ayyuid = 0L, topSid = 0, subSid = 0)
-                    }
-                    "douyin" -> {
-                        val douyinSite = site as? DouyinSite
-                        douyinSite?.lastDanmakuArgs ?: DanmakuArgs.Douyin(
-                            webRid = routeRoomId, roomId = routeRoomId, userId = "", cookie = ""
-                        )
-                    }
-                    else -> return@launch
-                }
-                if (!isActiveRoute(route)) return@launch
-                danmaku.start(args)
+                danmaku.start()
             } catch (e: Throwable) {
                 if (e is CancellationException) throw e
                 if (!isActiveRoute(route)) return@launch
                 Timber.e(e, "Failed to start danmaku")
+                _danmakuNotice.value = DANMAKU_UNAVAILABLE_NOTICE
             }
         }
     }

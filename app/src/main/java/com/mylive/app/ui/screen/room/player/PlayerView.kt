@@ -1,6 +1,7 @@
 package com.mylive.app.ui.screen.room.player
 
 import android.app.Activity
+import android.graphics.Rect
 import android.view.LayoutInflater
 import com.mylive.app.R
 import android.content.pm.ActivityInfo
@@ -23,6 +24,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import com.mylive.app.ui.theme.Icons
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import kotlin.math.roundToInt
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -68,68 +72,14 @@ internal fun playerVolumeForVerticalDrag(
 @Composable
 fun PlayerView(
     playerController: PlayerController?,
-    modifier: Modifier = Modifier,
-    title: String = "",
-    onBack: (() -> Unit)? = null,
-    // Quality selection
-    currentQualityName: String = "画质",
-    onQualityClick: (() -> Unit)? = null,
-    // Refresh
-    onRefreshClick: (() -> Unit)? = null,
-    // Danmaku toggling and setting
-    danmuEnable: Boolean = true,
-    onDanmuToggle: ((Boolean) -> Unit)? = null,
-    accentColor: Color? = null,
-    // Danmaku setting callbacks
-    danmuSize: Double = 16.0,
-    onDanmuSizeChange: ((Double) -> Unit)? = null,
-    danmuSpeed: Double = 10.0,
-    onDanmuSpeedChange: ((Double) -> Unit)? = null,
-    danmuArea: Double = 0.8,
-    onDanmuAreaChange: ((Double) -> Unit)? = null,
-    danmuLineCount: Int = 8,
-    danmuDelayMs: Int = 0,
-    danmuOpacity: Double = 1.0,
-    onDanmuOpacityChange: ((Double) -> Unit)? = null,
-    // Other danmaku settings
-    danmuFontWeight: Int = 4,
-    danmuStrokeWidth: Double = 2.0,
-    danmuTopMargin: Double = 0.0,
-    danmuBottomMargin: Double = 0.0,
-    danmuHideScroll: Boolean = false,
-    danmuHideTop: Boolean = false,
-    danmuHideBottom: Boolean = false,
-    danmuDedupeEnable: Boolean = false,
-    danmuDedupeWindow: Int = 10,
-    danmuDedupeStep: Int = 2,
-    danmuDedupeStrictMode: Boolean = false,
-    scaleMode: Int = 0,
-    playerCompatMode: Boolean = false,
-    danmuRenderEmoji: Boolean = true,
-    chatBubbleStyle: Boolean = false,
-    onChatBubbleStyleChange: ((Boolean) -> Unit)? = null,
-    onDanmakuControllerCreated: ((DanmakuController) -> Unit)? = null,
-    onHorizontalDragDelta: ((Float) -> Unit)? = null,
-    onHorizontalDragEnd: (() -> Unit)? = null,
-    isFullscreenOverride: Boolean? = null,
-    onFullscreenClick: (() -> Unit)? = null,
-    onControlsLockChange: ((Boolean) -> Unit)? = null,
-    onRoomSettingsClick: (() -> Unit)? = null,
-    onQuickAccessClick: (() -> Unit)? = null,
-    onFollowClick: (() -> Unit)? = null,
-    isFollowing: Boolean = false,
-    followEnabled: Boolean = true,
-    rightPadding: Dp = 0.dp,
-    /**
-     * Picture-in-picture renders a thumbnail-sized window: only the video surface (and danmaku,
-     * when enabled) belongs there. Controls, lock buttons and loading overlays are drawn at full
-     * size and would cover the whole floating window, so they are suppressed entirely.
-     */
-    isInPipMode: Boolean = false,
-    isExiting: Boolean = false
+    viewState: PlayerViewUiState,
+    actions: PlayerViewActions = PlayerViewActions(),
+    modifier: Modifier = Modifier
 ) {
     val stateFlow = playerController?.state
     val state by (stateFlow?.collectAsStateWithLifecycle() ?: remember { mutableStateOf(PlayerState()) })
+    val danmakuConfig = viewState.danmaku
+    val danmakuActions = actions.danmaku
     var controlsVisible by remember { mutableStateOf(true) }
     var showControls by remember { mutableStateOf(true) }
 
@@ -144,22 +94,22 @@ fun PlayerView(
     val activity = context as? Activity
     val configuration = LocalConfiguration.current
     val isPortrait = configuration.orientation == Configuration.ORIENTATION_PORTRAIT
-    val resolvedAccentColor = accentColor ?: MaterialTheme.colorScheme.primary
+    val resolvedAccentColor = viewState.accentColor ?: MaterialTheme.colorScheme.primary
 
-    val isFullscreen = isFullscreenOverride ?: state.isFullscreen
+    val isFullscreen = viewState.fullscreenOverride ?: state.isFullscreen
 
     // Intercept back key when in fullscreen to exit fullscreen first (still allowed while locked).
     BackHandler(enabled = isFullscreen) {
-        onFullscreenClick?.invoke() ?: playerController?.toggleFullscreen()
+        actions.onFullscreenClick?.invoke() ?: playerController?.toggleFullscreen()
     }
 
     LaunchedEffect(isLocked) {
-        onControlsLockChange?.invoke(isLocked)
+        actions.onControlsLockChange?.invoke(isLocked)
     }
 
-    DisposableEffect(onControlsLockChange) {
+    DisposableEffect(actions.onControlsLockChange) {
         onDispose {
-            onControlsLockChange?.invoke(false)
+            actions.onControlsLockChange?.invoke(false)
         }
     }
 
@@ -180,11 +130,18 @@ fun PlayerView(
     }
 
     // Resolve danmu scale/speed defaults correctly
-    val resolvedSize = remember(danmuSize) {
-        if (danmuSize <= 2.0) (danmuSize * 16.0) else danmuSize
+    val resolvedSize = remember(danmakuConfig.size) {
+        if (danmakuConfig.size <= 2.0) {
+            danmakuConfig.size * 16.0
+        } else {
+            danmakuConfig.size
+        }
     }
-    val resolvedSpeed = remember(danmuSpeed) {
-        if (danmuSpeed > 5.0) 1.0 else danmuSpeed
+    val resolvedSpeed = remember(danmakuConfig.speed) {
+        if (danmakuConfig.speed > 5.0) 1.0 else danmakuConfig.speed
+    }
+    val resolvedDanmakuConfig = remember(danmakuConfig, resolvedSize, resolvedSpeed) {
+        danmakuConfig.copy(size = resolvedSize, speed = resolvedSpeed)
     }
 
     // Line list reactive states
@@ -209,21 +166,25 @@ fun PlayerView(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
             ) {
-                val playerModifier = when (scaleMode) {
+                val playerModifier = when (viewState.scaleMode) {
                     3 -> Modifier.aspectRatio(4f / 3f)
                     4 -> Modifier.aspectRatio(16f / 9f)
                     else -> Modifier.fillMaxSize()
                 }
 
-                key(playerCompatMode) {
+                key(viewState.playerCompatMode) {
                     AndroidView(
                         factory = { ctx ->
-                            val layoutRes = if (playerCompatMode) R.layout.player_surface_view else R.layout.player_texture_view
+                            val layoutRes = if (viewState.playerCompatMode) {
+                                R.layout.player_surface_view
+                            } else {
+                                R.layout.player_texture_view
+                            }
                             LayoutInflater.from(ctx).inflate(layoutRes, null) as Media3PlayerView
                         },
                         update = { view ->
                             view.player = player
-                            view.resizeMode = when (scaleMode) {
+                            view.resizeMode = when (viewState.scaleMode) {
                                 1 -> 3 // RESIZE_MODE_FILL
                                 2 -> 4 // RESIZE_MODE_ZOOM
                                 else -> 0 // RESIZE_MODE_FIT
@@ -234,62 +195,38 @@ fun PlayerView(
                         onRelease = { view ->
                             view.player = null
                         },
-                        modifier = playerModifier
+                        // Publish the video bounds so the system can animate picture-in-picture
+                        // from the actual video rather than cross-fading the whole window.
+                        modifier = playerModifier.onGloballyPositioned { coordinates ->
+                            val bounds = coordinates.boundsInWindow()
+                            LivePlaybackHostSignals.setSourceRectHint(
+                                Rect(
+                                    bounds.left.roundToInt(),
+                                    bounds.top.roundToInt(),
+                                    bounds.right.roundToInt(),
+                                    bounds.bottom.roundToInt()
+                                ).takeIf { !it.isEmpty }
+                            )
+                        }
                     )
+                }
+
+                DisposableEffect(Unit) {
+                    onDispose { LivePlaybackHostSignals.setSourceRectHint(null) }
                 }
             }
 
             // Danmaku SurfaceView overlay on top of player
-            if (danmuEnable) {
+            if (viewState.danmakuEnabled) {
                 AndroidView(
                     factory = { ctx ->
                         DanmakuSurfaceView(ctx).also { view ->
-                            updateControllerConfig(
-                                view.controller,
-                                resolvedSize,
-                                resolvedSpeed,
-                                danmuArea,
-                                danmuLineCount,
-                                danmuDelayMs,
-                                danmuOpacity,
-                                danmuFontWeight,
-                                danmuStrokeWidth,
-                                danmuTopMargin,
-                                danmuBottomMargin,
-                                danmuHideScroll,
-                                danmuHideTop,
-                                danmuHideBottom,
-                                danmuDedupeEnable,
-                                danmuDedupeWindow,
-                                danmuDedupeStep,
-                                danmuDedupeStrictMode,
-                                danmuRenderEmoji
-                            )
-                            onDanmakuControllerCreated?.invoke(view.controller)
+                            applyDanmakuConfig(view.controller, resolvedDanmakuConfig)
+                            danmakuActions.onControllerCreated?.invoke(view.controller)
                         }
                     },
                     update = { view ->
-                        updateControllerConfig(
-                            view.controller,
-                            resolvedSize,
-                            resolvedSpeed,
-                            danmuArea,
-                            danmuLineCount,
-                            danmuDelayMs,
-                            danmuOpacity,
-                            danmuFontWeight,
-                            danmuStrokeWidth,
-                            danmuTopMargin,
-                            danmuBottomMargin,
-                            danmuHideScroll,
-                            danmuHideTop,
-                            danmuHideBottom,
-                            danmuDedupeEnable,
-                            danmuDedupeWindow,
-                            danmuDedupeStep,
-                            danmuDedupeStrictMode,
-                            danmuRenderEmoji
-                        )
+                        applyDanmakuConfig(view.controller, resolvedDanmakuConfig)
                     },
                     onRelease = { view -> view.release() },
                     modifier = Modifier.fillMaxSize()
@@ -394,13 +331,13 @@ fun PlayerView(
                                         volumeValue = playerController?.state?.value?.volume ?: volumeValue
                                     }
                                 } else if (isHorizontal) {
-                                    onHorizontalDragDelta?.invoke(deltaX)
+                                    actions.onHorizontalDragDelta?.invoke(deltaX)
                                 }
                             }
                         }
 
                         if (isHorizontal) {
-                            onHorizontalDragEnd?.invoke()
+                            actions.onHorizontalDragEnd?.invoke()
                         }
 
                         showVolumeIndicator = false
@@ -429,7 +366,10 @@ fun PlayerView(
 
         // Controls overlay (never shown in the PiP window, which only hosts the video surface)
         AnimatedVisibility(
-            visible = controlsVisible && !isInPipMode,
+            visible = shouldShowPlayerControls(
+                controlsVisible = controlsVisible,
+                isInPictureInPicture = viewState.isInPictureInPicture
+            ),
             enter = fadeIn(),
             exit = fadeOut()
         ) {
@@ -487,8 +427,8 @@ fun PlayerView(
                 Box(modifier = Modifier.fillMaxSize()) {
                     Column(modifier = Modifier.fillMaxSize()) {
                         PlayerTopBar(
-                            title = title,
-                            onBack = onBack
+                            title = viewState.title,
+                            onBack = actions.onBack
                         )
 
                         Spacer(modifier = Modifier.weight(1f))
@@ -496,24 +436,31 @@ fun PlayerView(
                         PlayerBottomBar(
                             isPlaying = state.isPlaying,
                             onPlayPauseClick = { playerController?.togglePlayPause() },
-                            danmuEnable = danmuEnable,
-                            onDanmuToggle = { onDanmuToggle?.invoke(!danmuEnable) },
+                            danmuEnable = viewState.danmakuEnabled,
+                            onDanmuToggle = {
+                                danmakuActions.onEnabledChange?.invoke(
+                                    !viewState.danmakuEnabled
+                                )
+                            },
                             onDanmuSettingsClick = { showDanmuSettingsSheet = true },
                             accentColor = resolvedAccentColor,
-                            currentQualityName = currentQualityName,
-                            onQualityClick = onQualityClick,
+                            currentQualityName = viewState.currentQualityName,
+                            onQualityClick = actions.onQualityClick,
                             currentLineName = currentLineName,
                             onLineClick = { showLineSheet = true },
                             isMuted = state.volume == 0f,
                             onMuteToggle = { playerController?.toggleMute() },
-                            isFullscreen = isFullscreenOverride ?: state.isFullscreen,
-                            onFullscreenClick = { onFullscreenClick?.invoke() ?: playerController?.toggleFullscreen() },
-                            onRoomSettingsClick = onRoomSettingsClick,
-                            onQuickAccessClick = onQuickAccessClick,
-                            onFollowClick = onFollowClick,
-                            isFollowing = isFollowing,
-                            followEnabled = followEnabled,
-                            onRefreshClick = onRefreshClick,
+                            isFullscreen = viewState.fullscreenOverride ?: state.isFullscreen,
+                            onFullscreenClick = {
+                                actions.onFullscreenClick?.invoke()
+                                    ?: playerController?.toggleFullscreen()
+                            },
+                            onRoomSettingsClick = actions.onRoomSettingsClick,
+                            onQuickAccessClick = actions.onQuickAccessClick,
+                            onFollowClick = actions.onFollowClick,
+                            isFollowing = viewState.isFollowing,
+                            followEnabled = viewState.followEnabled,
+                            onRefreshClick = actions.onRefreshClick,
                             isPortrait = isPortrait
                         )
                     }
@@ -560,7 +507,14 @@ fun PlayerView(
         }
 
         // Loading state (a 48dp spinner would dominate the small PiP window)
-        if (state.isLoading && state.error == null && playerController != null && !isInPipMode) {
+        if (
+            shouldShowPlayerLoading(
+                isLoading = state.isLoading,
+                hasError = state.error != null,
+                hasController = playerController != null,
+                isInPictureInPicture = viewState.isInPictureInPicture
+            )
+        ) {
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
@@ -594,16 +548,18 @@ fun PlayerView(
     // Danmaku quick settings bottom sheet
     if (showDanmuSettingsSheet) {
         DanmakuSettingsBottomSheet(
-            danmuSize = danmuSize,
-            onDanmuSizeChange = { onDanmuSizeChange?.invoke(it) },
-            danmuSpeed = danmuSpeed,
-            onDanmuSpeedChange = { onDanmuSpeedChange?.invoke(it) },
-            danmuArea = danmuArea,
-            onDanmuAreaChange = { onDanmuAreaChange?.invoke(it) },
-            danmuOpacity = danmuOpacity,
-            onDanmuOpacityChange = { onDanmuOpacityChange?.invoke(it) },
-            chatBubbleStyle = chatBubbleStyle,
-            onChatBubbleStyleChange = { onChatBubbleStyleChange?.invoke(it) },
+            danmuSize = danmakuConfig.size,
+            onDanmuSizeChange = { danmakuActions.onSizeChange?.invoke(it) },
+            danmuSpeed = danmakuConfig.speed,
+            onDanmuSpeedChange = { danmakuActions.onSpeedChange?.invoke(it) },
+            danmuArea = danmakuConfig.area,
+            onDanmuAreaChange = { danmakuActions.onAreaChange?.invoke(it) },
+            danmuOpacity = danmakuConfig.opacity,
+            onDanmuOpacityChange = { danmakuActions.onOpacityChange?.invoke(it) },
+            chatBubbleStyle = viewState.chatBubbleStyle,
+            onChatBubbleStyleChange = {
+                danmakuActions.onChatBubbleStyleChange?.invoke(it)
+            },
             onDismiss = { showDanmuSettingsSheet = false }
         )
     }
@@ -1281,52 +1237,6 @@ private fun DanmakuSettingsBottomSheet(
             }
         }
     }
-}
-
-private fun updateControllerConfig(
-    controller: DanmakuController,
-    danmuSize: Double,
-    danmuSpeed: Double,
-    danmuArea: Double,
-    danmuLineCount: Int,
-    danmuDelayMs: Int,
-    danmuOpacity: Double,
-    danmuFontWeight: Int,
-    danmuStrokeWidth: Double,
-    danmuTopMargin: Double,
-    danmuBottomMargin: Double,
-    danmuHideScroll: Boolean,
-    danmuHideTop: Boolean,
-    danmuHideBottom: Boolean,
-    danmuDedupeEnable: Boolean,
-    danmuDedupeWindow: Int,
-    danmuDedupeStep: Int,
-    danmuDedupeStrictMode: Boolean,
-    danmuRenderEmoji: Boolean
-) {
-    applyDanmakuConfig(
-        controller,
-        DanmakuConfig(
-            size = danmuSize,
-            speed = danmuSpeed,
-            area = danmuArea,
-            lineCount = danmuLineCount,
-            delayMs = danmuDelayMs,
-            opacity = danmuOpacity,
-            fontWeight = danmuFontWeight,
-            strokeWidth = danmuStrokeWidth,
-            topMargin = danmuTopMargin,
-            bottomMargin = danmuBottomMargin,
-            hideScroll = danmuHideScroll,
-            hideTop = danmuHideTop,
-            hideBottom = danmuHideBottom,
-            dedupeEnable = danmuDedupeEnable,
-            dedupeWindow = danmuDedupeWindow,
-            dedupeStep = danmuDedupeStep,
-            dedupeStrictMode = danmuDedupeStrictMode,
-            renderEmoji = danmuRenderEmoji
-        )
-    )
 }
 
 @Composable

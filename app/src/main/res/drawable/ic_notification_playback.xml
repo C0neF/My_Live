@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Status-bar icon for the background-playback notification.
+
+    Must be a flat white-on-transparent glyph: from API 21 the system masks the small icon to its
+    alpha channel, so the colour launcher mipmap that used to be passed here rendered as a plain
+    white square. This is the app's own play mark, scaled out of the adaptive-icon safe zone so it
+    fills the 24dp notification box instead of sitting tiny in the middle of it.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:scaleX="1.736"
+        android:scaleY="1.736"
+        android:translateX="-55.4"
+        android:translateY="-37.1">
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M42,30c0,-3.3 3.7,-5.3 6.4,-3.5l33.8,22.5c2.4,1.6 2.4,5.1 0,6.7L48.4,78.3C45.7,80.1 42,78.1 42,74.8z" />
+    </group>
+</vector>

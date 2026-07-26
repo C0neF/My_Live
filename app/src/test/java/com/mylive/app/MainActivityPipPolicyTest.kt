@@ -1,10 +1,11 @@
 package com.mylive.app
 
+import android.os.Build
 import com.mylive.app.ui.navigation.Route
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.io.File
 
 /**
  * Auto-PiP must be scoped to the live room detail screen: leaving for the launcher from any other
@@ -58,15 +59,34 @@ class MainActivityPipPolicyTest {
     }
 
     @Test
-    fun userLeaveHintChecksTheCurrentDestinationBeforeEnteringPip() {
-        val source = File("src/main/java/com/mylive/app/MainActivity.kt").readText()
-        val leaveHint = source.substringAfter("override fun onUserLeaveHint()")
-            .substringBefore("companion object")
+    fun modernAndroidArmsAutoEnterInsteadOfWaitingForUserLeaveHint() {
+        // onUserLeaveHint is not delivered on every way out of the app; from Android 12 the
+        // reliable route is arming setAutoEnterEnabled ahead of time.
+        assertEquals(PipEntryMechanism.AutoEnter, pipEntryMechanism(Build.VERSION_CODES.S))
+        assertEquals(
+            PipEntryMechanism.AutoEnter,
+            pipEntryMechanism(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+        )
+    }
 
-        assertTrue(leaveHint.contains("shouldEnterPipOnUserLeave("))
-        assertTrue(leaveHint.contains("topRoute = navigator.backStack.lastOrNull()"))
-        assertTrue(leaveHint.contains("enterPictureInPictureMode(params)"))
-        // The old unguarded check must not come back.
-        assertFalse(leaveHint.contains("if (LivePlaybackHostSignals.autoPipOnLeave) {"))
+    @Test
+    fun olderAndroidStillEntersFromUserLeaveHint() {
+        // minSdk is 26, and 26-30 have no auto-enter flag at all.
+        assertEquals(PipEntryMechanism.ManualOnUserLeave, pipEntryMechanism(Build.VERSION_CODES.O))
+        assertEquals(PipEntryMechanism.ManualOnUserLeave, pipEntryMechanism(Build.VERSION_CODES.R))
+    }
+
+    @Test
+    fun theDestinationGateAppliesToBothEntryMechanisms() {
+        // Whichever mechanism the device uses, eligibility is the same predicate: the user has
+        // to actually be on a live room, with the preference on.
+        assertTrue(
+            shouldEnterPipOnUserLeave(
+                autoPipOnLeave = true,
+                topRoute = Route.LiveRoomDetail(roomId = "123")
+            )
+        )
+        assertFalse(shouldEnterPipOnUserLeave(autoPipOnLeave = true, topRoute = Route.Index))
+        assertFalse(shouldEnterPipOnUserLeave(autoPipOnLeave = true, topRoute = null))
     }
 }

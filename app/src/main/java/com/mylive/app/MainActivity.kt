@@ -1,6 +1,7 @@
 package com.mylive.app
 
 import android.Manifest
+import android.app.PictureInPictureParams
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -9,6 +10,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
@@ -23,6 +25,7 @@ import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -46,6 +49,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         maybeRequestNotificationPermission()
+        observePictureInPictureEligibility()
         val initialRoute = intent.getStringExtra(EXTRA_INITIAL_ROUTE)
 
 
@@ -122,20 +126,58 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * Keeps the platform's auto-enter flag in step with live-room PiP eligibility.
+     *
+     * From Android 12, `setAutoEnterEnabled` is the reliable route into picture-in-picture:
+     * [onUserLeaveHint] is not delivered on every path out of the app (gesture navigation to
+     * recents, in particular), so relying on it alone dropped the transition on exactly the
+     * gesture most people use. The flag is armed only while the user is actually on a live room,
+     * so leaving from any other screen still backgrounds the app normally.
+     */
+    private fun observePictureInPictureEligibility() {
+        if (pipEntryMechanism(Build.VERSION.SDK_INT) != PipEntryMechanism.AutoEnter) return
+        lifecycleScope.launch {
+            combine(
+                LivePlaybackHostSignals.autoPipOnLeaveFlow,
+                snapshotFlow { navigator.backStack.lastOrNull() }
+            ) { autoPipOnLeave, topRoute ->
+                shouldEnterPipOnUserLeave(autoPipOnLeave = autoPipOnLeave, topRoute = topRoute)
+            }
+                .distinctUntilChanged()
+                .collect { eligible ->
+                    runCatching {
+                        setPictureInPictureParams(pictureInPictureParams(autoEnter = eligible))
+                    }
+                }
+        }
+    }
+
+    private fun pictureInPictureParams(autoEnter: Boolean): PictureInPictureParams {
+        val builder = PictureInPictureParams.Builder()
+        // Animate out of the video itself rather than cross-fading the whole window.
+        val sourceRectHint = LivePlaybackHostSignals.sourceRectHint
+        if (sourceRectHint != null) {
+            builder.setSourceRectHint(sourceRectHint)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            builder.setAutoEnterEnabled(autoEnter)
+        }
+        return builder.build()
+    }
+
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
+        if (pipEntryMechanism(Build.VERSION.SDK_INT) != PipEntryMechanism.ManualOnUserLeave) return
         val enterPip = shouldEnterPipOnUserLeave(
             autoPipOnLeave = LivePlaybackHostSignals.autoPipOnLeave,
             topRoute = navigator.backStack.lastOrNull()
         )
         if (enterPip) {
             try {
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                    val params = android.app.PictureInPictureParams.Builder().build()
-                    enterPictureInPictureMode(params)
-                }
+                enterPictureInPictureMode(pictureInPictureParams(autoEnter = false))
             } catch (e: Exception) {
-                // Ignore
+                // Some OEMs refuse PiP outright; leaving normally is the correct fallback.
             }
         }
     }
@@ -145,7 +187,8 @@ class MainActivity : ComponentActivity() {
 
         /**
          * Test/compat accessor over [LivePlaybackHostSignals.autoPipOnLeave].
-         * Production room UI should call [com.mylive.app.ui.screen.room.player.LivePlaybackSession.setAutoPipActive].
+         * Production room UI registers through
+         * [com.mylive.app.ui.screen.room.player.rememberLivePlaybackHost].
          */
         var isPipSupportedAndActive: Boolean
             get() = LivePlaybackHostSignals.autoPipOnLeave
@@ -153,6 +196,24 @@ class MainActivity : ComponentActivity() {
                 LivePlaybackHostSignals.setAutoPipOnLeave(value)
             }
     }
+}
+
+/** How this device gets into picture-in-picture. */
+internal enum class PipEntryMechanism {
+    /**
+     * Android 12+. The window manager enters on its own when the app is backgrounded, provided
+     * the flag was armed beforehand. Preferred, because it covers the paths that never deliver
+     * `onUserLeaveHint` — gesture navigation to recents above all.
+     */
+    AutoEnter,
+
+    /** Android 8-11. `onUserLeaveHint` is the only hook available. */
+    ManualOnUserLeave
+}
+
+internal fun pipEntryMechanism(sdkInt: Int): PipEntryMechanism = when {
+    sdkInt >= Build.VERSION_CODES.S -> PipEntryMechanism.AutoEnter
+    else -> PipEntryMechanism.ManualOnUserLeave
 }
 
 /**

@@ -1,13 +1,13 @@
 package com.mylive.app.core.site.huya
 
-import android.util.LruCache
+import com.mylive.app.core.common.BoundedLruCache
 import com.mylive.app.core.common.CoreError
 import com.mylive.app.core.common.CoreLog
 import com.mylive.app.core.common.HttpClient
 import com.mylive.app.core.common.WebSocketUtils
 import com.mylive.app.core.model.*
 import com.mylive.app.core.model.PlayQualityData
-import com.mylive.app.core.site.LiveDanmaku
+import com.mylive.app.core.site.LiveDanmakuSession
 import com.mylive.app.core.site.LiveSite
 import com.mylive.app.core.site.huya.tars.BaseTarsHttp
 import com.mylive.app.core.site.huya.tars.model.GetCdnTokenExReq
@@ -36,6 +36,9 @@ class HuyaSite @Inject constructor(
 ) : LiveSite {
 
     companion object {
+        /** Upper bound on per-room entries retained by this singleton. */
+        private const val MAX_CACHED_ROOMS = 32
+
         private const val BASE_URL = "https://m.huya.com/"
 
         private val BUSS_TYPE_NAMES = mapOf(
@@ -81,25 +84,30 @@ class HuyaSite @Inject constructor(
     /**
      * Cached room play data, populated after [getRoomDetail] is called.
      * Used by [getPlayQualites] and [getPlayUrls].
-     * Keyed by roomId. Limited to 20 entries to prevent unbounded memory growth.
+     * Keyed by roomId, bounded to keep this singleton from growing for the life of the process.
      */
-    private val roomPlayDataCache = LruCache<String, HuyaRoomPlayData>(20)
+    private val roomPlayDataCache = BoundedLruCache<String, HuyaRoomPlayData>(MAX_CACHED_ROOMS)
 
     /**
-     * Cached danmaku args, populated after [getRoomDetail] is called.
-     * Keyed by roomId. Limited to 20 entries.
+     * Cached danmaku args, populated after [getRoomDetail] is called. Keyed by roomId, bounded
+     * for the same reason as [roomPlayDataCache].
      */
-    private val danmakuArgsCache = LruCache<String, DanmakuArgs.Huya>(20)
+    private val danmakuArgsCache = BoundedLruCache<String, DanmakuArgs.Huya>(MAX_CACHED_ROOMS)
 
     // ── Danmaku ────────────────────────────────────────────────────────────
 
-    override fun getDanmaku(): LiveDanmaku = HuyaDanmaku(WebSocketUtils(okHttpClient))
-
-    /**
-     * Get cached danmaku args for the given roomId.
-     * Must be called after [getRoomDetail] which populates [danmakuArgsCache].
-     */
-    fun getDanmakuArgs(roomId: String): DanmakuArgs.Huya? = danmakuArgsCache.get(roomId)
+    override fun createDanmakuSession(
+        requestedRoomId: String,
+        detail: LiveRoomDetail
+    ): LiveDanmakuSession {
+        val args = danmakuArgsCache.get(requestedRoomId)
+            ?: danmakuArgsCache.get(detail.roomId)
+            ?: error("Missing Huya danmaku handshake for room ${detail.roomId}")
+        return LiveDanmakuSession(
+            danmaku = HuyaDanmaku(WebSocketUtils(okHttpClient)),
+            args = args
+        )
+    }
 
     // ── Categories ─────────────────────────────────────────────────────────
 
@@ -308,15 +316,15 @@ class HuyaSite @Inject constructor(
                     HuyaBitRateModel(name = "高清", bitRate = 2000)
                 ) else huyaBitrates
             )
-            roomPlayDataCache.put(roomId, playData)
+            roomPlayDataCache[roomId] = playData
 
             // Cache danmaku args for the danmaku connection
             val ayyuid = asPositiveLong(tLiveInfo.opt("lYyid"))
-            danmakuArgsCache.put(roomId, DanmakuArgs.Huya(
+            danmakuArgsCache[roomId] = DanmakuArgs.Huya(
                 ayyuid = ayyuid,
                 topSid = topSid,
                 subSid = subSid
-            ))
+            )
 
             LiveRoomDetail(
                 cover = tLiveInfo.optString("sScreenshot", ""),
@@ -808,7 +816,7 @@ class HuyaSite @Inject constructor(
             o[8] = '-'; o[13] = '-'; o[18] = '-'; o[23] = '-'
             o[14] = '4'
             for (i in 0 until 36) {
-                if (o[i] == ' ') {
+                if (o[i] == '\u0000') {
                     val r = Random.nextInt(16)
                     o[i] = n[if (19 == i) (3 and r) or 8 else r]
                 }

@@ -6,6 +6,7 @@ import android.content.Intent
 import android.os.Build
 import android.os.IBinder
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
 import com.mylive.app.BuildConfig
 import com.mylive.app.core.common.CoreLog
 import com.mylive.app.core.common.LanSyncAuth
@@ -14,6 +15,9 @@ import com.mylive.app.core.common.LanSyncCrypto
 import com.mylive.app.core.common.LanSyncCryptoException
 import com.mylive.app.core.common.LanSyncReplayGuard
 import com.mylive.app.core.common.safePathForLog
+import com.mylive.app.core.sync.LanSyncDiscoveryMessage
+import com.mylive.app.core.sync.LanSyncImportType
+import com.mylive.app.core.sync.LanSyncProtocol
 import com.mylive.app.data.local.entity.FollowUserEntity
 import com.mylive.app.data.local.entity.HistoryEntity
 import com.mylive.app.data.local.entity.ShieldEntity
@@ -44,6 +48,35 @@ import java.util.UUID
 import javax.inject.Inject
 
 internal fun newLanSyncToken(): String = UUID.randomUUID().toString().replace("-", "")
+
+/**
+ * Interfaces the LAN sync server must never bind to or advertise: VPN tunnels, cellular data, and
+ * tethering/USB links. Publishing the sync endpoints there exposes them to networks well outside
+ * the "same Wi-Fi" trust boundary the pairing model assumes.
+ */
+private val EXCLUDED_SYNC_INTERFACE_PREFIXES = listOf(
+    // VPN tunnels
+    "tun", "tap", "ppp", "ipsec", "wg", "nordlynx",
+    // Cellular data
+    "rmnet", "ccmni", "pdp", "clat",
+    // Tethering / USB / Bluetooth PAN hotspots
+    "ap0", "swlan", "rndis", "usb", "bt-pan",
+    // Kernel placeholders
+    "dummy"
+)
+
+/** Interfaces that are almost certainly the user's actual LAN. */
+private val PREFERRED_SYNC_INTERFACE_PREFIXES = listOf("wlan", "eth")
+
+internal fun isExcludedSyncInterface(name: String): Boolean {
+    val normalized = name.lowercase()
+    return EXCLUDED_SYNC_INTERFACE_PREFIXES.any(normalized::startsWith)
+}
+
+internal fun isPreferredSyncInterface(name: String): Boolean {
+    val normalized = name.lowercase()
+    return PREFERRED_SYNC_INTERFACE_PREFIXES.any(normalized::startsWith)
+}
 
 internal fun decodeFollowsForLanSync(array: JSONArray): List<FollowUserEntity> = buildList {
     for (index in 0 until array.length()) {
@@ -115,7 +148,6 @@ class LanSyncService : Service() {
     companion object {
         const val UDP_PORT = 23235
         const val HTTP_PORT = 23234
-        private const val SYNC_JOB_PATH_PREFIX = "/sync/job/"
         private const val MAX_SYNC_BODY_BYTES = 5 * 1024 * 1024
         private const val MAX_SYNC_FOLLOW_ITEMS = 2_000
         private const val MAX_SYNC_TAG_ITEMS = 1_000
@@ -138,9 +170,37 @@ class LanSyncService : Service() {
         private const val MIN_HELLO_RESPONSE_INTERVAL_MS = 1_000L
 
         val scanClients = mutableStateListOf<SyncClient>()
-        var isRunning = false
-        var ipAddress = ""
-        var syncDeviceId = ""
+
+        /**
+         * Service-lifetime state, published as Compose snapshot state.
+         *
+         * These are written on the main thread (service create/destroy) and read from NanoHTTPD
+         * worker threads, the UDP listener thread, and composition. Plain `var`s gave neither
+         * cross-thread visibility nor recomposition: the pairing dialog read [syncToken] as an
+         * ordinary static, so a QR opened before the token existed never refreshed when it did.
+         * `mutableStateOf` fixes both — snapshot state is safe to read from any thread and
+         * invalidates readers on write.
+         */
+        private val isRunningState = mutableStateOf(false)
+        var isRunning: Boolean
+            get() = isRunningState.value
+            internal set(value) {
+                isRunningState.value = value
+            }
+
+        private val ipAddressState = mutableStateOf("")
+        var ipAddress: String
+            get() = ipAddressState.value
+            internal set(value) {
+                ipAddressState.value = value
+            }
+
+        private val syncDeviceIdState = mutableStateOf("")
+        var syncDeviceId: String
+            get() = syncDeviceIdState.value
+            internal set(value) {
+                syncDeviceIdState.value = value
+            }
 
         /**
          * Pairing code. Generated per service start and surfaced ONLY in this device's "My Info"
@@ -150,7 +210,12 @@ class LanSyncService : Service() {
          * therefore NEVER transmitted: peers prove possession with a per-request HMAC (see
          * [LanSyncAuth]). Deliberately not returned by /info and not broadcast over UDP either.
          */
-        var syncToken = ""
+        private val syncTokenState = mutableStateOf("")
+        var syncToken: String
+            get() = syncTokenState.value
+            internal set(value) {
+                syncTokenState.value = value
+            }
 
         fun start(context: Context) {
             if (isRunning) return
@@ -168,10 +233,9 @@ class LanSyncService : Service() {
                 try {
                     val socket = DatagramSocket()
                     socket.broadcast = true
-                    val payload = JSONObject().apply {
-                        put("id", syncDeviceId)
-                        put("type", "hello")
-                    }.toString().toByteArray()
+                    val payload = LanSyncProtocol
+                        .encodeDiscoveryHello(syncDeviceId)
+                        .toByteArray()
                     val packet = DatagramPacket(
                         payload, payload.size,
                         InetAddress.getByName("255.255.255.255"), UDP_PORT
@@ -190,11 +254,10 @@ class LanSyncService : Service() {
                 try {
                     val socket = DatagramSocket()
                     socket.broadcast = true
-                    val payload = JSONObject().apply {
-                        put("id", syncDeviceId)
-                        put("type", "android")
-                        put("name", Build.MODEL)
-                    }.toString().toByteArray()
+                    val payload = LanSyncProtocol.encodeDiscoveryPeer(
+                        deviceId = syncDeviceId,
+                        name = Build.MODEL
+                    ).toByteArray()
                     val packet = DatagramPacket(
                         payload, payload.size,
                         InetAddress.getByName("255.255.255.255"), UDP_PORT
@@ -279,13 +342,9 @@ class LanSyncService : Service() {
 
     private fun handleUdpMessage(msg: String, senderIp: String) {
         try {
-            if (msg.startsWith("{") && msg.endsWith("}")) {
-                val data = JSONObject(msg)
-                val id = data.optString("id")
-                if (id == syncDeviceId) return // Skip own broadcast
-                
-                val type = data.optString("type")
-                if (type == "hello") {
+            when (val message = LanSyncProtocol.decodeDiscoveryMessage(msg)) {
+                is LanSyncDiscoveryMessage.Hello -> {
+                    if (message.deviceId == syncDeviceId) return
                     val now = System.currentTimeMillis()
                     if (now - lastHelloResponseAt < MIN_HELLO_RESPONSE_INTERVAL_MS) {
                         CoreLog.w("LanSyncService: ignoring hello flood, already announced recently")
@@ -293,7 +352,15 @@ class LanSyncService : Service() {
                     }
                     lastHelloResponseAt = now
                     sendInfo()
-                } else {
+                }
+                is LanSyncDiscoveryMessage.Peer -> {
+                    if (message.deviceId == syncDeviceId) return
+                    try {
+                        LanSyncProtocol.requireCompatible(message.protocol)
+                    } catch (e: IllegalArgumentException) {
+                        CoreLog.w("LanSyncService: ignoring incompatible discovery peer")
+                        return
+                    }
                     val existing = scanClients.find { it.address == senderIp }
                     if (existing == null) {
                         if (scanClients.size >= MAX_SCAN_CLIENTS) {
@@ -302,15 +369,16 @@ class LanSyncService : Service() {
                         }
                         scanClients.add(
                             SyncClient(
-                                id = sanitizeBroadcastText(id, "unknown"),
-                                name = sanitizeBroadcastText(data.optString("name"), "Android Device"),
+                                id = sanitizeBroadcastText(message.deviceId, "unknown"),
+                                name = sanitizeBroadcastText(message.name, "Android Device"),
                                 address = senderIp,
                                 port = HTTP_PORT,
-                                type = sanitizeBroadcastText(type, "unknown")
+                                type = sanitizeBroadcastText(message.platform, "unknown")
                             )
                         )
                     }
                 }
+                null -> Unit
             }
         } catch (e: Exception) {
             CoreLog.e("LanSyncService: Parse UDP message failed", e)
@@ -327,21 +395,37 @@ class LanSyncService : Service() {
         return cleaned.take(MAX_SCAN_DEVICE_NAME_CHARS)
     }
 
+    /**
+     * This device's LAN IPv4 address, used both as the bind address and as the address shown in
+     * the pairing QR.
+     *
+     * Interfaces are filtered, not just scanned in order: taking "the first non-loopback IPv4"
+     * happily returns a VPN tunnel or a USB/Bluetooth tethering address, and binding the sync
+     * server there publishes the endpoints on a network the user never meant to share them with —
+     * exactly what moving off `0.0.0.0` was supposed to prevent.
+     */
     private fun getLocalIpAddress(): String {
         try {
-            val interfaces = java.net.NetworkInterface.getNetworkInterfaces()
-            while (interfaces.hasMoreElements()) {
-                val networkInterface = interfaces.nextElement()
+            val candidates = java.net.NetworkInterface.getNetworkInterfaces()
+                .toList()
+                .filter { it.isUp && !it.isLoopback }
+                .filterNot { isExcludedSyncInterface(it.name) }
+
+            // Prefer a real Wi-Fi/Ethernet interface; only then fall back to whatever is left.
+            val ordered = candidates.sortedBy { if (isPreferredSyncInterface(it.name)) 0 else 1 }
+            for (networkInterface in ordered) {
                 val addresses = networkInterface.inetAddresses
-                while (addresses.hasMoreElements()) {
-                    val address = addresses.nextElement()
-                    if (!address.isLoopbackAddress && address is java.net.Inet4Address) {
-                        return address.hostAddress ?: ""
-                    }
-                }
+                    .toList()
+                    .filterIsInstance<java.net.Inet4Address>()
+                    .filterNot { it.isLoopbackAddress || it.isLinkLocalAddress || it.isAnyLocalAddress }
+                // Prefer RFC-1918, but do not require it: some networks hand out addresses
+                // outside those ranges and we must still be reachable there.
+                val address = addresses.firstOrNull { it.isSiteLocalAddress }
+                    ?: addresses.firstOrNull()
+                if (address != null) return address.hostAddress ?: ""
             }
         } catch (e: Exception) {
-            // Ignore
+            CoreLog.w("LanSyncService: unable to resolve a LAN address: ${e.message}")
         }
         return "127.0.0.1"
     }
@@ -355,14 +439,12 @@ class LanSyncService : Service() {
             
             return try {
                 if (method == Method.GET && uri == "/") {
-                    val res = JSONObject().apply {
-                        put("status", true)
-                        put("message", "http server is running...")
-                        put("app", "My Live")
-                        put("type", "android")
-                    }
-                    newFixedLengthResponse(Response.Status.OK, "application/json", res.toString())
-                } else if (method == Method.GET && uri == "/info") {
+                    // Liveness only. This used to answer with the app name and platform, which
+                    // handed a port scanner the same fingerprint that /info deliberately hides
+                    // behind pairing — an unauthenticated probe learns nothing but "something is
+                    // listening".
+                    newJsonResponse(true, "ok")
+                } else if (method == Method.GET && uri == LanSyncProtocol.INFO_PATH) {
                     // Any device on the Wi-Fi can reach this endpoint without pairing, so the
                     // unauthenticated answer carries no identity: the phone model, the install id
                     // and the app version are fingerprinting material that used to be handed to
@@ -374,25 +456,23 @@ class LanSyncService : Service() {
                     } catch (e: LanSyncAuthException) {
                         false
                     }
-                    val res = JSONObject().apply {
-                        put("type", "android")
-                        put("app", "My Live")
-                        put("protocol", "MLSYNC2")
-                        put("port", HTTP_PORT)
-                        put("paired", identified)
-                        if (identified) {
-                            put("id", syncDeviceId)
-                            put("name", Build.MODEL)
-                            put("version", BuildConfig.VERSION_NAME)
-                            put("address", ipAddress)
-                        }
-                    }
-                    newFixedLengthResponse(Response.Status.OK, "application/json", res.toString())
-                } else if (method == Method.GET && uri.startsWith(SYNC_JOB_PATH_PREFIX)) {
+                    val body = LanSyncProtocol.encodePeerInfo(
+                        paired = identified,
+                        port = HTTP_PORT,
+                        deviceId = syncDeviceId,
+                        name = Build.MODEL,
+                        appVersion = BuildConfig.VERSION_NAME,
+                        address = ipAddress
+                    )
+                    newFixedLengthResponse(Response.Status.OK, "application/json", body)
+                } else if (
+                    method == Method.GET &&
+                    uri.startsWith(LanSyncProtocol.JOB_PATH_PREFIX)
+                ) {
                     // Job state can reveal what was just imported, so polling is signed too. A GET
                     // has no body, which the canonical request models as the digest of "".
                     authorizeRequest(session, uri, overlay = false, rawBody = "")
-                    val jobId = uri.removePrefix(SYNC_JOB_PATH_PREFIX)
+                    val jobId = uri.removePrefix(LanSyncProtocol.JOB_PATH_PREFIX)
                     val job = syncJobs[jobId]
                     if (job == null) {
                         newJsonResponse(false, "sync job not found", Response.Status.NOT_FOUND)
@@ -430,30 +510,31 @@ class LanSyncService : Service() {
                         return newJsonResponse(false, "payload too large", Response.Status.PAYLOAD_TOO_LARGE)
                     }
                     
-                    when (uri) {
-                        "/sync/follow" -> {
+                    val importType = LanSyncImportType.fromPath(uri)
+                    when (importType) {
+                        LanSyncImportType.FOLLOW -> {
                             val arr = requireJsonArrayWithinLimit(body, MAX_SYNC_FOLLOW_ITEMS, "follow")
                             val follows = decodeFollowsForLanSync(arr)
-                            enqueueSyncImport("follow") {
+                            enqueueSyncImport(importType.wireName) {
                                 if (overlay) {
                                     followRepository.clearAllFollows()
                                 }
                                 followRepository.addFollows(follows)
                             }
                         }
-                        "/sync/tag" -> {
+                        LanSyncImportType.TAG -> {
                             requireJsonArrayWithinLimit(body, MAX_SYNC_TAG_ITEMS, "tag")
                             val tags = decodeFollowTagsForLanSync(body)
-                            enqueueSyncImport("tag") {
+                            enqueueSyncImport(importType.wireName) {
                                 if (overlay) {
                                     followRepository.clearAllTags()
                                 }
                                 followRepository.addTags(tags)
                             }
                         }
-                        "/sync/history" -> {
+                        LanSyncImportType.HISTORY -> {
                             val arr = requireJsonArrayWithinLimit(body, MAX_SYNC_HISTORY_ITEMS, "history")
-                            enqueueSyncImport("history") {
+                            enqueueSyncImport(importType.wireName) {
                                 if (overlay) {
                                     historyRepository.clearAllHistory()
                                 }
@@ -480,10 +561,10 @@ class LanSyncService : Service() {
                                 historyRepository.addHistories(histories)
                             }
                         }
-                        "/sync/blocked_word" -> {
+                        LanSyncImportType.BLOCKED_WORD -> {
                             requireJsonArrayWithinLimit(body, MAX_SYNC_SHIELD_KEYWORDS, "blocked_word")
                             val keywords = decodeLanSyncShieldKeywords(body)
-                            enqueueSyncImport("blocked_word") {
+                            enqueueSyncImport(importType.wireName) {
                                 if (overlay) {
                                     shieldRepository.clearAllKeywords()
                                 }
@@ -491,14 +572,18 @@ class LanSyncService : Service() {
                                 shieldRepository.addShields(shields)
                             }
                         }
-                        "/sync/profile" -> {
+                        LanSyncImportType.PROFILE -> {
                             validateProfilePayloadLimits(body)
-                            enqueueSyncImport("profile") {
+                            enqueueSyncImport(importType.wireName) {
                                 // Untrusted LAN push: must not be able to redirect our sync/proxy endpoints.
                                 profileBackupManager.importProfileJson(body, trusted = false)
                             }
                         }
-                        else -> newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "Not Found")
+                        null -> newFixedLengthResponse(
+                            Response.Status.NOT_FOUND,
+                            "text/plain",
+                            "Not Found"
+                        )
                     }
                 } else {
                     newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "Not Found")
@@ -694,7 +779,7 @@ class LanSyncService : Service() {
                 put("status", true)
                 put("message", "accepted")
                 put("jobId", job.id)
-                put("jobUrl", "$SYNC_JOB_PATH_PREFIX${job.id}")
+                put("jobUrl", "${LanSyncProtocol.JOB_PATH_PREFIX}${job.id}")
                 put("state", job.state)
             }
             return newFixedLengthResponse(Response.Status.ACCEPTED, "application/json", res.toString())

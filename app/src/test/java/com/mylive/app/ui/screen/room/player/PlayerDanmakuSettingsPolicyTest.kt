@@ -12,31 +12,25 @@ class PlayerDanmakuSettingsPolicyTest {
     @Test
     fun playerViewPropagatesAdvancedDanmakuSettingsToController() {
         val source = File("src/main/java/com/mylive/app/ui/screen/room/player/PlayerView.kt").readText()
+        val contract = File(
+            "src/main/java/com/mylive/app/ui/screen/room/player/PlayerViewContract.kt"
+        ).readText()
+        val signature = source.substringAfter("fun PlayerView(").substringBefore(") {")
 
-        assertTrue(source.contains("danmuLineCount: Int = 8"))
-        assertTrue(source.contains("danmuDelayMs: Int = 0"))
-        assertTrue(source.contains("danmuTopMargin: Double = 0.0"))
-        assertTrue(source.contains("danmuBottomMargin: Double = 0.0"))
-        assertTrue(source.contains("danmuHideTop: Boolean = false"))
-        assertTrue(source.contains("danmuHideBottom: Boolean = false"))
-        assertTrue(source.contains("danmuDedupeStep: Int = 2"))
-        // Settings are applied through DanmakuConfig (single write surface).
+        assertTrue(contract.contains("val danmaku: DanmakuConfig = DanmakuConfig()"))
         assertTrue(source.contains("applyDanmakuConfig("))
-        assertTrue(source.contains("DanmakuConfig("))
-        assertTrue(source.contains("lineCount = danmuLineCount"))
-        assertTrue(source.contains("delayMs = danmuDelayMs"))
-        assertTrue(source.contains("topMargin = danmuTopMargin"))
-        assertTrue(source.contains("bottomMargin = danmuBottomMargin"))
-        assertTrue(source.contains("hideTop = danmuHideTop"))
-        assertTrue(source.contains("hideBottom = danmuHideBottom"))
-        assertTrue(source.contains("dedupeStep = danmuDedupeStep"))
+        assertTrue(source.contains("applyDanmakuConfig(view.controller, resolvedDanmakuConfig)"))
+        assertTrue(signature.contains("viewState: PlayerViewUiState"))
+        assertTrue(signature.contains("actions: PlayerViewActions"))
+        assertFalse(signature.contains("danmuLineCount"))
+        assertFalse(signature.contains("danmuDedupeStep"))
     }
 
     @Test
     fun danmakuSettingsBottomSheetKeepsTitleAndDividerOutsideScrollableContent() {
         val source = File("src/main/java/com/mylive/app/ui/screen/room/player/PlayerView.kt").readText()
         val bottomSheetSource = source.substringAfter("private fun DanmakuSettingsBottomSheet(")
-            .substringBefore("private fun updateControllerConfig(")
+            .substringBefore("private fun IndicatorOverlay(")
 
         val titleIndex = bottomSheetSource.indexOf("text = \"弹幕快捷设置\"")
         val dividerIndex = bottomSheetSource.indexOf("HorizontalDivider()")
@@ -60,9 +54,16 @@ class PlayerDanmakuSettingsPolicyTest {
     @Test
     fun playerViewPropagatesAccentColorToDanmuButton() {
         val source = File("src/main/java/com/mylive/app/ui/screen/room/player/PlayerView.kt").readText()
+        val contract = File(
+            "src/main/java/com/mylive/app/ui/screen/room/player/PlayerViewContract.kt"
+        ).readText()
 
-        assertTrue(source.contains("accentColor: Color? = null"))
-        assertTrue(source.contains("val resolvedAccentColor = accentColor ?: MaterialTheme.colorScheme.primary"))
+        assertTrue(contract.contains("val accentColor: Color? = null"))
+        assertTrue(
+            source.contains(
+                "val resolvedAccentColor = viewState.accentColor ?: MaterialTheme.colorScheme.primary"
+            )
+        )
         assertTrue(source.contains("accentColor = resolvedAccentColor"))
         assertTrue(source.contains("resolvePlayerDanmuButtonTint("))
         assertTrue(source.contains("IconButton(onClick = onDanmuToggle"))

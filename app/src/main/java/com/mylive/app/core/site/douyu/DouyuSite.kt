@@ -2,6 +2,7 @@ package com.mylive.app.core.site.douyu
 
 import com.mylive.app.core.common.CoreLog
 import com.mylive.app.core.common.HttpClient
+import com.mylive.app.core.model.DanmakuArgs
 import com.mylive.app.core.model.LiveAnchorItem
 import com.mylive.app.core.model.LiveCategory
 import com.mylive.app.core.model.LiveCategoryResult
@@ -18,7 +19,7 @@ import com.mylive.app.core.common.WebSocketUtils
 import com.mylive.app.core.script.JsEngine
 import com.mylive.app.core.site.firstSiteImageUrl
 import com.mylive.app.core.site.normalizeSiteImageUrl
-import com.mylive.app.core.site.LiveDanmaku
+import com.mylive.app.core.site.LiveDanmakuSession
 import com.mylive.app.core.site.LiveSite
 import com.mylive.app.core.site.optNullableStringValue
 import com.mylive.app.core.site.optStringValue
@@ -113,7 +114,15 @@ class DouyuSite @Inject constructor(
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36 Edg/114.0.1823.51"
     }
 
-    override fun getDanmaku(): LiveDanmaku = DouyuDanmaku(WebSocketUtils(okHttpClient))
+    override fun createDanmakuSession(
+        requestedRoomId: String,
+        detail: LiveRoomDetail
+    ): LiveDanmakuSession {
+        return LiveDanmakuSession(
+            danmaku = DouyuDanmaku(WebSocketUtils(okHttpClient)),
+            args = DanmakuArgs.Douyu(detail.roomId.ifBlank { requestedRoomId })
+        )
+    }
 
     // ── Categories ──────────────────────────────────────────────────────
 

@@ -13,6 +13,7 @@ import androidx.core.app.NotificationCompat
 import androidx.media3.common.Player
 import com.mylive.app.MainActivity
 import com.mylive.app.R
+import com.mylive.app.core.common.CoreLog
 
 class PlaybackForegroundService : Service() {
 
@@ -35,16 +36,38 @@ class PlaybackForegroundService : Service() {
         var anchorName: String = ""
         var platformName: String = ""
 
-        fun start(context: Context, player: Player, title: String, anchor: String, platform: String) {
+        /**
+         * Hands playback off to a foreground service.
+         *
+         * Called from the room's `ON_PAUSE`, which is exactly the transition Android 12+ polices:
+         * if the process is no longer considered foreground by the time the call lands, the
+         * platform throws [android.app.ForegroundServiceStartNotAllowedException]. Background
+         * playback is a convenience, so a refused hand-off degrades to "playback stops when you
+         * leave" instead of crashing the app.
+         *
+         * @return true when the service was asked to start.
+         */
+        fun start(
+            context: Context,
+            player: Player,
+            title: String,
+            anchor: String,
+            platform: String
+        ): Boolean {
             activePlayer = player
             roomTitle = title
             anchorName = anchor
             platformName = platform
             val intent = Intent(context, PlaybackForegroundService::class.java)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            return try {
                 context.startForegroundService(intent)
-            } else {
-                context.startService(intent)
+                true
+            } catch (e: Exception) {
+                // IllegalStateException on API 26-30, ForegroundServiceStartNotAllowedException
+                // (a subclass) on API 31+. Neither is recoverable here.
+                CoreLog.w("PlaybackForegroundService: background playback hand-off refused: ${e.message}")
+                activePlayer = null
+                false
             }
         }
 
@@ -60,9 +83,16 @@ class PlaybackForegroundService : Service() {
         }
     }
 
+    /** Set by ACTION_STOP so late player callbacks cannot re-promote a dismissed service. */
+    @Volatile
+    private var stopping = false
+
+    /** The player this instance attached its listener to, so teardown cannot detach another. */
+    private var listeningTo: Player? = null
+
     override fun onCreate() {
         super.onCreate()
-        activePlayer?.addListener(playerListener)
+        listeningTo = activePlayer?.also { it.addListener(playerListener) }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -70,8 +100,13 @@ class PlaybackForegroundService : Service() {
             ACTION_PLAY -> activePlayer?.play()
             ACTION_PAUSE -> activePlayer?.pause()
             ACTION_STOP -> {
+                stopping = true
                 activePlayer?.pause()
+                stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
+                // Return before updateNotification(): falling through re-promoted the service to
+                // the foreground immediately after the user asked it to stop.
+                return START_NOT_STICKY
             }
         }
         updateNotification()
@@ -79,15 +114,17 @@ class PlaybackForegroundService : Service() {
     }
 
     private fun updateNotification() {
+        // A late Player callback can land after ACTION_STOP; re-promoting the service then would
+        // resurrect a notification the user just dismissed.
+        if (stopping) return
+
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "后台播放控制",
-                NotificationManager.IMPORTANCE_LOW
-            )
-            manager.createNotificationChannel(channel)
-        }
+        val channel = NotificationChannel(
+            CHANNEL_ID,
+            "后台播放控制",
+            NotificationManager.IMPORTANCE_LOW
+        )
+        manager.createNotificationChannel(channel)
 
         val notificationIntent = Intent(this, MainActivity::class.java)
         val pendingIntent = PendingIntent.getActivity(
@@ -120,7 +157,7 @@ class PlaybackForegroundService : Service() {
         val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(roomTitle.ifEmpty { "正在直播" })
             .setContentText("$anchorName | $platformName")
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_notification_playback)
             .setContentIntent(pendingIntent)
             .addAction(playPauseAction)
             .addAction(stopAction)
@@ -136,8 +173,15 @@ class PlaybackForegroundService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
-        activePlayer?.removeListener(playerListener)
-        activePlayer = null
+        // Detach from the player this instance actually attached to, and only clear the static
+        // reference if it still points there: a new room may already have published its own
+        // player while this instance was being torn down.
+        val attached = listeningTo
+        listeningTo = null
+        attached?.removeListener(playerListener)
+        if (attached != null && activePlayer === attached) {
+            activePlayer = null
+        }
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

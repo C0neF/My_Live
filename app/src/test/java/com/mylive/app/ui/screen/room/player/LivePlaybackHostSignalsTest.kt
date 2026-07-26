@@ -34,12 +34,12 @@ class LivePlaybackHostSignalsTest {
     }
 
     @Test
-    fun mainActivityAndSessionUseHostSignalsNotBareStaticMutationInSession() {
-        val session = File("src/main/java/com/mylive/app/ui/screen/room/player/LivePlaybackSession.kt")
+    fun mainActivityAndHostUseSharedPipSignal() {
+        val host = File("src/main/java/com/mylive/app/ui/screen/room/player/LivePlaybackHost.kt")
             .readText()
         val activity = File("src/main/java/com/mylive/app/MainActivity.kt").readText()
-        assertTrue(session.contains("LivePlaybackHostSignals.setAutoPipOnLeave"))
+        assertTrue(host.contains("LivePlaybackHostSignals.setAutoPipOnLeave"))
         assertTrue(activity.contains("LivePlaybackHostSignals.autoPipOnLeave"))
-        assertFalse(session.contains("MainActivity.isPipSupportedAndActive"))
+        assertFalse(host.contains("MainActivity.isPipSupportedAndActive"))
     }
 }

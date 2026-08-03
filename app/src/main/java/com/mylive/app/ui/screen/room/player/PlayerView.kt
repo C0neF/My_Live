@@ -2,6 +2,7 @@ package com.mylive.app.ui.screen.room.player
 
 import android.app.Activity
 import android.graphics.Rect
+import android.os.SystemClock
 import android.view.LayoutInflater
 import com.mylive.app.R
 import android.content.pm.ActivityInfo
@@ -56,15 +57,23 @@ import androidx.media3.ui.PlayerView as Media3PlayerView
 import com.mylive.app.core.model.LivePlayQuality
 import kotlinx.coroutines.delay
 
-internal const val PlayerVolumeGestureSensitivity = 2.5f
+internal const val SystemVolumeGestureSensitivity = 2f
+internal const val SystemVolumeGestureThrottleMs = 200L
 
-internal fun playerVolumeForVerticalDrag(
+internal fun systemVolumeForVerticalDrag(
     startVolume: Float,
     totalDragY: Float,
     heightPx: Float
 ): Float {
-    val delta = -totalDragY / heightPx.coerceAtLeast(1f) * PlayerVolumeGestureSensitivity
+    val delta = -totalDragY / heightPx.coerceAtLeast(1f) * SystemVolumeGestureSensitivity
     return (startVolume + delta).coerceIn(0f, 1f)
+}
+
+internal fun quantizeSystemVolumeGesture(volume: Float): Float {
+    val quantizedPercent = (
+        volume.coerceIn(0f, 1f) * 100f / 5f
+    ).roundToInt() * 5f
+    return (quantizedPercent / 100f).coerceIn(0f, 1f)
 }
 
 @kotlin.OptIn(ExperimentalMaterial3Api::class)
@@ -267,10 +276,15 @@ fun PlayerView(
                         val down = awaitFirstDown(requireUnconsumed = false)
                         val startX = down.position.x
                         val isLeftSide = startX < size.width / 2f
+                        val canStartVerticalGesture = down.position.y in
+                            (size.height * 0.25f)..(size.height * 0.75f)
 
                         var lastY = down.position.y
                         var gestureStartVolume = playerController?.state?.value?.volume ?: 1f
                         var totalVerticalDragY = 0f
+                        var lastAppliedSystemVolume = -1f
+                        var lastSystemVolumeAppliedAt = Long.MIN_VALUE
+                        var pendingSystemVolume: Float? = null
                         var accumulatedX = 0f
                         var accumulatedY = 0f
                         var hasDecidedDirection = false
@@ -295,21 +309,21 @@ fun PlayerView(
                                     hasDecidedDirection = true
                                     if (Math.abs(accumulatedX) > Math.abs(accumulatedY)) {
                                         isHorizontal = true
-                                    } else {
+                                    } else if (canStartVerticalGesture) {
                                         isVertical = true
                                         if (isLeftSide) {
                                             showBrightnessIndicator = true
                                             brightnessValue = playerController?.state?.value?.brightness ?: 0.5f
                                         } else {
                                             showVolumeIndicator = true
-                                            gestureStartVolume = playerController?.state?.value?.volume ?: 1f
+                                            gestureStartVolume = playerController?.currentSystemMediaVolume() ?: 1f
                                             volumeValue = gestureStartVolume
                                         }
                                     }
                                 }
                             }
 
-                            if (hasDecidedDirection) {
+                            if (hasDecidedDirection && (isVertical || isHorizontal)) {
                                 change.consume()
                                 if (isVertical) {
                                     val currentY = change.position.y
@@ -322,18 +336,43 @@ fun PlayerView(
                                         brightnessValue = playerController?.state?.value?.brightness ?: 0.5f
                                     } else {
                                         totalVerticalDragY += dragAmount
-                                        volumeValue = playerVolumeForVerticalDrag(
-                                            startVolume = gestureStartVolume,
-                                            totalDragY = totalVerticalDragY,
-                                            heightPx = size.height.toFloat()
+                                        volumeValue = quantizeSystemVolumeGesture(
+                                            systemVolumeForVerticalDrag(
+                                                startVolume = gestureStartVolume,
+                                                totalDragY = totalVerticalDragY,
+                                                heightPx = size.height.toFloat()
+                                            )
                                         )
-                                        playerController?.setVolumeDirect(volumeValue)
-                                        volumeValue = playerController?.state?.value?.volume ?: volumeValue
+                                        val now = SystemClock.uptimeMillis()
+                                        val canApplyImmediately =
+                                            lastSystemVolumeAppliedAt == Long.MIN_VALUE ||
+                                                now - lastSystemVolumeAppliedAt >= SystemVolumeGestureThrottleMs
+                                        if (
+                                            playerController != null &&
+                                            volumeValue != lastAppliedSystemVolume &&
+                                            canApplyImmediately
+                                        ) {
+                                            playerController.setSystemVolumeDirect(volumeValue)
+                                            lastAppliedSystemVolume = volumeValue
+                                            lastSystemVolumeAppliedAt = now
+                                            pendingSystemVolume = null
+                                        } else if (volumeValue != lastAppliedSystemVolume) {
+                                            pendingSystemVolume = volumeValue
+                                        }
                                     }
                                 } else if (isHorizontal) {
                                     actions.onHorizontalDragDelta?.invoke(deltaX)
                                 }
                             }
+                        }
+
+                        if (
+                            isVertical &&
+                            !isLeftSide &&
+                            pendingSystemVolume != null &&
+                            pendingSystemVolume != lastAppliedSystemVolume
+                        ) {
+                            playerController?.setSystemVolumeDirect(pendingSystemVolume!!)
                         }
 
                         if (isHorizontal) {

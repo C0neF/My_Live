@@ -63,21 +63,24 @@ class PlayerControllerPolicyTest {
     }
 
     @Test
-    fun volumeGestureControlsSystemMediaStreamInsteadOfOnlyPlayerGain() {
+    fun volumeGestureControlsSystemMediaStreamWithoutChangingPlayerGain() {
         val source = readMainSource("com/mylive/app/ui/screen/room/player/PlayerController.kt")
+        val systemVolumeSource = source.substringAfter("fun setSystemVolumeDirect(")
+            .substringBefore("fun toggleMute()")
 
-        assertTrue(source.contains("audioManager.setStreamVolume("))
-        assertTrue(source.contains("AudioManager.STREAM_MUSIC"))
-        assertTrue(source.contains("player?.volume = 1f"))
-        assertFalse(source.contains("player?.volume = volume"))
+        assertTrue(source.contains("fun setSystemVolumeDirect("))
+        assertTrue(systemVolumeSource.contains("audioManager.setStreamVolume("))
+        assertTrue(systemVolumeSource.contains("AudioManager.STREAM_MUSIC"))
+        assertFalse(systemVolumeSource.contains("player?.volume"))
     }
 
     @Test
-    fun volumeStateReflectsAppliedSystemMediaStreamLevel() {
+    fun systemVolumeGestureReadsTheSystemMediaStream() {
         val source = readMainSource("com/mylive/app/ui/screen/room/player/PlayerController.kt")
 
-        assertTrue(source.contains("val appliedVolume = currentSystemMediaVolume()"))
-        assertTrue(source.contains("_state.value = _state.value.copy(volume = appliedVolume)"))
+        assertTrue(source.contains("fun currentSystemMediaVolume(): Float"))
+        assertTrue(source.contains("audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)"))
+        assertTrue(source.contains("streamVolumeIndexFor(volume)"))
     }
 
     @Test

@@ -53,7 +53,9 @@ class PlayerController(
     private var sourceRefreshAttempted = false
 
     private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-    private val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+    private val maxSystemVolume = audioManager
+        .getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+        .coerceAtLeast(1)
     private var lastNonZeroVolume = 1f
 
     private val playerListener = object : Player.Listener {
@@ -128,13 +130,14 @@ class PlayerController(
             .build()
             .also { it.addListener(playerListener) }
 
-        // Init volume state
-        player?.volume = 1f
-        val currentVol = currentSystemMediaVolume()
-        if (currentVol > 0f) {
-            lastNonZeroVolume = currentVol
+        // Keep volume local to the player. The device media stream remains the hardware-level
+        // volume, while this gain is the detail-page gesture's reliable, route-independent layer.
+        val initialVolume = _state.value.volume.coerceIn(0f, 1f)
+        player?.volume = initialVolume
+        if (initialVolume > 0f) {
+            lastNonZeroVolume = initialVolume
         }
-        _state.value = _state.value.copy(volume = currentVol)
+        _state.value = _state.value.copy(volume = initialVolume)
     }
 
     fun play(
@@ -255,17 +258,31 @@ class PlayerController(
 
     fun setVolumeDirect(volume: Float) {
         val targetVolume = volume.coerceIn(0f, 1f)
+        player?.volume = targetVolume
+        if (targetVolume > 0f) {
+            lastNonZeroVolume = targetVolume
+        }
+        _state.value = _state.value.copy(volume = targetVolume)
+    }
+
+    /**
+     * Adjust the device media stream used by the vertical volume gesture.
+     *
+     * This intentionally does not touch [player]?.volume: the reference player keeps the
+     * gesture-controlled system stream separate from the player's own gain/mute setting.
+     */
+    fun setSystemVolumeDirect(volume: Float) {
         audioManager.setStreamVolume(
             AudioManager.STREAM_MUSIC,
-            streamVolumeIndexFor(targetVolume),
+            streamVolumeIndexFor(volume),
             0
         )
-        player?.volume = 1f
-        val appliedVolume = currentSystemMediaVolume()
-        if (appliedVolume > 0f) {
-            lastNonZeroVolume = appliedVolume
-        }
-        _state.value = _state.value.copy(volume = appliedVolume)
+    }
+
+    internal fun currentSystemMediaVolume(): Float {
+        val current = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+            .coerceIn(0, maxSystemVolume)
+        return current.toFloat() / maxSystemVolume
     }
 
     fun toggleMute() {
@@ -278,16 +295,10 @@ class PlayerController(
         }
     }
 
-    private fun currentSystemMediaVolume(): Float {
-        val current = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
-            .coerceIn(0, maxVolume)
-        return current.toFloat() / maxVolume
-    }
-
     private fun streamVolumeIndexFor(volume: Float): Int {
         val clamped = volume.coerceIn(0f, 1f)
         if (clamped <= 0f) return 0
-        return (clamped * maxVolume).roundToInt().coerceIn(1, maxVolume)
+        return (clamped * maxSystemVolume).roundToInt().coerceIn(1, maxSystemVolume)
     }
 
     fun setBrightness(activity: android.app.Activity, delta: Float) {

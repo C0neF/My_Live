@@ -1,6 +1,9 @@
 package com.mylive.app.data.repository
 
+import androidx.room.withTransaction
+import com.mylive.app.data.local.AppDatabase
 import com.mylive.app.data.local.dao.FollowUserDao
+import com.mylive.app.data.local.dao.FollowLiveStatusUpdate
 import com.mylive.app.data.local.dao.FollowUserTagDao
 import com.mylive.app.data.local.entity.FollowUserEntity
 import com.mylive.app.data.local.entity.FollowUserTagEntity
@@ -16,7 +19,8 @@ import javax.inject.Singleton
 @Singleton
 class FollowRepository @Inject constructor(
     private val followUserDao: FollowUserDao,
-    private val followUserTagDao: FollowUserTagDao
+    private val followUserTagDao: FollowUserTagDao,
+    private val database: AppDatabase
 ) {
     // Follow user operations
     fun getAllFollows(): Flow<List<FollowUserEntity>> = followUserDao.getAll()
@@ -37,6 +41,20 @@ class FollowRepository @Inject constructor(
 
     suspend fun updateLiveStatus(id: String, status: Int, startTime: Long? = null, showTime: String? = null) =
         followUserDao.updateLiveStatus(id, status, startTime, showTime)
+
+    suspend fun updateLiveStatuses(users: List<FollowUserEntity>) {
+        if (users.isEmpty()) return
+        followUserDao.updateLiveStatuses(
+            users.map { user ->
+                FollowLiveStatusUpdate(
+                    id = user.id,
+                    liveStatus = user.liveStatus,
+                    liveStartTime = user.liveStartTime,
+                    showTime = user.showTime
+                )
+            }
+        )
+    }
 
     suspend fun updateSpecialFollow(id: String, specialValue: Boolean) =
         followUserDao.updateSpecialFollow(id, specialValue)
@@ -60,6 +78,16 @@ class FollowRepository @Inject constructor(
     suspend fun clearAllFollows() = followUserDao.deleteAll()
 
     suspend fun clearAllTags() = followUserTagDao.deleteAll()
+
+    suspend fun importFollows(users: List<FollowUserEntity>, overlay: Boolean) = database.withTransaction {
+        if (overlay) clearAllFollows()
+        addFollows(users)
+    }
+
+    suspend fun importTags(tags: List<FollowUserTagEntity>, overlay: Boolean) = database.withTransaction {
+        if (overlay) clearAllTags()
+        addTags(tags)
+    }
 
     // ── JSON Import/Export ─────────────────────────────────────────────────
 
@@ -112,13 +140,14 @@ class FollowRepository @Inject constructor(
     suspend fun importFromJson(json: String, overlay: Boolean = false) {
         val payload = parseImportPayload(json)
 
-        if (overlay) {
-            clearAllFollows()
-            clearAllTags()
+        database.withTransaction {
+            if (overlay) {
+                clearAllFollows()
+                clearAllTags()
+            }
+            addFollows(payload.follows)
+            addTags(payload.tags)
         }
-
-        addFollows(payload.follows)
-        addTags(payload.tags)
     }
 
     private fun parseImportPayload(json: String): FollowImportPayload {

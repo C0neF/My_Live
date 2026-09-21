@@ -534,60 +534,27 @@ class LanSyncService : Service() {
                             val arr = requireJsonArrayWithinLimit(body, MAX_SYNC_FOLLOW_ITEMS, "follow")
                             val follows = decodeFollowsForLanSync(arr)
                             enqueueSyncImport(importType.wireName) {
-                                if (overlay) {
-                                    followRepository.clearAllFollows()
-                                }
-                                followRepository.addFollows(follows)
+                                followRepository.importFollows(follows, overlay)
                             }
                         }
                         LanSyncImportType.TAG -> {
                             requireJsonArrayWithinLimit(body, MAX_SYNC_TAG_ITEMS, "tag")
                             val tags = decodeFollowTagsForLanSync(body)
                             enqueueSyncImport(importType.wireName) {
-                                if (overlay) {
-                                    followRepository.clearAllTags()
-                                }
-                                followRepository.addTags(tags)
+                                followRepository.importTags(tags, overlay)
                             }
                         }
                         LanSyncImportType.HISTORY -> {
                             val arr = requireJsonArrayWithinLimit(body, MAX_SYNC_HISTORY_ITEMS, "history")
                             enqueueSyncImport(importType.wireName) {
-                                if (overlay) {
-                                    historyRepository.clearAllHistory()
-                                }
-                                val histories = buildList {
-                                    for (i in 0 until arr.length()) {
-                                        val item = arr.getJSONObject(i)
-                                        val siteId = item.getString("siteId")
-                                        val roomId = item.getString("roomId")
-                                        val userName = item.getString("userName")
-                                        val face = item.optString("face", item.optString("avatar", ""))
-                                        val updateTime = item.optLong("updateTime", System.currentTimeMillis())
-                                        add(
-                                            HistoryEntity(
-                                                id = "${siteId}_${roomId}",
-                                                roomId = roomId,
-                                                siteId = siteId,
-                                                userName = userName,
-                                                face = face,
-                                                updateTime = updateTime
-                                            )
-                                        )
-                                    }
-                                }
-                                historyRepository.addHistories(histories)
+                                historyRepository.importFromJson(body, overlay)
                             }
                         }
                         LanSyncImportType.BLOCKED_WORD -> {
                             requireJsonArrayWithinLimit(body, MAX_SYNC_SHIELD_KEYWORDS, "blocked_word")
                             val keywords = decodeLanSyncShieldKeywords(body)
                             enqueueSyncImport(importType.wireName) {
-                                if (overlay) {
-                                    shieldRepository.clearAllKeywords()
-                                }
-                                val shields = keywords.map { kw -> ShieldEntity(value = "keyword:$kw") }
-                                shieldRepository.addShields(shields)
+                                shieldRepository.importKeywords(keywords, overlay)
                             }
                         }
                         LanSyncImportType.PROFILE -> {

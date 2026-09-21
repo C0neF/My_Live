@@ -39,7 +39,7 @@ class ProfileBackupManagerSettingsTest {
             .build()
         settingsDataStore = SettingsDataStore(context)
         settingsDataStore.clearAll()
-        followRepository = FollowRepository(db.followUserDao(), db.followUserTagDao())
+        followRepository = FollowRepository(db.followUserDao(), db.followUserTagDao(), db)
         backupManager = ProfileBackupManager(
             settingsDataStore = settingsDataStore,
             followRepository = followRepository,

@@ -28,12 +28,13 @@ class DouyuDanmaku(private val webSocketUtils: WebSocketUtils) : LiveDanmaku {
     override var onClose: ((String) -> Unit)? = null
     override var onReady: (() -> Unit)? = null
 
-    private val serverUrl = "wss://danmuproxy.douyu.com:8506"
-
     override suspend fun start(args: DanmakuArgs) {
         val douyuArgs = args as DanmakuArgs.Douyu
+        val serverUrls = douyuDanmakuServerUrls()
         webSocketUtils.connect(
-            url = serverUrl,
+            url = serverUrls.first(),
+            backupUrls = serverUrls.drop(1),
+            connectTimeoutMillis = DOUYU_DANMAKU_CONNECT_TIMEOUT_MILLIS,
             heartBeatTime = heartbeatTime.toLong(),
             onMessage = { e ->
                 when (e) {

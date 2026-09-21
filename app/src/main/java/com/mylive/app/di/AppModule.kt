@@ -1,6 +1,8 @@
 package com.mylive.app.di
 
 import android.content.Context
+import com.mylive.app.core.site.LiveSiteAccountStore
+import com.mylive.app.data.repository.AccountRepository
 import com.mylive.app.data.local.datastore.SettingsDataStore
 import com.mylive.app.data.local.secure.AndroidKeystoreCredentialCipher
 import com.mylive.app.data.local.secure.CredentialCipher
@@ -14,6 +16,9 @@ import javax.inject.Singleton
 @Module
 @InstallIn(SingletonComponent::class)
 object AppModule {
+
+    @Provides
+    fun provideLiveSiteAccounts(repository: AccountRepository): LiveSiteAccountStore = repository
 
     @Provides
     @Singleton

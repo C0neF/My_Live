@@ -1,8 +1,9 @@
 package com.mylive.app.core.common
 
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.suspendCancellableCoroutine
 import okhttp3.Call
+import okhttp3.Callback
+import okhttp3.Response
 import okhttp3.FormBody
 import okhttp3.Headers.Companion.toHeaders
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -14,12 +15,13 @@ import org.json.JSONObject
 import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.coroutines.resumeWithException
 
 /**
  * HTTP client wrapping OkHttp, providing suspend functions for GET/POST/HEAD requests.
  * Designed for Hilt injection -- receives an [OkHttpClient] via constructor.
  *
- * All network calls are executed on [Dispatchers.IO].
+ * Network calls and body parsing run on OkHttp's dispatcher. Cancelling a caller cancels its call.
  */
 @Singleton
 class HttpClient @Inject constructor(
@@ -39,9 +41,9 @@ class HttpClient @Inject constructor(
         url: String,
         queryParameters: Map<String, String>? = null,
         header: Map<String, String>? = null
-    ): String = withContext(Dispatchers.IO) {
+    ): String {
         val request = buildGetRequest(url, queryParameters, header)
-        executeStringRequest(request)
+        return executeStringRequest(request)
     }
 
     /**
@@ -57,9 +59,9 @@ class HttpClient @Inject constructor(
         url: String,
         queryParameters: Map<String, String>? = null,
         header: Map<String, String>? = null
-    ): Any = withContext(Dispatchers.IO) {
+    ): Any {
         val request = buildGetRequest(url, queryParameters, header)
-        executeJsonRequest(request)
+        return executeJsonRequest(request)
     }
 
     /**
@@ -79,9 +81,9 @@ class HttpClient @Inject constructor(
         data: Any? = null,
         header: Map<String, String>? = null,
         formUrlEncoded: Boolean = false
-    ): Any = withContext(Dispatchers.IO) {
+    ): Any {
         val request = buildPostRequest(url, queryParameters, data, header, formUrlEncoded)
-        executeJsonRequest(request)
+        return executeJsonRequest(request)
     }
 
     /**
@@ -99,7 +101,7 @@ class HttpClient @Inject constructor(
         url: String,
         queryParameters: Map<String, String>? = null,
         header: Map<String, String>? = null
-    ): okhttp3.Response = withContext(Dispatchers.IO) {
+    ): okhttp3.Response {
         val urlBuilder = url.toHttpUrl().newBuilder()
         queryParameters?.forEach { (key, value) ->
             urlBuilder.addQueryParameter(key, value)
@@ -109,11 +111,7 @@ class HttpClient @Inject constructor(
             .headers((header ?: emptyMap()).toHeaders())
             .head()
             .build()
-        try {
-            client.newCall(request).execute()
-        } catch (e: IOException) {
-            throw CoreError("发送HEAD请求失败")
-        }
+        return executeRequest(request, "发送HEAD请求失败") { it }
     }
 
     // ── Private helpers ──────────────────────────────────────────────────
@@ -190,9 +188,9 @@ class HttpClient @Inject constructor(
             .build()
     }
 
-    private fun executeStringRequest(request: Request): String {
-        return try {
-            client.newCall(request).execute().use { response ->
+    private suspend fun executeStringRequest(request: Request): String =
+        executeRequest(request) { response ->
+            response.use {
                 if (!response.isSuccessful) {
                     throw CoreError(
                         message = response.message,
@@ -201,16 +199,11 @@ class HttpClient @Inject constructor(
                 }
                 response.body?.string() ?: ""
             }
-        } catch (e: CoreError) {
-            throw e
-        } catch (e: IOException) {
-            throw CoreError("发送请求失败")
         }
-    }
 
-    private fun executeJsonRequest(request: Request): Any {
-        return try {
-            client.newCall(request).execute().use { response ->
+    private suspend fun executeJsonRequest(request: Request): Any =
+        executeRequest(request) { response ->
+            response.use {
                 if (!response.isSuccessful) {
                     throw CoreError(
                         message = response.message,
@@ -227,10 +220,37 @@ class HttpClient @Inject constructor(
                     throw CoreError("Invalid JSON response: ${e.message}")
                 }
             }
-        } catch (e: CoreError) {
-            throw e
-        } catch (e: IOException) {
-            throw CoreError("发送请求失败")
         }
+
+    private suspend fun <T> executeRequest(
+        request: Request,
+        ioErrorMessage: String = "发送请求失败",
+        consume: (Response) -> T
+    ): T = suspendCancellableCoroutine { continuation ->
+        val call = client.newCall(request)
+        continuation.invokeOnCancellation { call.cancel() }
+        call.enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                continuation.resumeWithException(CoreError(ioErrorMessage))
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                if (!continuation.isActive) {
+                    response.close()
+                    return
+                }
+                try {
+                    val value = consume(response)
+                    // HEAD transfers response ownership to the caller. Close it if cancellation
+                    // wins before the caller resumes; text/JSON consumers already close with use.
+                    continuation.resume(value) { _, _, _ -> response.close() }
+                } catch (error: Throwable) {
+                    response.close()
+                    continuation.resumeWithException(
+                        if (error is IOException) CoreError(ioErrorMessage) else error
+                    )
+                }
+            }
+        })
     }
 }

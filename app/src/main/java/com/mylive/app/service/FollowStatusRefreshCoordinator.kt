@@ -5,6 +5,7 @@ import com.mylive.app.data.local.entity.FollowUserEntity
 import com.mylive.app.data.repository.FollowRepository
 import com.mylive.app.data.repository.SettingsRepository
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -90,44 +91,47 @@ class FollowStatusRefreshCoordinator @Inject constructor(
         val semaphore = Semaphore(
             permits = resolveFollowUpdateConcurrency(settingsRepository.updateFollowThreadCount.first())
         )
-        follows.map { follow ->
+        val resolved = follows.map { follow ->
             async(Dispatchers.IO) {
                 semaphore.withPermit { refreshOne(follow) }
             }
         }.awaitAll().filterNotNull()
+        followRepository.updateLiveStatuses(resolved.map { it.updatedFollow })
+        resolved.map { it.transition }
     }
 
-    private suspend fun refreshOne(follow: FollowUserEntity): FollowStatusTransition? {
+    private suspend fun refreshOne(follow: FollowUserEntity): ResolvedFollowStatus? {
         return try {
             val site = sites.find { it.id == follow.siteId } ?: return null
-            val isLive = site.getLiveStatus(follow.roomId)
+            val presence = site.getFollowPresence(follow.roomId)
+            val isLive = presence.isLive
             val newStatus = if (isLive) 1 else 2
-            val showTime = if (isLive) {
-                try {
-                    site.getRoomDetail(follow.roomId).showTime
-                } catch (_: Exception) {
-                    null
-                }
-            } else {
-                null
-            }
+            val showTime = presence.showTime.takeIf { isLive }
             val changed = follow.liveStatus != newStatus || (isLive && follow.showTime != showTime)
             if (!changed) return null
 
-            followRepository.updateLiveStatus(
-                id = follow.id,
-                status = newStatus,
-                startTime = if (isLive) System.currentTimeMillis() else null,
-                showTime = showTime
+            ResolvedFollowStatus(
+                updatedFollow = follow.copy(
+                    liveStatus = newStatus,
+                    liveStartTime = if (isLive) System.currentTimeMillis() else null,
+                    showTime = showTime
+                ),
+                transition = FollowStatusTransition(
+                    follow = follow,
+                    previousStatus = follow.liveStatus,
+                    currentStatus = newStatus
+                )
             )
-            FollowStatusTransition(
-                follow = follow,
-                previousStatus = follow.liveStatus,
-                currentStatus = newStatus
-            )
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: Exception) {
             Timber.w(error, "Failed to update follow status for ${follow.userName}")
             null
         }
     }
 }
+
+private data class ResolvedFollowStatus(
+    val updatedFollow: FollowUserEntity,
+    val transition: FollowStatusTransition
+)

@@ -8,6 +8,29 @@ import okhttp3.WebSocketListener
 import okio.ByteString
 import java.util.Timer
 import java.util.TimerTask
+import java.util.concurrent.TimeUnit
+
+internal fun buildWebSocketClient(
+    baseClient: OkHttpClient,
+    disableCompression: Boolean,
+    connectTimeoutMillis: Long?
+): OkHttpClient {
+    if (!disableCompression && connectTimeoutMillis == null) return baseClient
+
+    val builder = baseClient.newBuilder()
+    if (connectTimeoutMillis != null) {
+        builder.connectTimeout(connectTimeoutMillis, TimeUnit.MILLISECONDS)
+    }
+    if (disableCompression) {
+        builder.addInterceptor { chain ->
+            val request = chain.request().newBuilder()
+                .removeHeader("Sec-WebSocket-Extensions")
+                .build()
+            chain.proceed(request)
+        }
+    }
+    return builder.build()
+}
 
 /**
  * WebSocket connection status.
@@ -75,7 +98,7 @@ class WebSocketUtils(
     @Volatile
     private var connectIdleTimeoutMillis: Long? = null
     @Volatile
-    private var connectDisableCompression: Boolean = false
+    private var connectSocketClient: OkHttpClient = client
     @Volatile
     private var connectHeaders: Map<String, String>? = null
     @Volatile
@@ -90,17 +113,6 @@ class WebSocketUtils(
     private var callbackHeartBeat: (() -> Unit)? = null
     @Volatile
     private var lastMessageAtMillis: Long = 0L
-
-    private val compressionDisabledClient by lazy {
-        client.newBuilder()
-            .addInterceptor { chain ->
-                val request = chain.request().newBuilder()
-                    .removeHeader("Sec-WebSocket-Extensions")
-                    .build()
-                chain.proceed(request)
-            }
-            .build()
-    }
 
     /**
      * Build the ordered list of URLs to try: primary + backup(s), deduplicated.
@@ -124,6 +136,7 @@ class WebSocketUtils(
      * @param heartBeatTime Heartbeat interval in milliseconds
      * @param idleTimeoutMillis Optional timeout for connections that stay open but stop receiving messages
      * @param disableCompression Disable per-message deflate for servers with incompatible implementations
+     * @param connectTimeoutMillis Optional handshake connect timeout for each candidate URL
      * @param headers Optional request headers
      * @param onMessage Callback when a message is received
      * @param onClose Callback when connection is closed
@@ -138,6 +151,7 @@ class WebSocketUtils(
         heartBeatTime: Long = 30_000L,
         idleTimeoutMillis: Long? = null,
         disableCompression: Boolean = false,
+        connectTimeoutMillis: Long? = null,
         headers: Map<String, String>? = null,
         onMessage: ((Any) -> Unit)? = null,
         onClose: ((String) -> Unit)? = null,
@@ -151,7 +165,11 @@ class WebSocketUtils(
         this.connectBackupUrls = backupUrls
         this.connectHeartBeatTime = heartBeatTime
         this.connectIdleTimeoutMillis = idleTimeoutMillis
-        this.connectDisableCompression = disableCompression
+        this.connectSocketClient = buildWebSocketClient(
+            baseClient = client,
+            disableCompression = disableCompression,
+            connectTimeoutMillis = connectTimeoutMillis
+        )
         this.connectHeaders = headers
         this.callbackMessage = onMessage
         this.callbackClose = onClose
@@ -191,8 +209,7 @@ class WebSocketUtils(
                 requestBuilder.addHeader(key, value)
             }
 
-            val socketClient = if (connectDisableCompression) compressionDisabledClient else client
-            webSocket = socketClient.newWebSocket(requestBuilder.build(), object : WebSocketListener() {
+            webSocket = connectSocketClient.newWebSocket(requestBuilder.build(), object : WebSocketListener() {
                 override fun onOpen(webSocket: WebSocket, response: Response) {
                     if (webSocket !== this@WebSocketUtils.webSocket) return
                     onReady()
@@ -293,8 +310,9 @@ class WebSocketUtils(
         heartBeatTimer?.cancel()
         heartBeatTimer = null
         status = SocketStatus.FAILED
-        webSocket?.cancel()
+        val previousSocket = webSocket
         webSocket = null
+        previousSocket?.cancel()
         callbackReconnect?.invoke()
         doConnect(retry = true)
     }
@@ -370,8 +388,9 @@ class WebSocketUtils(
         reconnectTime = 0
         intentionalClose = true
         status = SocketStatus.CLOSED
-        webSocket?.close(1000, "Client closed")
+        val previousSocket = webSocket
         webSocket = null
+        previousSocket?.close(1000, "Client closed")
     }
 
     /**
@@ -381,8 +400,9 @@ class WebSocketUtils(
     private fun closeInternal() {
         heartBeatTimer?.cancel()
         heartBeatTimer = null
-        webSocket?.cancel()
+        val previousSocket = webSocket
         webSocket = null
+        previousSocket?.cancel()
     }
 
     /**

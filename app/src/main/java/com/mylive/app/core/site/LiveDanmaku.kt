@@ -2,6 +2,9 @@ package com.mylive.app.core.site
 
 import com.mylive.app.core.model.DanmakuArgs
 import com.mylive.app.core.model.LiveMessage
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import java.util.concurrent.atomic.AtomicBoolean
 
 interface LiveDanmaku {
     var onMessage: ((LiveMessage) -> Unit)?
@@ -30,6 +33,8 @@ class LiveDanmakuSession internal constructor(
     private val danmaku: LiveDanmaku,
     private val resolveArgs: suspend () -> DanmakuArgs
 ) {
+    private val stopped = AtomicBoolean(false)
+
     /** For platforms whose handshake data already came back with the room detail. */
     internal constructor(danmaku: LiveDanmaku, args: DanmakuArgs) : this(danmaku, { args })
 
@@ -52,10 +57,18 @@ class LiveDanmakuSession internal constructor(
         }
 
     suspend fun start() {
-        danmaku.start(resolveArgs())
+        val args = resolveArgs()
+        currentCoroutineContext().ensureActive()
+        if (stopped.get()) return
+
+        danmaku.start(args)
+        if (stopped.get()) {
+            danmaku.stop()
+        }
     }
 
     suspend fun stop() {
+        stopped.set(true)
         danmaku.stop()
     }
 }

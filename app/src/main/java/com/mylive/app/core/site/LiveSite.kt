@@ -1,6 +1,12 @@
 package com.mylive.app.core.site
 
 import com.mylive.app.core.model.*
+import kotlinx.coroutines.CancellationException
+
+data class FollowPresence(
+    val isLive: Boolean,
+    val showTime: String? = null
+)
 
 interface LiveSite {
     val id: String
@@ -33,6 +39,23 @@ interface LiveSite {
 
     suspend fun getLiveStatus(roomId: String): Boolean
 
+    /** Complete fact needed by follow refresh; adapters may answer it with one platform request. */
+    suspend fun getFollowPresence(roomId: String): FollowPresence {
+        val isLive = getLiveStatus(roomId)
+        val showTime = if (isLive) {
+            try {
+                getRoomDetail(roomId).showTime
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                null
+            }
+        } else {
+            null
+        }
+        return FollowPresence(isLive = isLive, showTime = showTime)
+    }
+
     suspend fun getSuperChatMessage(roomId: String, detail: LiveRoomDetail? = null): List<LiveSuperChatMessage>
 }
 
@@ -45,6 +68,11 @@ interface LiveSite {
 enum class LiveSiteAccount {
     BILIBILI,
     DOUYIN
+}
+
+/** Request-time access to persisted credentials, independent of any screen lifetime. */
+fun interface LiveSiteAccountStore {
+    suspend fun cookieFor(account: LiveSiteAccount): String
 }
 
 /**

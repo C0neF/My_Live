@@ -2,6 +2,8 @@ package com.mylive.app.core.site
 
 import com.mylive.app.core.model.DanmakuArgs
 import com.mylive.app.core.model.LiveMessage
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -57,6 +59,26 @@ class LiveDanmakuSessionLazyArgsTest {
         session.stop()
 
         assertEquals(0, resolved.get())
+    }
+
+    @Test
+    fun stoppingWhileHandshakeIsResolvingPreventsAStaleConnection() = runBlocking {
+        val resolverStarted = CompletableDeferred<Unit>()
+        val finishResolver = CompletableDeferred<Unit>()
+        val danmaku = RecordingDanmaku()
+        val session = LiveDanmakuSession(danmaku) {
+            resolverStarted.complete(Unit)
+            finishResolver.await()
+            DanmakuArgs.Douyu(roomId = "old-room")
+        }
+
+        val startJob = launch { session.start() }
+        resolverStarted.await()
+        session.stop()
+        finishResolver.complete(Unit)
+        startJob.join()
+
+        assertNull("a stopped session must not connect after its resolver returns", danmaku.startedWith)
     }
 
     @Test

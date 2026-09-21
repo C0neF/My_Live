@@ -8,6 +8,7 @@ import com.mylive.app.core.common.WebSocketUtils
 import com.mylive.app.core.model.*
 import com.mylive.app.core.model.PlayQualityData
 import com.mylive.app.core.site.LiveDanmakuSession
+import com.mylive.app.core.site.FollowPresence
 import com.mylive.app.core.site.LiveSite
 import com.mylive.app.core.site.huya.tars.BaseTarsHttp
 import com.mylive.app.core.site.huya.tars.model.GetCdnTokenExReq
@@ -619,6 +620,10 @@ class HuyaSite @Inject constructor(
     override suspend fun getLiveStatus(roomId: String): Boolean = withContext(Dispatchers.IO) {
         val roomInfo = getRoomInfo(roomId)
         roomInfo.getJSONObject("roomInfo").optInt("eLiveStatus") == 2
+    }
+
+    override suspend fun getFollowPresence(roomId: String): FollowPresence {
+        return FollowPresence(isLive = getLiveStatus(roomId))
     }
 
     // ── Super chat (headline messages) ─────────────────────────────────────

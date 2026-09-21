@@ -1,6 +1,7 @@
 package com.mylive.app.core.site.douyu
 
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -19,25 +20,40 @@ import java.util.concurrent.atomic.AtomicInteger
 class DouyuPlayUrlConcurrencyTest {
 
     @Test
-    fun requestsForEveryCdnAreInFlightAtTheSameTime() = runBlocking {
-        val cdns = listOf("ws-h5", "tct-h5", "ali-h5", "scdn-h5")
+    fun requestsRunTogetherButNeverExceedTheExplicitLimit() = runBlocking {
+        val maxConcurrency = 5
+        val cdns = (1..8).map { "cdn-$it" }
         val inFlight = AtomicInteger(0)
         val peak = AtomicInteger(0)
-        val allStarted = CompletableDeferred<Unit>()
+        val started = AtomicInteger(0)
+        val firstWaveStarted = CompletableDeferred<Unit>()
+        val releaseFirstWave = CompletableDeferred<Unit>()
 
-        val urls = resolveDouyuPlayUrls(cdns) { cdn ->
-            val now = inFlight.incrementAndGet()
-            peak.updateAndGet { maxOf(it, now) }
-            if (now == cdns.size) allStarted.complete(Unit)
-            // Every call parks until the last one has started. Under the old sequential loop
-            // this would deadlock, because the second call could never begin.
-            withTimeout(5_000) { allStarted.await() }
-            inFlight.decrementAndGet()
-            "https://$cdn/live.flv"
+        val result = async {
+            resolveDouyuPlayUrls(cdns) { cdn ->
+                val startedCount = started.incrementAndGet()
+                val now = inFlight.incrementAndGet()
+                peak.updateAndGet { maxOf(it, now) }
+                if (now == maxConcurrency) firstWaveStarted.complete(Unit)
+                try {
+                    if (startedCount <= maxConcurrency) {
+                        releaseFirstWave.await()
+                    }
+                    "https://$cdn/live.flv"
+                } finally {
+                    inFlight.decrementAndGet()
+                }
+            }
         }
 
-        assertEquals(cdns.size, peak.get())
+        withTimeout(5_000) { firstWaveStarted.await() }
+        assertEquals(maxConcurrency, started.get())
+        assertEquals(maxConcurrency, peak.get())
+        releaseFirstWave.complete(Unit)
+
+        val urls = result.await()
         assertEquals(cdns.size, urls.size)
+        assertTrue(peak.get() <= maxConcurrency)
     }
 
     @Test

@@ -4,6 +4,7 @@ import com.mylive.app.BuildConfig
 import com.mylive.app.core.common.CoreLog
 import com.mylive.app.core.common.safeUrlForLog
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -27,6 +28,7 @@ import java.net.Proxy
 import java.net.Socket
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 import timber.log.Timber
@@ -88,6 +90,24 @@ class RemoteSyncService @Inject constructor() {
     var onDouyinAccountReceived: ((overlay: Boolean, content: String) -> Unit)? = null
     var onRoomDestroyed: ((reason: String) -> Unit)? = null
     var onRoomUserUpdated: ((List<RemoteRoomUser>) -> Unit)? = null
+    private var callbackOwner: Any? = null
+
+    internal fun claimCallbacks(owner: Any) {
+        callbackOwner = owner
+    }
+
+    internal fun releaseCallbacks(owner: Any) {
+        if (callbackOwner !== owner) return
+        callbackOwner = null
+        onFavoriteReceived = null
+        onHistoryReceived = null
+        onShieldWordReceived = null
+        onBiliAccountReceived = null
+        onDouyinAccountReceived = null
+        onRoomDestroyed = null
+        onRoomUserUpdated = null
+        disconnect()
+    }
 
     private var pingThread: Thread? = null
     private val ipv4FirstDns = object : Dns {
@@ -114,6 +134,10 @@ class RemoteSyncService @Inject constructor() {
                 connectToTarget(connectionId, target, configuredProxyUrl)
                 return
             } catch (e: Exception) {
+                if (e is CancellationException) {
+                    cleanupConnection(connectionId)
+                    throw e
+                }
                 lastError = e
                 Timber.e(
                     e,
@@ -223,6 +247,87 @@ class RemoteSyncService @Inject constructor() {
 
     private fun isActiveConnection(connectionId: Long): Boolean {
         return activeConnectionId == connectionId
+    }
+
+    internal suspend fun probeServer(
+        configuredUrl: String,
+        configuredProxyUrl: String,
+        timeoutMillis: Long = 8_000L
+    ): RemoteSyncProbeResult = withContext(Dispatchers.IO) {
+        val baseUrl = configuredUrl.trim().ifEmpty { defaultSyncServerUrl }.trimEnd('/')
+        val probeUrl = if (URI(baseUrl).path.trimEnd('/').endsWith("/sync")) {
+            baseUrl
+        } else {
+            appendWebSocketPath(baseUrl, "/sync")
+        }
+        val requestId = "probe_${requestIdCounter.incrementAndGet()}"
+        val opened = CompletableDeferred<Unit>()
+        val pong = CompletableDeferred<Unit>()
+        val probeClientBuilder = OkHttpClient.Builder()
+            .dns(ipv4FirstDns)
+            .connectTimeout(timeoutMillis, TimeUnit.MILLISECONDS)
+        resolveProxy(configuredProxyUrl)?.let(probeClientBuilder::proxy)
+        val probeClient = probeClientBuilder.build()
+        var probeSocket: WebSocket? = null
+        val startedAt = System.nanoTime()
+
+        try {
+            probeSocket = probeClient.newWebSocket(
+                Request.Builder().url(probeUrl).build(),
+                object : WebSocketListener() {
+                    override fun onOpen(webSocket: WebSocket, response: Response) {
+                        opened.complete(Unit)
+                    }
+
+                    override fun onMessage(webSocket: WebSocket, text: String) {
+                        val message = runCatching { JSONObject(text) }.getOrNull() ?: return
+                        if (
+                            message.optString("type") == "pong" &&
+                            message.optString("requestId") == requestId
+                        ) {
+                            pong.complete(Unit)
+                        }
+                    }
+
+                    override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                        opened.completeExceptionally(t)
+                        pong.completeExceptionally(t)
+                    }
+
+                    override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                        if (!pong.isCompleted) {
+                            pong.completeExceptionally(Exception("同步服务在探测完成前关闭"))
+                        }
+                    }
+                }
+            )
+            withTimeout(timeoutMillis) {
+                opened.await()
+                val sent = probeSocket.send(
+                    JSONObject().apply {
+                        put("type", "ping")
+                        put("requestId", requestId)
+                    }.toString()
+                )
+                if (!sent) throw Exception("同步服务探测消息发送失败")
+                pong.await()
+            }
+            RemoteSyncProbeResult(
+                isReachable = true,
+                latencyMillis = (System.nanoTime() - startedAt) / 1_000_000L,
+                message = ""
+            )
+        } catch (error: TimeoutCancellationException) {
+            RemoteSyncProbeResult(false, null, "同步服务探测超时")
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            RemoteSyncProbeResult(false, null, formatConnectionError(error))
+        } finally {
+            probeSocket?.close(1000, "Probe complete")
+            probeClient.dispatcher.executorService.shutdown()
+            probeClient.connectionPool.evictAll()
+        }
     }
 
     @Synchronized
@@ -401,6 +506,7 @@ class RemoteSyncService @Inject constructor() {
             RemoteSyncResp(false, "同步服务响应超时", null)
         } catch (e: Exception) {
             pendingRequests.remove(reqId)
+            if (e is CancellationException) throw e
             RemoteSyncResp(false, e.message ?: "未知请求错误", null)
         }
     }
@@ -414,6 +520,7 @@ class RemoteSyncService @Inject constructor() {
         try {
             connect(createUrl, configuredProxyUrl, "/sync/create")
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             return RemoteSyncResp(false, e.message ?: "创建房间连接失败", null)
         }
         val resp = sendRequest("createRoom", payload = clientInfo)
@@ -438,6 +545,7 @@ class RemoteSyncService @Inject constructor() {
         try {
             connect(joinUrl, configuredProxyUrl, joinPath)
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             return RemoteSyncResp(false, e.message ?: "加入房间连接失败", null)
         }
         val resp = sendRequest("joinRoom", payload = clientInfo)
@@ -640,6 +748,12 @@ data class RemoteRoomUser(
     val app: String,
     val isCreator: Boolean,
     val isSelf: Boolean
+)
+
+data class RemoteSyncProbeResult(
+    val isReachable: Boolean,
+    val latencyMillis: Long?,
+    val message: String
 )
 
 data class RemoteSyncResp(

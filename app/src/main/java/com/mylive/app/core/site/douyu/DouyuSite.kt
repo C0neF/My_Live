@@ -6,6 +6,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import com.mylive.app.core.model.DanmakuArgs
 import com.mylive.app.core.model.LiveAnchorItem
 import com.mylive.app.core.model.LiveCategory
@@ -22,6 +24,7 @@ import com.mylive.app.core.model.PlayQualityData
 import com.mylive.app.core.common.WebSocketUtils
 import com.mylive.app.core.script.JsEngine
 import com.mylive.app.core.site.firstSiteImageUrl
+import com.mylive.app.core.site.FollowPresence
 import com.mylive.app.core.site.normalizeSiteImageUrl
 import com.mylive.app.core.site.LiveDanmakuSession
 import com.mylive.app.core.site.LiveSite
@@ -57,6 +60,7 @@ private val DOUYU_COVER_KEYS = listOf(
 
 internal const val DOUYU_SIGN_ARGS_TTL_MS = 60_000L
 private const val DOUYU_SEARCH_PAGE_SIZE = 20
+private const val DOUYU_PLAY_URL_MAX_CONCURRENCY = 5
 
 internal data class DouyuSignArgsCacheEntry(
     val value: String,
@@ -87,10 +91,8 @@ internal fun resolveDouyuRoomCoverUrl(item: JSONObject): String {
  * depend on each other, but they used to run in a sequential loop, so a room with five CDNs put
  * five round trips in front of the first video frame rather than one.
  *
- * The burst this creates is bounded by OkHttp, not by this function: `NetworkModule` installs no
- * custom `Dispatcher`, so `maxRequestsPerHost` is the default 5 and Douyu never sees more than
- * that at once — the same shape a browser produces. Raising that limit in `NetworkModule` would
- * quietly widen this burst too.
+ * The burst is explicitly capped at five requests here. [HttpClient] uses synchronous OkHttp
+ * calls, so OkHttp's asynchronous dispatcher limit does not protect this path.
  *
  * Two behaviours are preserved on purpose:
  * - **Order.** The result doubles as the CDN preference order — [getPlayQualites] sorts `scdn`
@@ -102,16 +104,19 @@ internal suspend fun resolveDouyuPlayUrls(
     cdns: List<String>,
     fetchUrl: suspend (cdn: String) -> String
 ): List<String> = coroutineScope {
+    val permits = Semaphore(DOUYU_PLAY_URL_MAX_CONCURRENCY)
     cdns
         .map { cdn ->
             async {
-                try {
-                    fetchUrl(cdn)
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    CoreLog.e("Failed to get play URL for CDN $cdn", e)
-                    ""
+                permits.withPermit {
+                    try {
+                        fetchUrl(cdn)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        CoreLog.e("Failed to get play URL for CDN $cdn", e)
+                        ""
+                    }
                 }
             }
         }
@@ -286,15 +291,7 @@ class DouyuSite @Inject constructor(
     override suspend fun getRoomDetail(roomId: String): LiveRoomDetail {
         val roomInfo = getRoomInfo(roomId)
 
-        val h5RoomInfo = httpClient.getJson(
-            "https://www.douyu.com/swf_api/h5room/$roomId",
-            queryParameters = emptyMap(),
-            header = mapOf(
-                "referer" to "https://www.douyu.com/$roomId",
-                "user-agent" to DEFAULT_USER_AGENT
-            )
-        ) as JSONObject
-        val showTime = h5RoomInfo.optJSONObject("data")?.optNullableStringValue("show_time")
+        val showTime = getRoomShowTime(roomId)
 
         getFreshSignArgs(roomId, forceRefresh = true)
 
@@ -327,6 +324,18 @@ class DouyuSite @Inject constructor(
             categoryPic = roomInfo.optNullableStringValue("game_icon")
                 ?: roomInfo.optNullableStringValue("game_icon_url")
         )
+    }
+
+    private suspend fun getRoomShowTime(roomId: String): String? {
+        val h5RoomInfo = httpClient.getJson(
+            "https://www.douyu.com/swf_api/h5room/$roomId",
+            queryParameters = emptyMap(),
+            header = mapOf(
+                "referer" to "https://www.douyu.com/$roomId",
+                "user-agent" to DEFAULT_USER_AGENT
+            )
+        ) as JSONObject
+        return h5RoomInfo.optJSONObject("data")?.optNullableStringValue("show_time")
     }
 
     // ── Play qualities ──────────────────────────────────────────────────
@@ -561,6 +570,23 @@ class DouyuSite @Inject constructor(
     override suspend fun getLiveStatus(roomId: String): Boolean {
         val roomInfo = getRoomInfo(roomId)
         return roomInfo.optInt("show_status") == 1 && roomInfo.optInt("videoLoop") != 1
+    }
+
+    override suspend fun getFollowPresence(roomId: String): FollowPresence {
+        val roomInfo = getRoomInfo(roomId)
+        val isLive = roomInfo.optInt("show_status") == 1 && roomInfo.optInt("videoLoop") != 1
+        val showTime = if (isLive) {
+            try {
+                getRoomShowTime(roomId)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                null
+            }
+        } else {
+            null
+        }
+        return FollowPresence(isLive = isLive, showTime = showTime)
     }
 
     // ── Super chat ──────────────────────────────────────────────────────

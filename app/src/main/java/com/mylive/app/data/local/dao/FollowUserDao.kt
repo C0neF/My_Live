@@ -1,11 +1,20 @@
 package com.mylive.app.data.local.dao
 
 import androidx.room.Dao
+import androidx.room.ColumnInfo
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Update
 import com.mylive.app.data.local.entity.FollowUserEntity
 import kotlinx.coroutines.flow.Flow
+
+data class FollowLiveStatusUpdate(
+    @ColumnInfo(name = "id") val id: String,
+    @ColumnInfo(name = "liveStatus") val liveStatus: Int,
+    @ColumnInfo(name = "liveStartTime") val liveStartTime: Long?,
+    @ColumnInfo(name = "showTime") val showTime: String?
+)
 
 @Dao
 interface FollowUserDao {
@@ -35,6 +44,9 @@ interface FollowUserDao {
 
     @Query("UPDATE follow_users SET liveStatus = :status, liveStartTime = :startTime, showTime = :showTime WHERE id = :id")
     suspend fun updateLiveStatus(id: String, status: Int, startTime: Long?, showTime: String? = null)
+
+    @Update(entity = FollowUserEntity::class)
+    suspend fun updateLiveStatuses(updates: List<FollowLiveStatusUpdate>)
 
     @Query("UPDATE follow_users SET isSpecialFollow = :specialValue WHERE id = :id")
     suspend fun updateSpecialFollow(id: String, specialValue: Boolean)

@@ -23,6 +23,8 @@ import com.mylive.app.core.site.AccountAwareLiveSite
 import com.mylive.app.core.site.firstSiteImageUrl
 import com.mylive.app.core.site.LiveDanmakuSession
 import com.mylive.app.core.site.LiveSiteAccount
+import com.mylive.app.core.site.FollowPresence
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeout
 import okhttp3.OkHttpClient
@@ -124,7 +126,8 @@ private fun resolveLegacyDouyinQualityUrl(
 class DouyinSite @Inject constructor(
     private val httpClient: HttpClient,
     private val jsEngineProvider: Provider<JsEngine>,
-    private val okHttpClient: OkHttpClient
+    private val okHttpClient: OkHttpClient,
+    private val accounts: com.mylive.app.core.site.LiveSiteAccountStore
 ) : AccountAwareLiveSite {
 
     override val id: String = "douyin"
@@ -231,7 +234,8 @@ class DouyinSite @Inject constructor(
      * Build the base request headers (Authority, Referer, User-Agent, cookie).
      * If [cookie] is set, uses that; otherwise falls back to [DEFAULT_COOKIE].
      */
-    private fun getRequestHeaders(): MutableMap<String, String> {
+    private suspend fun getRequestHeaders(): MutableMap<String, String> {
+        updateAccountCookie(accounts.cookieFor(accountKey))
         val headers = mutableMapOf(
             "Authority" to DEFAULT_AUTHORITY,
             "Referer" to DEFAULT_REFERER,
@@ -777,7 +781,10 @@ class DouyinSite @Inject constructor(
     /**
      * Fetch room data from the `webcast/room/web/enter/` API with A-Bogus signing.
      */
-    private suspend fun getRoomDataByApi(webRid: String): JSONObject {
+    private suspend fun getRoomDataByApi(
+        webRid: String,
+        allowEmptyRoomList: Boolean = false
+    ): JSONObject {
         val requestHeaders = getRequestHeaders()
         requestHeaders["Referer"] = "https://live.douyin.com/$webRid"
 
@@ -804,11 +811,15 @@ class DouyinSite @Inject constructor(
         if (result !is JSONObject) {
             throw Exception("抖音接口返回格式异常")
         }
+        val apiStatusCode = result.optInt("status_code", 0)
+        if (apiStatusCode != 0) {
+            throw CoreError("抖音接口返回错误（status_code=$apiStatusCode）")
+        }
 
         val data = result.optJSONObject("data")
             ?: throw CoreError("抖音直播间数据为空，请稍后再试")
         val rooms = data.optJSONArray("data")
-        if (rooms == null || rooms.length() == 0) {
+        if (rooms == null || (!allowEmptyRoomList && rooms.length() == 0)) {
             throw CoreError("抖音直播间数据为空，可能是房间不存在、未开播或被风控限制")
         }
 
@@ -1182,7 +1193,56 @@ class DouyinSite @Inject constructor(
     // ── Live status ─────────────────────────────────────────────────────────
 
     override suspend fun getLiveStatus(roomId: String): Boolean {
-        return getRoomDetail(roomId).status
+        return getFollowPresence(roomId).isLive
+    }
+
+    override suspend fun getFollowPresence(roomId: String): FollowPresence {
+        val targetId = roomId.trim()
+        if (targetId.isEmpty()) throw CoreError("抖音房间号不能为空")
+
+        var lastError: Throwable? = null
+        for (route in douyinStatusLookupOrder(targetId)) {
+            try {
+                val isLive = when (route) {
+                    DouyinStatusLookupRoute.WebRid -> getLiveStatusByWebRid(targetId)
+                    DouyinStatusLookupRoute.RoomId -> getLiveStatusByRoomId(targetId)
+                }
+                return FollowPresence(isLive = isLive)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: CoreError) {
+                if (error.statusCode == 444) throw error
+                lastError = error
+            } catch (error: Exception) {
+                lastError = error
+            }
+        }
+        throw lastError ?: CoreError("抖音直播状态未知，请稍后重试")
+    }
+
+    private suspend fun getLiveStatusByWebRid(webRid: String): Boolean {
+        throttleRoomDetailRequest()
+        val data = getRoomDataByApi(webRid, allowEmptyRoomList = true)
+        val rooms = data.optJSONArray("data")
+            ?: throw CoreError("抖音直播状态数据为空")
+        if (rooms.length() == 0) {
+            if (data.optJSONObject("user") != null) return false
+            throw CoreError("抖音直播状态为空且缺少主播信息")
+        }
+        val room = rooms.optJSONObject(0)
+            ?: throw CoreError("抖音直播状态数据为空")
+        return parseDouyinLiveStatus(room)
+            ?: throw CoreError("抖音直播状态字段缺失")
+    }
+
+    private suspend fun getLiveStatusByRoomId(roomId: String): Boolean {
+        throttleRoomDetailRequest()
+        val room = getRoomDataByRoomId(roomId)
+            .optJSONObject("data")
+            ?.optJSONObject("room")
+            ?: throw CoreError("抖音直播状态数据为空")
+        return parseDouyinLiveStatus(room)
+            ?: throw CoreError("抖音直播状态字段缺失")
     }
 
     // ── Super chat (not supported on Douyin) ────────────────────────────────

@@ -42,6 +42,80 @@ class RemoteSyncServiceTest {
     }
 
     @Test
+    fun probeUsesProtocolPingPongWithoutTakingOverTheRoomConnection() = runBlocking {
+        val server = MockWebServer()
+        server.enqueue(
+            MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
+                override fun onMessage(webSocket: WebSocket, text: String) {
+                    val request = JSONObject(text)
+                    if (request.optString("type") == "ping") {
+                        webSocket.send(
+                            JSONObject().apply {
+                                put("type", "pong")
+                                put("requestId", request.optString("requestId"))
+                            }.toString()
+                        )
+                    }
+                }
+
+                override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                    webSocket.close(code, reason)
+                }
+            })
+        )
+        server.start()
+        val service = RemoteSyncService()
+
+        try {
+            val baseUrl = server.url("/").toString().trimEnd('/').replace("http://", "ws://")
+            val result = service.probeServer(
+                configuredUrl = baseUrl,
+                configuredProxyUrl = RemoteSyncService.K_DIRECT_PROXY_VALUE,
+                timeoutMillis = 2_000L
+            )
+
+            assertTrue(result.isReachable)
+            assertTrue((result.latencyMillis ?: -1L) >= 0L)
+            assertEquals(RemoteSyncConnectionState.DISCONNECTED, service.connectionState.value)
+            assertEquals("/sync", server.takeRequest(2, TimeUnit.SECONDS)?.path)
+        } finally {
+            service.disconnect()
+            server.shutdown()
+        }
+    }
+
+    @Test
+    fun probeTreatsAWebSocketWithoutProtocolPongAsUnavailable() = runBlocking {
+        val server = MockWebServer()
+        server.enqueue(
+            MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
+                override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                    webSocket.close(code, reason)
+                }
+            })
+        )
+        server.start()
+        val service = RemoteSyncService()
+
+        try {
+            val baseUrl = server.url("/").toString().trimEnd('/').replace("http://", "ws://")
+            val result = service.probeServer(
+                configuredUrl = baseUrl,
+                configuredProxyUrl = RemoteSyncService.K_DIRECT_PROXY_VALUE,
+                timeoutMillis = 200L
+            )
+
+            assertFalse(result.isReachable)
+            assertEquals(null, result.latencyMillis)
+            assertTrue(result.message.contains("超时"))
+            assertEquals(RemoteSyncConnectionState.DISCONNECTED, service.connectionState.value)
+        } finally {
+            service.disconnect()
+            server.shutdown()
+        }
+    }
+
+    @Test
     fun createRoomConnectsAndReturnsRoomId() = runBlocking {
         val server = MockWebServer()
         enqueueCreateRoomWs(server, "ABC123")

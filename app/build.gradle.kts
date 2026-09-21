@@ -74,8 +74,23 @@ android {
                 "proguard-rules.pro"
             )
         }
+        create("qa") {
+            // Install alongside the regular app while exercising the release shrinker.
+            initWith(getByName("release"))
+            applicationIdSuffix = ".qa"
+            versionNameSuffix = "-qa"
+            ndk {
+                abiFilters += listOf("x86", "x86_64")
+            }
+            signingConfig = signingConfigs.getByName("debug")
+            matchingFallbacks += listOf("release")
+        }
         create("benchmark") {
             initWith(getByName("release"))
+            // Macrobenchmark may run on either physical ARM devices or x86/x86_64 emulators.
+            ndk {
+                abiFilters += listOf("x86", "x86_64")
+            }
             signingConfig = signingConfigs.getByName("debug")
             matchingFallbacks += listOf("release")
             isDebuggable = false

@@ -8,14 +8,25 @@ import java.io.File
 class MacrobenchmarkSetupTest {
 
     @Test
-    fun projectDoesNotRequireIgnoredLocalMacrobenchmarkModule() {
+    fun projectIncludesTrackedMacrobenchmarkModuleWithoutDroppingEmulatorAbis() {
         val root = findProjectRoot()
 
         val settings = root.resolve("settings.gradle.kts").readText()
         val gitignore = root.resolve(".gitignore").readText()
+        val ignoredEntries = gitignore.lineSequence()
+            .map(String::trim)
+            .filter { it.isNotEmpty() && !it.startsWith("#") }
+            .toSet()
+        val appBuild = root.resolve("app/build.gradle.kts").readText()
+        val benchmarkBuildType = appBuild.substringAfter("create(\"benchmark\")")
+            .substringBefore("compileOptions")
 
-        assertFalse(settings.contains("include(\":macrobenchmark\")"))
-        assertTrue(gitignore.contains("/macrobenchmark/"))
+        assertTrue(settings.contains("include(\":macrobenchmark\")"))
+        assertTrue(root.resolve("macrobenchmark/build.gradle.kts").isFile)
+        assertFalse(ignoredEntries.contains("/macrobenchmark/"))
+        assertTrue(ignoredEntries.contains("/macrobenchmark/build/"))
+        assertTrue(benchmarkBuildType.contains("\"x86\""))
+        assertTrue(benchmarkBuildType.contains("\"x86_64\""))
     }
 
     private fun findProjectRoot(): File {

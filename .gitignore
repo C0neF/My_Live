@@ -42,8 +42,11 @@ PRODUCT.md
 # Local tools (sync server, workers, etc.)
 /tools/
 
-# Macrobenchmark module (local performance testing only)
-/macrobenchmark/
+# Macrobenchmark module: tracked now that it is wired into settings.gradle.kts, so the
+# performance numbers behind v3 changes are reproducible by anyone with the repo and a device.
+/macrobenchmark/build/
 
-# Documentation (local only)
-/docs/
+# Documentation is local except for the performance contract used by the tracked benchmark module.
+/docs/*
+!/docs/performance-baseline.md
+!/docs/performance-sampling.md

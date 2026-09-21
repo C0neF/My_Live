@@ -6,7 +6,9 @@ import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Test
+import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 class WebDavBackupUploadTest {
@@ -75,6 +77,62 @@ class WebDavBackupUploadTest {
             assertEquals("/backups/mylive_profile_backup.json", retryPut.path)
             assertEquals(expectedAuth, retryPut.getHeader("Authorization"))
             assertEquals("""{"ok":true}""", retryPut.body.readUtf8())
+        } finally {
+            server.shutdown()
+        }
+    }
+
+    @Test
+    fun uploadRepairsMissingParentWhenServerSignalsForbiddenOnInitialPut() {
+        val server = MockWebServer()
+        server.enqueue(MockResponse().setResponseCode(403))
+        server.enqueue(MockResponse().setResponseCode(201))
+        server.enqueue(MockResponse().setResponseCode(204))
+        server.start()
+
+        try {
+            val backupUrl = server.url("/backups/mylive_profile_backup.json").toString()
+
+            uploadWebDavBackup(
+                okHttpClient = OkHttpClient(),
+                backupUrl = backupUrl,
+                username = "alice",
+                password = "secret",
+                backupJson = """{"ok":true}"""
+            )
+
+            assertEquals("PUT", server.takeRequest().method)
+            assertEquals("MKCOL", server.takeRequest().method)
+            assertEquals("PUT", server.takeRequest().method)
+        } finally {
+            server.shutdown()
+        }
+    }
+
+    @Test
+    fun genuineForbiddenCollectionStillFailsWithoutReportingBackupSuccess() {
+        val server = MockWebServer()
+        server.enqueue(MockResponse().setResponseCode(403))
+        server.enqueue(MockResponse().setResponseCode(403))
+        server.start()
+
+        try {
+            val backupUrl = server.url("/private/mylive_profile_backup.json").toString()
+
+            val error = assertThrows(IOException::class.java) {
+                uploadWebDavBackup(
+                    okHttpClient = OkHttpClient(),
+                    backupUrl = backupUrl,
+                    username = "alice",
+                    password = "wrong",
+                    backupJson = """{"ok":true}"""
+                )
+            }
+
+            assertEquals("HTTP 403: Client Error", error.message)
+            assertEquals("PUT", server.takeRequest().method)
+            assertEquals("MKCOL", server.takeRequest(1, TimeUnit.SECONDS)?.method)
+            assertNull(server.takeRequest(100, TimeUnit.MILLISECONDS))
         } finally {
             server.shutdown()
         }

@@ -26,6 +26,18 @@ class PlaybackForegroundService : Service() {
         const val NOTIFICATION_ID = 1001
 
         private var activePlayerRef: java.lang.ref.WeakReference<Player>? = null
+        private var instance: PlaybackForegroundService? = null
+        private var pendingStart: (() -> Unit)? = null
+
+        /** Rebind only the session currently handed off to this service. */
+        fun replacePlayer(previous: Player, replacement: Player) {
+            if (activePlayer !== previous) return
+            activePlayer = replacement
+            instance?.let { service ->
+                service.bindPlayer(replacement)
+                service.updateNotification()
+            }
+        }
 
         var activePlayer: Player?
             get() = activePlayerRef?.get()
@@ -52,12 +64,14 @@ class PlaybackForegroundService : Service() {
             player: Player,
             title: String,
             anchor: String,
-            platform: String
+            platform: String,
+            onReady: (() -> Unit)? = null
         ): Boolean {
             activePlayer = player
             roomTitle = title
             anchorName = anchor
             platformName = platform
+            pendingStart = onReady
             val intent = Intent(context, PlaybackForegroundService::class.java)
             return try {
                 context.startForegroundService(intent)
@@ -67,11 +81,13 @@ class PlaybackForegroundService : Service() {
                 // (a subclass) on API 31+. Neither is recoverable here.
                 CoreLog.w("PlaybackForegroundService: background playback hand-off refused: ${e.message}")
                 activePlayer = null
+                pendingStart = null
                 false
             }
         }
 
         fun stop(context: Context) {
+            pendingStart = null
             val intent = Intent(context, PlaybackForegroundService::class.java)
             context.stopService(intent)
         }
@@ -92,15 +108,28 @@ class PlaybackForegroundService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        listeningTo = activePlayer?.also { it.addListener(playerListener) }
+        instance = this
+        bindPlayer(activePlayer)
+    }
+
+    private fun bindPlayer(player: Player?) {
+        if (listeningTo === player) return
+        listeningTo?.removeListener(playerListener)
+        listeningTo = player
+        player?.addListener(playerListener)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (stopping) return START_NOT_STICKY
+        bindPlayer(activePlayer)
         when (intent?.action) {
-            ACTION_PLAY -> activePlayer?.play()
-            ACTION_PAUSE -> activePlayer?.pause()
+            ACTION_PAUSE -> {
+                pendingStart = null
+                activePlayer?.pause()
+            }
             ACTION_STOP -> {
                 stopping = true
+                pendingStart = null
                 activePlayer?.pause()
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
@@ -110,6 +139,14 @@ class PlaybackForegroundService : Service() {
             }
         }
         updateNotification()
+        // API 35+ requires a foreground app or an active FGS before requesting audio focus.
+        // Execute the session's still-current request only after startForeground completes.
+        if (intent?.action == ACTION_PLAY) activePlayer?.play()
+        if (intent?.action == null) {
+            val ready = pendingStart
+            pendingStart = null
+            ready?.invoke()
+        }
         return START_NOT_STICKY
     }
 
@@ -126,7 +163,10 @@ class PlaybackForegroundService : Service() {
         )
         manager.createNotificationChannel(channel)
 
-        val notificationIntent = Intent(this, MainActivity::class.java)
+        val notificationIntent = Intent(this, MainActivity::class.java).apply {
+            // Resume the activity that owns this room and its navigation state.
+            flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+        }
         val pendingIntent = PendingIntent.getActivity(
             this, 0, notificationIntent,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
@@ -173,6 +213,9 @@ class PlaybackForegroundService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        if (instance === this) {
+            instance = null
+        }
         // Detach from the player this instance actually attached to, and only clear the static
         // reference if it still points there: a new room may already have published its own
         // player while this instance was being torn down.
@@ -181,6 +224,7 @@ class PlaybackForegroundService : Service() {
         attached?.removeListener(playerListener)
         if (attached != null && activePlayer === attached) {
             activePlayer = null
+            pendingStart = null
         }
     }
 

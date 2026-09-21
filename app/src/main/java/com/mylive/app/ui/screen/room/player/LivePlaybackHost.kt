@@ -24,10 +24,12 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.mylive.app.core.model.TabletOrientationMode
 import com.mylive.app.data.repository.LiveRoomPreferences
 import com.mylive.app.data.repository.SettingsRepository
-import com.mylive.app.ui.motion.AppMotion
-import kotlinx.coroutines.delay
+import com.mylive.app.ui.orientation.resolveTabletOrientationMode
+import com.mylive.app.ui.layout.LocalAppLayout
+import com.mylive.app.ui.orientation.tabletRequestedOrientation
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -53,19 +55,22 @@ internal class LivePlaybackHost internal constructor(
     val isInPictureInPicture: Boolean,
     val isFullscreen: Boolean,
     private val playbackSession: LivePlaybackSession?,
-    private val activity: Activity?
+    private val activity: Activity?,
+    private val tabletOrientationMode: TabletOrientationMode?
 ) {
     fun toggleFullscreen() {
         playbackSession?.toggleFullscreen()
     }
 
     fun prepareToLeave() {
-        activity?.let(::prepareLivePlaybackHostExit)
+        activity?.let {
+            prepareLivePlaybackHostExit(
+                activity = it,
+                tabletOrientationMode = tabletOrientationMode
+            )
+        }
     }
 
-    fun pause() {
-        playbackSession?.pause()
-    }
 }
 
 /**
@@ -82,15 +87,25 @@ internal fun rememberLivePlaybackHost(
     exiting: Boolean,
     binding: LivePlaybackSessionBinding,
     settingsRepository: SettingsRepository,
-    onPlaybackSourceExhausted: () -> Unit
+    onPlaybackSourceExhausted: () -> Boolean
 ): LivePlaybackHost {
     val context = LocalContext.current
     val activity = context as? Activity
     val componentActivity = context as? ComponentActivity
     val liveRoomView = LocalView.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    val isLandscape =
-        LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val tabletOrientationMode = if (
+        LocalAppLayout.current.tablet
+    ) {
+        resolveTabletOrientationMode(
+            storedMode = preferences.tabletOrientationMode,
+            currentConfigurationOrientation = configuration.orientation
+        )
+    } else {
+        null
+    }
     val currentContent = rememberUpdatedState(content)
     val currentPreferences = rememberUpdatedState(preferences)
     val currentSourceExhausted = rememberUpdatedState(onPlaybackSourceExhausted)
@@ -120,7 +135,6 @@ internal fun rememberLivePlaybackHost(
     val playerController = playbackSession?.playerController
 
     LaunchedEffect(binding, settingsRepository) {
-        delay(AppMotion.LiveRoomPlayerStartupDelayMillis.toLong())
         val startupPreferences = settingsRepository.liveRoomPreferences.first()
         val session = LivePlaybackSession.create(
             context = context,
@@ -217,11 +231,15 @@ internal fun rememberLivePlaybackHost(
         content.routeRoomId,
         content.routeSiteId,
         content.roomReady,
-        isFullscreen
+        isFullscreen,
+        tabletOrientationMode
     ) {
         val route = content.routeSiteId to content.routeRoomId
         if (
-            preferences.autoFullScreen &&
+            shouldApplyLivePlaybackAutoFullscreen(
+                autoFullScreen = preferences.autoFullScreen,
+                tabletOrientationMode = tabletOrientationMode
+            ) &&
             playerController != null &&
             content.roomReady &&
             autoFullscreenAppliedRoute != route &&
@@ -234,11 +252,13 @@ internal fun rememberLivePlaybackHost(
 
     var wasFullscreen by remember { mutableStateOf(false) }
     var restorePortraitAfterFullscreen by remember { mutableStateOf(false) }
-    LaunchedEffect(isFullscreen) {
+    LaunchedEffect(isFullscreen, tabletOrientationMode) {
         if (isFullscreen) {
             restorePortraitAfterFullscreen = false
-        } else if (wasFullscreen) {
+        } else if (wasFullscreen && tabletOrientationMode == null) {
             restorePortraitAfterFullscreen = true
+        } else if (tabletOrientationMode != null) {
+            restorePortraitAfterFullscreen = false
         }
         wasFullscreen = isFullscreen
     }
@@ -248,24 +268,35 @@ internal fun rememberLivePlaybackHost(
         }
     }
 
-    LaunchedEffect(isFullscreen, controlsLocked, restorePortraitAfterFullscreen) {
+    LaunchedEffect(
+        isFullscreen,
+        controlsLocked,
+        restorePortraitAfterFullscreen,
+        tabletOrientationMode
+    ) {
         activity?.let {
             applyLivePlaybackHostWindow(
                 activity = it,
                 fullscreen = isFullscreen,
                 controlsLocked = controlsLocked,
-                restorePortrait = restorePortraitAfterFullscreen
+                restorePortrait = restorePortraitAfterFullscreen,
+                tabletOrientationMode = tabletOrientationMode
             )
         }
     }
 
-    DisposableEffect(activity, liveRoomView) {
+    DisposableEffect(activity, liveRoomView, tabletOrientationMode) {
         liveRoomView.keepScreenOn = true
         keepLivePlaybackHostAwake(activity, true)
         onDispose {
             liveRoomView.keepScreenOn = false
             keepLivePlaybackHostAwake(activity, false)
-            activity?.let(::restoreLivePlaybackHostWindow)
+            activity?.let {
+                restoreLivePlaybackHostWindow(
+                    activity = it,
+                    tabletOrientationMode = tabletOrientationMode
+                )
+            }
         }
     }
 
@@ -277,14 +308,16 @@ internal fun rememberLivePlaybackHost(
         isInPictureInPicture,
         isFullscreen,
         playbackSession,
-        activity
+        activity,
+        tabletOrientationMode
     ) {
         LivePlaybackHost(
             playerController = playerController,
             isInPictureInPicture = isInPictureInPicture,
             isFullscreen = isFullscreen,
             playbackSession = playbackSession,
-            activity = activity
+            activity = activity,
+            tabletOrientationMode = tabletOrientationMode
         )
     }
 }
@@ -312,26 +345,37 @@ internal fun shouldResumeLivePlaybackOnForeground(
 internal fun livePlaybackHostRequestedOrientation(
     fullscreen: Boolean,
     controlsLocked: Boolean,
-    restorePortrait: Boolean = false
+    restorePortrait: Boolean = false,
+    tabletOrientationMode: TabletOrientationMode? = null
 ): Int {
     return when {
         controlsLocked -> ActivityInfo.SCREEN_ORIENTATION_LOCKED
         fullscreen -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        tabletOrientationMode != null -> tabletRequestedOrientation(tabletOrientationMode)
         restorePortrait -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         else -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
     }
+}
+
+internal fun shouldApplyLivePlaybackAutoFullscreen(
+    autoFullScreen: Boolean,
+    tabletOrientationMode: TabletOrientationMode?
+): Boolean {
+    return autoFullScreen && tabletOrientationMode != TabletOrientationMode.Portrait
 }
 
 private fun applyLivePlaybackHostWindow(
     activity: Activity,
     fullscreen: Boolean,
     controlsLocked: Boolean,
-    restorePortrait: Boolean
+    restorePortrait: Boolean,
+    tabletOrientationMode: TabletOrientationMode?
 ) {
     activity.requestedOrientation = livePlaybackHostRequestedOrientation(
         fullscreen = fullscreen,
         controlsLocked = controlsLocked,
-        restorePortrait = restorePortrait
+        restorePortrait = restorePortrait,
+        tabletOrientationMode = tabletOrientationMode
     )
     if (fullscreen) {
         WindowCompat.setDecorFitsSystemWindows(activity.window, false)
@@ -347,17 +391,28 @@ private fun applyLivePlaybackHostWindow(
     }
 }
 
-private fun prepareLivePlaybackHostExit(activity: Activity) {
-    if (activity.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
+private fun prepareLivePlaybackHostExit(
+    activity: Activity,
+    tabletOrientationMode: TabletOrientationMode?
+) {
+    if (tabletOrientationMode != null) {
+        activity.requestedOrientation = tabletRequestedOrientation(tabletOrientationMode)
+    } else if (
+        activity.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+    ) {
         activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-        WindowCompat.setDecorFitsSystemWindows(activity.window, true)
-        WindowCompat.getInsetsController(activity.window, activity.window.decorView)
-            .show(WindowInsetsCompat.Type.systemBars())
     }
+    WindowCompat.setDecorFitsSystemWindows(activity.window, true)
+    WindowCompat.getInsetsController(activity.window, activity.window.decorView)
+        .show(WindowInsetsCompat.Type.systemBars())
 }
 
-private fun restoreLivePlaybackHostWindow(activity: Activity) {
-    activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+private fun restoreLivePlaybackHostWindow(
+    activity: Activity,
+    tabletOrientationMode: TabletOrientationMode?
+) {
+    activity.requestedOrientation = tabletOrientationMode?.let(::tabletRequestedOrientation)
+        ?: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
     WindowCompat.setDecorFitsSystemWindows(activity.window, true)
     WindowCompat.getInsetsController(activity.window, activity.window.decorView)
         .show(WindowInsetsCompat.Type.systemBars())

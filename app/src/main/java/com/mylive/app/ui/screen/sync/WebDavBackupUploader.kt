@@ -28,7 +28,7 @@ internal fun uploadWebDavBackup(
         backupJson = backupJson
     ) ?: return
 
-    if (firstFailure.code != 404 && firstFailure.code != 409) {
+    if (firstFailure.code != 403 && firstFailure.code != 404 && firstFailure.code != 409) {
         throw firstFailure.toIOException()
     }
 

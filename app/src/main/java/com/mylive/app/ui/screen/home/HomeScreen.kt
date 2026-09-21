@@ -23,6 +23,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -42,6 +45,7 @@ import com.mylive.app.ui.component.status.ErrorState
 import com.mylive.app.ui.component.status.LiveRoomCardSkeleton
 import com.mylive.app.ui.component.status.LiveRoomGridSkeleton
 import com.mylive.app.ui.motion.AppMotion
+import com.mylive.app.ui.motion.LocalAppMotionPolicy
 import com.mylive.app.ui.screen.backToTopButtonVisible
 import com.mylive.app.ui.screen.isScrollableContentAtTop
 import com.mylive.app.ui.theme.livePlatformAccentColor
@@ -67,6 +71,7 @@ fun HomeScreen(
     homeLiveRoomGridColumns: Int? = null,
     viewModel: HomeViewModel = hiltViewModel()
 ) {
+    val motionPolicy = LocalAppMotionPolicy.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val siteTabs by viewModel.siteTabs.collectAsStateWithLifecycle()
     val selectedTab = homeSelectedPlatformIndex(siteTabs = siteTabs, siteId = uiState.siteId)
@@ -116,6 +121,7 @@ fun HomeScreen(
                 modifier = Modifier
                     .weight(1f)
                     .height(36.dp)
+                    .testTag("home_search")
                     .background(
                         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
                         shape = RoundedCornerShape(18.dp)
@@ -200,17 +206,20 @@ fun HomeScreen(
                                     selectHomeSite(targetIndex)
                                     return@launch
                                 }
-                                homePlatformPreJumpPageForTarget(
-                                    currentPage = pagerState.currentPage,
-                                    targetPage = targetIndex
-                                )?.let { preJumpPage ->
-                                    pagerState.scrollToPage(preJumpPage)
+                                if (motionPolicy.reducedMotion) {
+                                    pagerState.scrollToPage(targetIndex)
+                                } else {
+                                    homePlatformPreJumpPageForTarget(
+                                        currentPage = pagerState.currentPage,
+                                        targetPage = targetIndex
+                                    )?.let { preJumpPage ->
+                                        pagerState.scrollToPage(preJumpPage)
+                                    }
+                                    pagerState.animateScrollToPage(
+                                        page = targetIndex,
+                                        animationSpec = AppMotion.pagerSpec()
+                                    )
                                 }
-                                val diff = targetIndex - pagerState.currentPage
-                                pagerState.animateScrollToPage(
-                                    page = targetIndex,
-                                    animationSpec = AppMotion.pagerSpec(diff)
-                                )
                             }
                         }
                     )
@@ -424,6 +433,8 @@ private fun HomePlatformTab(
 
     Column(
         modifier = Modifier
+            .testTag("home_platform_$platformId")
+            .semantics { selected = isSelected }
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,

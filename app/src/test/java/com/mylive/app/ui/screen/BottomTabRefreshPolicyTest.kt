@@ -5,9 +5,38 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import com.mylive.app.core.model.AppLayoutMode
+import com.mylive.app.ui.layout.resolveAppLayout
 import java.io.File
 
 class BottomTabRefreshPolicyTest {
+
+    @Test
+    fun hapticRunsOnlyForAnActualPhoneBottomTabSwitch() {
+        var hapticCount = 0
+        val performHaptic = { hapticCount += 1 }
+
+        performBottomTabSwitchHapticIfNeeded(
+            currentKey = "recommend",
+            clickedKey = "follow",
+            useSideNavigation = false,
+            performHaptic = performHaptic
+        )
+        performBottomTabSwitchHapticIfNeeded(
+            currentKey = "follow",
+            clickedKey = "follow",
+            useSideNavigation = false,
+            performHaptic = performHaptic
+        )
+        performBottomTabSwitchHapticIfNeeded(
+            currentKey = "follow",
+            clickedKey = "category",
+            useSideNavigation = true,
+            performHaptic = performHaptic
+        )
+
+        assertEquals(1, hapticCount)
+    }
 
     @Test
     fun homeAndFollowRepeatClicksRefreshEvenWhenScrolled() {
@@ -105,7 +134,7 @@ class BottomTabRefreshPolicyTest {
         assertTrue(source.contains("private fun IndexSideNavigationRail("))
         assertTrue(source.contains("RoundedCornerShape(20.dp)"))
         assertTrue(source.contains("color = MaterialTheme.colorScheme.surfaceVariant"))
-        assertTrue(source.contains("val useSideNavigation = indexUseSideNavigation("))
+        assertTrue(source.contains("val useSideNavigation = appLayout.useNavigationRail"))
         assertTrue(source.contains("if (useSideNavigation)"))
     }
 
@@ -114,10 +143,22 @@ class BottomTabRefreshPolicyTest {
         val source = readMainSource("com/mylive/app/ui/screen/IndexScreen.kt")
         val railSource = source.substringAfter("private fun IndexSideNavigationRail(")
 
-        assertTrue(railSource.contains(".width(indexSideNavigationRailWidthDp().dp)"))
+        assertTrue(railSource.contains(".width(LocalAppLayout.current.navigationRailWidthDp.dp)"))
         assertTrue(railSource.contains(".statusBarsPadding()"))
         assertTrue(railSource.contains(".navigationBarsPadding()"))
-        assertEquals(96, indexSideNavigationRailWidthDp())
+        assertEquals(96, resolveAppLayout(AppLayoutMode.Tablet, 800, 1200, 800, 1f).navigationRailWidthDp)
+    }
+
+    @Test
+    fun tabletRailProvidesAReachableFixedOrientationSwitch() {
+        val source = readMainSource("com/mylive/app/ui/screen/IndexScreen.kt")
+        val toggleSource = source.substringAfter("private fun TabletOrientationToggleButton(")
+
+        assertTrue(source.contains("tabletOrientationMode = tabletOrientationMode"))
+        assertTrue(source.contains("onToggleTabletOrientation"))
+        assertTrue(toggleSource.contains(".size(48.dp)"))
+        assertTrue(toggleSource.contains(".testTag(\"tablet_orientation_toggle\")"))
+        assertTrue(toggleSource.contains("contentDescription = switchDescription"))
     }
 
     @Test
@@ -132,9 +173,9 @@ class BottomTabRefreshPolicyTest {
 
     @Test
     fun sideNavigationStartsAtTabletWidth() {
-        assertFalse(indexUseSideNavigation(screenWidthDp = 599))
-        assertTrue(indexUseSideNavigation(screenWidthDp = 600))
-        assertTrue(indexUseSideNavigation(screenWidthDp = 840))
+        assertFalse(resolveAppLayout(AppLayoutMode.Auto, 599, 1200, 599, 1f).useNavigationRail)
+        assertTrue(resolveAppLayout(AppLayoutMode.Auto, 600, 1200, 600, 1f).useNavigationRail)
+        assertTrue(resolveAppLayout(AppLayoutMode.Auto, 840, 1200, 840, 1f).useNavigationRail)
     }
 
     @Test
@@ -148,29 +189,29 @@ class BottomTabRefreshPolicyTest {
         val indexSource = readMainSource("com/mylive/app/ui/screen/IndexScreen.kt")
         val homeSource = readMainSource("com/mylive/app/ui/screen/home/HomeScreen.kt")
 
-        assertTrue(indexSource.contains("val homeLiveRoomGridColumns = indexHomeLiveRoomGridColumns(configuration.screenWidthDp)"))
+        assertTrue(indexSource.contains("val homeLiveRoomGridColumns = appLayout.liveRoomColumns"))
         assertTrue(indexSource.contains("homeLiveRoomGridColumns = homeLiveRoomGridColumns"))
-        assertTrue(indexSource.contains("internal fun indexHomeLiveRoomGridColumns(screenWidthDp: Int): Int?"))
-        assertEquals(null, indexHomeLiveRoomGridColumns(screenWidthDp = 599))
-        assertEquals(3, indexHomeLiveRoomGridColumns(screenWidthDp = 600))
-        assertEquals(4, indexHomeLiveRoomGridColumns(screenWidthDp = 840))
-        assertEquals(5, indexHomeLiveRoomGridColumns(screenWidthDp = 1200))
+
+        assertEquals(3, resolveAppLayout(AppLayoutMode.Auto, 599, 1200, 599, 1f).liveRoomColumns)
+        assertEquals(2, resolveAppLayout(AppLayoutMode.Auto, 600, 1200, 600, 1f).liveRoomColumns)
+        assertEquals(3, resolveAppLayout(AppLayoutMode.Auto, 840, 1200, 840, 1f).liveRoomColumns)
+        assertEquals(4, resolveAppLayout(AppLayoutMode.Auto, 1200, 1200, 1200, 1f).liveRoomColumns)
         assertTrue(homeSource.contains("homeLiveRoomGridColumns: Int? = null"))
         assertTrue(homeSource.contains("homeLiveRoomGridColumns?.let { GridCells.Fixed(it) }"))
         assertTrue(homeSource.contains("homeLiveRoomGridColumns?.let { it * 3 } ?: 8"))
     }
 
     @Test
-    fun sideNavigationItemsEvenlyFillRailHeight() {
+    fun sideNavigationItemsRemainReachableAtShortHeights() {
         val source = readMainSource("com/mylive/app/ui/screen/IndexScreen.kt")
         val railBlock = source.substringAfter("private fun IndexSideNavigationRail(")
 
         assertTrue(source.contains(".fillMaxHeight()"))
-        assertTrue(source.contains(".weight(indexSideNavigationItemWeight(items.size))"))
+        assertTrue(source.contains(".heightIn(min = 64.dp)"))
         assertTrue(railBlock.contains("Column("))
         assertTrue(railBlock.contains(".fillMaxWidth()"))
         assertTrue(railBlock.contains("IndexNavigationItem("))
-        assertEquals(1f, indexSideNavigationItemWeight(itemCount = 4), 0.001f)
+        assertTrue(railBlock.contains(".verticalScroll(rememberScrollState())"))
     }
 
     private fun readMainSource(relativePath: String): String {

@@ -1,6 +1,5 @@
 package com.mylive.app.ui.screen.settings
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -30,18 +29,7 @@ fun PlaybackPageSettingsScreen(
     val liveRoomQuickAccessSortStr by viewModel.liveRoomQuickAccessSort.collectAsStateWithLifecycle()
     val liveRoomQuickAccessEnabled by viewModel.liveRoomQuickAccessEnabled.collectAsStateWithLifecycle()
 
-    var isExiting by remember { mutableStateOf(false) }
-
-    val handleBack: () -> Unit = {
-        if (!isExiting) {
-            isExiting = true
-            navigator.goBack()
-        }
-    }
-
-    BackHandler(enabled = !isExiting) {
-        handleBack()
-    }
+    val handleBack = navigator.rememberRouteActions().onBack
 
     val quickAccessNames = mapOf(
         "follow" to ("关注列表" to "快速切到已关注的直播间"),

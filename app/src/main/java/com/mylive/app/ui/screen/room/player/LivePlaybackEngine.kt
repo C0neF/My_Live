@@ -13,12 +13,17 @@ interface LivePlaybackEngine {
         urls: List<String>,
         headers: Map<String, String>? = null,
         startIndex: Int = 0,
-        resetSourceRefreshAttempt: Boolean = true
+        origin: PlaybackRequestOrigin = PlaybackRequestOrigin.UserSelection
     )
 
     fun stop()
 
     fun showError(message: String)
+}
+
+enum class PlaybackRequestOrigin {
+    UserSelection,
+    SourceRecovery
 }
 
 /** Binding implemented by the room state owner without exposing it to the player module. */

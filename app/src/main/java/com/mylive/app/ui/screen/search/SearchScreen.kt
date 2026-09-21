@@ -1,6 +1,5 @@
 package com.mylive.app.ui.screen.search
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.BorderStroke
@@ -24,6 +23,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
@@ -36,7 +38,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mylive.app.ui.navigation.Navigator
 import com.mylive.app.R
 import com.mylive.app.ui.component.LiveRoomCard
-import com.mylive.app.ui.component.LiveRoomGridMinCellWidth
+import com.mylive.app.ui.layout.LocalAppLayout
+import com.mylive.app.ui.layout.AdaptivePageFrame
 import com.mylive.app.ui.component.NetImage
 import com.mylive.app.ui.component.status.EmptyState
 import com.mylive.app.ui.component.status.ErrorState
@@ -44,6 +47,7 @@ import com.mylive.app.ui.component.status.SearchAnchorListSkeleton
 import com.mylive.app.ui.component.status.SearchRoomGridSkeleton
 import com.mylive.app.core.site.LiveSite
 import com.mylive.app.ui.motion.AppMotion
+import com.mylive.app.ui.motion.LocalAppMotionPolicy
 import com.mylive.app.ui.motion.horizontalContentTransform
 import com.mylive.app.ui.navigation.navigateToRoom
 import com.mylive.app.ui.theme.livePlatformAccentColor
@@ -62,25 +66,17 @@ fun SearchScreen(
     val selectedPlatformId = siteTabs.getOrNull(selectedTab)?.id
     var showSearchTypeMenu by remember { mutableStateOf(false) }
 
-    var isExiting by remember { mutableStateOf(false) }
-    val handleBack: () -> Unit = {
-        if (!isExiting) {
-            isExiting = true
-            navigator.goBack()
-        }
-    }
-    BackHandler(enabled = !isExiting) {
-        handleBack()
-    }
+    val handleBack = navigator.rememberRouteActions().onBack
 
-    BoxWithConstraints(
+    AdaptivePageFrame(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             .statusBarsPadding()
             .imePadding()
     ) {
-        val useTabletTwoPane = searchUseTabletTwoPane(maxWidth.value.toInt())
+        BoxWithConstraints(Modifier.fillMaxSize().testTag("screen_search")) {
+        val useTabletTwoPane = searchUseTabletTwoPane(maxWidth.value.toInt(), LocalAppLayout.current.tablet)
         if (useTabletTwoPane) {
             Row(modifier = Modifier.fillMaxSize()) {
                 SearchTabletControlPane(
@@ -152,6 +148,7 @@ fun SearchScreen(
                 )
             }
         }
+        }
     }
 }
 
@@ -173,7 +170,7 @@ private fun SearchTabletControlPane(
     modifier: Modifier = Modifier
 ) {
     Surface(
-        modifier = modifier.fillMaxHeight(),
+        modifier = modifier.fillMaxHeight().testTag("search_tablet_controls"),
         color = MaterialTheme.colorScheme.surface,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
@@ -332,7 +329,8 @@ private fun SearchFilterRow(
 
             siteTabs.forEachIndexed { index, site ->
                 CompactSearchFilterPill(
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f)
+                        .testTag("search_platform_${site.id}"),
                     platformId = site.id,
                     text = searchPlatformDisplayName(site.name),
                     selected = selectedTab == index,
@@ -356,6 +354,7 @@ private fun SearchResultsContent(
     onSiteSelected: (Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val motionPolicy = LocalAppMotionPolicy.current
     AnimatedContent(
         targetState = selectedTab to uiState.searchType,
         modifier = modifier
@@ -386,7 +385,7 @@ private fun SearchResultsContent(
             } else {
                 AppMotion.indexDirection(initialState.second, targetState.second)
             }
-            horizontalContentTransform(direction)
+            horizontalContentTransform(direction, motionPolicy)
         },
         label = "searchResultsContent"
     ) { contentState ->
@@ -404,7 +403,7 @@ private fun SearchResultsContent(
                         )
                     } else {
                         SearchRoomGridSkeleton(
-                            minCellWidth = LiveRoomGridMinCellWidth,
+                            minCellWidth = LocalAppLayout.current.liveRoomMinCellWidthDp.dp,
                             itemCount = 6,
                             modifier = Modifier.fillMaxSize()
                         )
@@ -432,7 +431,7 @@ private fun SearchResultsContent(
                 animatedSearchType == 0 -> {
                     val currentSiteName = siteTabs.getOrNull(animatedTab)?.name
                     LazyVerticalGrid(
-                        columns = GridCells.Adaptive(LiveRoomGridMinCellWidth),
+                        columns = GridCells.Adaptive(LocalAppLayout.current.liveRoomMinCellWidthDp.dp),
                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -595,7 +594,9 @@ private fun CompactSearchTypeMenu(
 
     Box(modifier = modifier) {
         CompactSearchFilterPill(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("search_type_menu_$searchType"),
             platformId = platformId,
             text = selectedLabel,
             selected = true,
@@ -609,6 +610,7 @@ private fun CompactSearchTypeMenu(
         ) {
             listOf(0 to roomLabel, 1 to anchorLabel).forEach { (type, label) ->
                 DropdownMenuItem(
+                    modifier = Modifier.testTag("search_type_option_$type"),
                     text = { Text(label) },
                     onClick = {
                         onExpandedChange(false)
@@ -656,6 +658,7 @@ private fun CompactSearchFilterPill(
     Surface(
         modifier = modifier
             .height(34.dp)
+            .semantics { this.selected = selected }
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(12.dp),
         color = containerColor
@@ -712,8 +715,8 @@ internal fun searchCompactModeSelectorWidthDp(): Int {
     return 72
 }
 
-internal fun searchUseTabletTwoPane(screenWidthDp: Int): Boolean {
-    return screenWidthDp >= 840
+internal fun searchUseTabletTwoPane(screenWidthDp: Int, tabletLayout: Boolean): Boolean {
+    return tabletLayout && screenWidthDp >= 840
 }
 
 internal fun searchTabletControlPaneWidthDp(): Int {

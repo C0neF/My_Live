@@ -45,7 +45,7 @@ class MainActivityPipTest {
 
         scenario.onActivity { activity ->
             // The live room detail screen is the only destination allowed to auto-PiP.
-            activity.navigator.backStack.add(Route.LiveRoomDetail(roomId = "1", siteId = ""))
+            activity.navigator.navigate(Route.LiveRoomDetail(roomId = "1", siteId = ""))
             // Enable PiP support state manually to trigger transition on user leave
             MainActivity.isPipSupportedAndActive = true
         }
@@ -66,7 +66,7 @@ class MainActivityPipTest {
 
         scenario.onActivity { activity ->
             // Stale host signal from a previous room, but the user is on Settings now.
-            activity.navigator.backStack.add(Route.Settings)
+            activity.navigator.navigate(Route.Settings)
             MainActivity.isPipSupportedAndActive = true
         }
 

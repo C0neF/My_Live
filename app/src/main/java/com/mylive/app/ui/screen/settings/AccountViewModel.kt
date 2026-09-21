@@ -2,6 +2,9 @@ package com.mylive.app.ui.screen.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.mylive.app.core.site.douyin.DouyinCookieInspection
+import com.mylive.app.core.site.douyin.DouyinCookieInspector
+import com.mylive.app.core.site.douyin.DouyinCookieKind
 import com.mylive.app.data.repository.AccountRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,6 +25,9 @@ data class AccountUiState(
     val douyinCookie: String = "",
     val isLoggedInBiliBili: Boolean = false,
     val isLoggedInDouyin: Boolean = false,
+    val hasDouyinCookie: Boolean = false,
+    val douyinCookieInspection: DouyinCookieInspection =
+        DouyinCookieInspection(DouyinCookieKind.NotConfigured),
     val showBilibiliCookieDialog: Boolean = false,
     val showDouyinCookieDialog: Boolean = false,
     val message: AccountMessage? = null
@@ -51,32 +57,37 @@ class AccountViewModel @Inject constructor(
             
             launch {
                 accountRepository.douyinCookie.collect { cookie ->
+                    val inspection = DouyinCookieInspector.inspect(cookie)
                     _uiState.value = _uiState.value.copy(
                         douyinCookie = cookie,
-                        isLoggedInDouyin = cookie.isNotEmpty()
+                        hasDouyinCookie = cookie.isNotBlank(),
+                        isLoggedInDouyin = isDouyinLoginState(inspection),
+                        douyinCookieInspection = inspection
                     )
                 }
             }
         }
     }
 
-    fun saveBilibiliCookie(cookie: String) {
+    fun saveBilibiliCookie(cookie: String, onSaved: () -> Unit = {}) {
         viewModelScope.launch {
             accountRepository.setBilibiliCookie(cookie.trim())
             _uiState.value = _uiState.value.copy(
                 showBilibiliCookieDialog = false,
                 message = AccountMessage.BilibiliCookieSaved
             )
+            onSaved()
         }
     }
 
-    fun saveDouyinCookie(cookie: String) {
+    fun saveDouyinCookie(cookie: String, onSaved: () -> Unit = {}) {
         viewModelScope.launch {
-            accountRepository.setDouyinCookie(cookie.trim())
+            accountRepository.setDouyinCookie(DouyinCookieInspector.normalizeInput(cookie))
             _uiState.value = _uiState.value.copy(
                 showDouyinCookieDialog = false,
                 message = AccountMessage.DouyinCookieSaved
             )
+            onSaved()
         }
     }
 

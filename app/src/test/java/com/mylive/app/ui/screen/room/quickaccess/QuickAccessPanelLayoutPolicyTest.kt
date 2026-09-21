@@ -1,11 +1,85 @@
 package com.mylive.app.ui.screen.room.quickaccess
 
+import androidx.compose.material3.SheetValue
+import androidx.compose.material3.ExperimentalMaterial3Api
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
 
+@OptIn(ExperimentalMaterial3Api::class)
 class QuickAccessPanelLayoutPolicyTest {
+
+    @Test
+    fun onlyTheTopHandleMayMoveTheQuickAccessSheetToHidden() {
+        assertFalse(
+            quickAccessAllowsSheetValueChange(
+                target = SheetValue.Hidden,
+                handleDismissAllowed = false
+            )
+        )
+        assertTrue(
+            quickAccessAllowsSheetValueChange(
+                target = SheetValue.Hidden,
+                handleDismissAllowed = true
+            )
+        )
+        assertTrue(
+            quickAccessAllowsSheetValueChange(
+                target = SheetValue.Expanded,
+                handleDismissAllowed = false
+            )
+        )
+    }
+
+    @Test
+    fun sheetUsesCustomDismissHandleAndIsolatesContentScrollFromSheetDismissal() {
+        val source = File("src/main/java/com/mylive/app/ui/screen/room/quickaccess/QuickAccessPanel.kt").readText()
+        val panelSource = source.substringAfter("fun QuickAccessPanel(")
+            .substringBefore("private fun QuickAccessIslandTabBar(")
+
+        assertTrue(panelSource.contains("confirmValueChange = { target ->"))
+        assertTrue(panelSource.contains("handleDismissAllowed = false"))
+        assertTrue(panelSource.contains("QuickAccessDismissHandle("))
+        assertTrue(panelSource.contains(".roomPanelContentScrollIsolation()"))
+        val gestures = File("src/main/java/com/mylive/app/ui/screen/room/RoomPanelGestures.kt").readText()
+        assertTrue(gestures.contains("awaitEachGesture"))
+        assertTrue(gestures.contains("change.consume()"))
+        assertFalse(panelSource.contains("translationY = dragOffset"))
+        assertFalse(panelSource.contains("Animatable(startOffset)"))
+        assertFalse(panelSource.contains("dragHandle = { BottomSheetDefaults.DragHandle() }"))
+    }
+
+    @Test
+    fun touchingTheHandleArmsNativeSheetDragButAPlainTapDoesNotDismiss() {
+        val source = File("src/main/java/com/mylive/app/ui/screen/room/quickaccess/QuickAccessPanel.kt").readText()
+        val handleSource = source.substringAfter("private fun QuickAccessDismissHandle(")
+            .substringBefore("@Composable")
+
+        assertTrue(handleSource.contains(".roomPanelDismissHandleGesture("))
+        val gestureSource = File("src/main/java/com/mylive/app/ui/screen/room/RoomPanelGestures.kt").readText()
+            .substringAfter("internal fun Modifier.roomPanelDismissHandleGesture(")
+        assertTrue(gestureSource.contains("onDownwardDragStarted()"))
+        assertFalse(gestureSource.contains("onClick"))
+        assertFalse(gestureSource.contains("onDismiss()"))
+        assertTrue(handleSource.contains("关闭快速入口"))
+    }
+
+    @Test
+    fun collapsingTopIconsKeepsTheOverallSheetHeightFixed() {
+        val source = File("src/main/java/com/mylive/app/ui/screen/room/quickaccess/QuickAccessPanel.kt").readText()
+        val panelSource = source.substringAfter("fun QuickAccessPanel(")
+            .substringBefore("private fun QuickAccessIslandTabBar(")
+        val pagerSource = panelSource.substringAfter("HorizontalPager(")
+
+        assertEquals(588, resolveQuickAccessPanelHeightDp(screenHeightDp = 800))
+        assertEquals(456, resolveQuickAccessPanelHeightDp(screenHeightDp = 600))
+        assertEquals(220, resolveQuickAccessPanelHeightDp(screenHeightDp = 300))
+        assertTrue(panelSource.contains(".height(panelHeight)"))
+        assertTrue(pagerSource.contains(".weight(1f)"))
+        assertFalse(pagerSource.contains(".heightIn(min = 300.dp, max = 500.dp)"))
+    }
 
     @Test
     fun topTabsUseFixedIslandBarInsteadOfMaterialTabRow() {
@@ -36,9 +110,9 @@ class QuickAccessPanelLayoutPolicyTest {
         val source = File("src/main/java/com/mylive/app/ui/screen/room/quickaccess/QuickAccessPanel.kt").readText()
 
         assertTrue(source.contains("initialSelectedKey: String? = null"))
-        assertTrue(source.contains("val initialPage = remember(orderedKeys, initialSelectedKey)"))
-        assertTrue(source.contains("orderedKeys.indexOf(initialSelectedKey).takeIf { it >= 0 } ?: 0"))
-        assertTrue(source.contains("pagerState.scrollToPage(initialPage)"))
+        assertTrue(source.contains("initialSelectedKey ?: viewModel.selectedTabKey.value"))
+        assertTrue(source.contains("orderedKeys.indexOf(requestedKey).takeIf { it >= 0 } ?: 0"))
+        assertTrue(source.contains("pagerState.scrollToPage(target)"))
     }
 
     @Test
@@ -56,20 +130,20 @@ class QuickAccessPanelLayoutPolicyTest {
 
     @Test
     fun followQuickPanelPlacesRefreshBesideFilterChips() {
-        val source = File("src/main/java/com/mylive/app/ui/screen/room/quickaccess/QuickAccessPanel.kt").readText()
-        val panelSource = source.substringAfter("private fun FollowQuickPanel(")
-            .substringBefore("// ─── History Quick Panel")
+        val source = File("src/main/java/com/mylive/app/ui/screen/room/quickaccess/QuickAccessPages.kt").readText()
+        val panelSource = source.substringAfter("internal fun FollowQuickPanel(")
+            .substringBefore("internal fun HistoryQuickPanel(")
 
         assertFalse(panelSource.contains("PullToRefreshBox("))
         assertFalse(panelSource.contains("LaunchedEffect(Unit)"))
-        assertTrue(panelSource.contains("listOf(\"全部\", \"直播中\", \"未开播\")"))
+        assertTrue(panelSource.contains("QuickAccessStatus.entries"))
         assertTrue(panelSource.contains("viewModel.updatingFollowStatus.collectAsStateWithLifecycle()"))
         assertTrue(panelSource.contains("viewModel.updateFollowStatus()"))
-        assertTrue(panelSource.contains("contentDescription = \"刷新关注状态\""))
+        assertTrue(panelSource.contains("\"刷新关注状态\""))
         assertTrue(panelSource.contains("Icons.Default.Refresh"))
 
-        val chipRow = panelSource.substringAfter("listOf(\"全部\", \"直播中\", \"未开播\")")
-            .substringBefore("if (filteredFollows.isEmpty())")
+        val chipRow = panelSource.substringAfter("QuickAccessStatus.entries")
+            .substringBefore("QuickAccessFilterSummary(")
         assertTrue(chipRow.contains("updateFollowStatus()"))
         assertTrue(chipRow.contains("Icons.Default.Refresh"))
     }

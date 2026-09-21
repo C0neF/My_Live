@@ -28,4 +28,26 @@ class FollowSwipePolicyTest {
     fun settledOffsetClosesForInvalidRevealWidth() {
         assertEquals(0f, followSwipeSettledOffset(offsetX = -100f, totalReveal = 0f), 0.001f)
     }
+
+    @Test
+    fun releaseVelocityIsProjectedBeforeChoosingTheSnapTarget() {
+        assertEquals(
+            -200f,
+            followSwipeSettledOffset(
+                offsetX = -20f,
+                totalReveal = 200f,
+                velocityX = -2_000f
+            ),
+            0.001f
+        )
+        assertEquals(
+            0f,
+            followSwipeSettledOffset(
+                offsetX = -180f,
+                totalReveal = 200f,
+                velocityX = 2_000f
+            ),
+            0.001f
+        )
+    }
 }

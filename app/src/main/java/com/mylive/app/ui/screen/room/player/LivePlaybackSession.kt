@@ -13,13 +13,15 @@ import kotlinx.coroutines.flow.StateFlow
  */
 class LivePlaybackSession private constructor(
     private val appContext: Context,
-    private val controller: PlayerController
+    hardwareDecodeEnabled: Boolean,
+    forceHttps: Boolean,
+    private val onPlaybackSourceExhausted: (() -> Boolean)?
 ) : LivePlaybackEngine {
     private data class PlaybackRequest(
         val urls: List<String>,
         val headers: Map<String, String>?,
         val startIndex: Int,
-        val resetSourceRefreshAttempt: Boolean
+        val origin: PlaybackRequestOrigin
     )
 
     private data class PausedHostPolicy(
@@ -28,6 +30,17 @@ class LivePlaybackSession private constructor(
         val roomTitle: String,
         val anchorName: String,
         val platform: String
+    )
+
+    private val sourceRecoveryGate = PlaybackSourceRecoveryGate()
+    private val controller = PlayerController(
+        context = appContext,
+        hardwareDecodeEnabled = hardwareDecodeEnabled,
+        forceHttps = forceHttps,
+        onPlaybackSourceExhausted = ::requestFreshPlaybackSource,
+        onPlaybackReady = sourceRecoveryGate::finishRecovery,
+        onPlayerReplaced = PlaybackForegroundService::replacePlayer,
+        onUserPlaybackSelection = sourceRecoveryGate::finishRecovery
     )
 
     val playerController: PlayerController
@@ -58,10 +71,12 @@ class LivePlaybackSession private constructor(
         urls: List<String>,
         headers: Map<String, String>?,
         startIndex: Int,
-        resetSourceRefreshAttempt: Boolean
+        origin: PlaybackRequestOrigin
     ) {
         if (released) return
-        val request = PlaybackRequest(urls, headers, startIndex, resetSourceRefreshAttempt)
+        // A delivered request means source acquisition completed, even if host policy defers play.
+        sourceRecoveryGate.finishRecovery()
+        val request = PlaybackRequest(urls, headers, startIndex, origin)
         val policy = pausedHostPolicy
         when (
             resolveLivePlaybackStartAction(
@@ -76,8 +91,17 @@ class LivePlaybackSession private constructor(
                 resumePlaybackOnForeground = true
             }
             LivePlaybackStartAction.StartWithForegroundService -> {
-                playNow(request)
-                policy?.let(::startForegroundService)
+                deferredPlayRequest = request
+                resumePlaybackOnForeground = true
+                if (policy != null) {
+                    startForegroundService(policy) {
+                        if (deferredPlayRequest === request) {
+                            deferredPlayRequest = null
+                            resumePlaybackOnForeground = false
+                            playNow(request)
+                        }
+                    }
+                }
             }
         }
     }
@@ -87,8 +111,14 @@ class LivePlaybackSession private constructor(
             urls = request.urls,
             headers = request.headers,
             startIndex = request.startIndex,
-            resetSourceRefreshAttempt = request.resetSourceRefreshAttempt
+            origin = request.origin
         )
+    }
+
+    private fun requestFreshPlaybackSource(): Boolean {
+        if (released) return false
+        val request = onPlaybackSourceExhausted ?: return false
+        return sourceRecoveryGate.tryStartRecovery(request)
     }
 
     fun setForceHttps(enabled: Boolean) {
@@ -105,6 +135,7 @@ class LivePlaybackSession private constructor(
 
     override fun showError(message: String) {
         if (released) return
+        sourceRecoveryGate.finishRecovery()
         deferredPlayRequest = null
         resumePlaybackOnForeground = false
         controller.showError(message)
@@ -146,6 +177,7 @@ class LivePlaybackSession private constructor(
             platform = platform
         )
         pausedHostPolicy = policy
+        controller.setVideoOutputExpected(inPictureInPicture)
         if (inPictureInPicture) {
             // The PiP window is still an on-screen video surface, so ON_PAUSE here is not a
             // background transition: never pause and never hand off to the foreground service.
@@ -181,19 +213,25 @@ class LivePlaybackSession private constructor(
      * notification, which Android will kill on its own schedule. Pausing makes the outcome
      * predictable and matches what the user gets with background playback disabled.
      */
-    private fun startForegroundService(policy: PausedHostPolicy) {
-        val player = controller.player ?: return
+    private fun startForegroundService(policy: PausedHostPolicy, onReady: (() -> Unit)? = null): Boolean {
+        val player = controller.player ?: return false
+        val hadPlaybackIntent = player.playWhenReady
         val started = PlaybackForegroundService.start(
             appContext,
             player,
             policy.roomTitle,
             policy.anchorName,
             policy.platform
-        )
+        ) {
+            if (!released && hostPaused) {
+                if (onReady != null) onReady() else if (hadPlaybackIntent) controller.resume()
+            }
+        }
         if (!started) {
             resumePlaybackOnForeground = controller.player?.playWhenReady == true
             controller.pause()
         }
+        return started
     }
 
     /**
@@ -202,6 +240,7 @@ class LivePlaybackSession private constructor(
      */
     fun onHostResume() {
         if (released) return
+        controller.setVideoOutputExpected(true)
         hostPaused = false
         pausedHostPolicy = null
         PlaybackForegroundService.stop(appContext)
@@ -241,18 +280,39 @@ class LivePlaybackSession private constructor(
             context: Context,
             hardwareDecodeEnabled: Boolean,
             forceHttps: Boolean,
-            onPlaybackSourceExhausted: (() -> Unit)?
+            onPlaybackSourceExhausted: (() -> Boolean)?
         ): LivePlaybackSession {
             val appContext = context.applicationContext
-            val controller = PlayerController(
-                context = appContext,
+            return LivePlaybackSession(
+                appContext = appContext,
                 hardwareDecodeEnabled = hardwareDecodeEnabled,
                 forceHttps = forceHttps,
                 onPlaybackSourceExhausted = onPlaybackSourceExhausted
             )
-            return LivePlaybackSession(appContext, controller)
         }
 
+    }
+}
+
+/** In-flight refresh deduplication only; retry limits are owned by PlayerController. */
+internal class PlaybackSourceRecoveryGate {
+    private var recoveryInProgress = false
+
+    fun finishRecovery() {
+        recoveryInProgress = false
+    }
+
+    fun tryStartRecovery(start: () -> Boolean): Boolean {
+        if (recoveryInProgress) return false
+        // Claim first: a cached/synchronous response may finish recovery inside start().
+        recoveryInProgress = true
+        var accepted = false
+        return try {
+            accepted = start()
+            accepted
+        } finally {
+            if (!accepted) recoveryInProgress = false
+        }
     }
 }
 

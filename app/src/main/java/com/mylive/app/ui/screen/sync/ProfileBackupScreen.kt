@@ -1,7 +1,6 @@
 package com.mylive.app.ui.screen.sync
 
 import android.net.Uri
-import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
@@ -100,16 +99,7 @@ fun ProfileBackupScreen(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
-    var isExiting by remember { mutableStateOf(false) }
-    val handleBack: () -> Unit = {
-        if (!isExiting) {
-            isExiting = true
-            navigator.goBack()
-        }
-    }
-    BackHandler(enabled = !isExiting) {
-        handleBack()
-    }
+    val handleBack = navigator.rememberRouteActions().onBack
 
     LaunchedEffect(uiState.message) {
         val msg = uiState.message ?: return@LaunchedEffect

@@ -105,6 +105,6 @@ class FixedDanmakuPolicyTest {
 
         assertTrue(source.contains("FIXED_DANMAKU_DURATION_MS = 5_000L"))
         assertTrue(source.contains("(w - itemWidth) / 2f"))
-        assertTrue(source.contains("expiresAtMs = nowMs + FIXED_DANMAKU_DURATION_MS"))
+        assertTrue(source.contains("nowMs + FIXED_DANMAKU_DURATION_MS"))
     }
 }

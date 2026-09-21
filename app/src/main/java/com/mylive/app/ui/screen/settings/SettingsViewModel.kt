@@ -2,6 +2,8 @@ package com.mylive.app.ui.screen.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.mylive.app.core.model.TabletOrientationMode
+import com.mylive.app.core.model.AppLayoutMode
 import com.mylive.app.data.repository.LiveRoomPreferences
 import com.mylive.app.data.repository.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -32,6 +34,22 @@ class SettingsViewModel @Inject constructor(
     fun setThemeMode(value: Int) = viewModelScope.launch { settingsRepository.setThemeMode(value) }
     fun setIsDynamic(value: Boolean) = viewModelScope.launch { settingsRepository.setIsDynamic(value) }
     fun setStyleColor(value: Int) = viewModelScope.launch { settingsRepository.setStyleColor(value) }
+
+    val appLayoutMode: StateFlow<AppLayoutMode> = settingsRepository.appLayoutMode
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), AppLayoutMode.Auto)
+
+    fun setAppLayoutMode(value: AppLayoutMode) =
+        viewModelScope.launch { settingsRepository.setAppLayoutMode(value) }
+
+    val tabletOrientationMode: StateFlow<TabletOrientationMode> =
+        settingsRepository.tabletOrientationMode.stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5000),
+            TabletOrientationMode.FollowSystem
+        )
+
+    fun setTabletOrientationMode(value: TabletOrientationMode) =
+        viewModelScope.launch { settingsRepository.setTabletOrientationMode(value) }
 
     // --- Danmaku ---
     val danmuEnable: StateFlow<Boolean> = settingsRepository.danmuEnable

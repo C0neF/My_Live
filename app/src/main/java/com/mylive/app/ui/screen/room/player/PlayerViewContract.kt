@@ -56,7 +56,8 @@ data class PlayerDanmakuActions(
     val onAreaChange: ((Double) -> Unit)? = null,
     val onOpacityChange: ((Double) -> Unit)? = null,
     val onChatBubbleStyleChange: ((Boolean) -> Unit)? = null,
-    val onControllerCreated: ((DanmakuController) -> Unit)? = null
+    val onControllerCreated: ((DanmakuController) -> Unit)? = null,
+    val onControllerReleased: ((DanmakuController) -> Unit)? = null
 )
 
 /**
@@ -74,5 +75,5 @@ data class PlayerViewActions(
     val onQuickAccessClick: (() -> Unit)? = null,
     val onFollowClick: (() -> Unit)? = null,
     val onHorizontalDragDelta: ((Float) -> Unit)? = null,
-    val onHorizontalDragEnd: (() -> Unit)? = null
+    val onHorizontalDragEnd: ((velocityX: Float) -> Unit)? = null
 )

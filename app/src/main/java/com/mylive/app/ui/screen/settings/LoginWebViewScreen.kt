@@ -7,7 +7,6 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -37,18 +36,8 @@ fun LoginWebViewScreen(
     navigator: Navigator,
     viewModel: AccountViewModel = hiltViewModel()
 ) {
-    var isExiting by remember { mutableStateOf(false) }
-
-    val handleBack: () -> Unit = {
-        if (!isExiting) {
-            isExiting = true
-            navigator.goBack()
-        }
-    }
-
-    BackHandler(enabled = !isExiting) {
-        handleBack()
-    }
+    val navigation = navigator.rememberRouteActions()
+    val handleBack = navigation.onBack
 
     Scaffold(
         topBar = {
@@ -65,14 +54,11 @@ fun LoginWebViewScreen(
                 actions = {
                     TextButton(
                         onClick = {
-                            if (!isExiting) {
-                                isExiting = true
-                                navigator.navigate(
-                                    route = Route.SettingsAccountLoginQr,
-                                    popUpToRoute = Route.SettingsAccountLoginWebview::class.java,
-                                    inclusive = true
-                                )
-                            }
+                            navigation.navigate(
+                                route = Route.SettingsAccountLoginQr,
+                                popUpToRoute = Route.SettingsAccountLoginWebview::class.java,
+                                inclusive = true
+                            )
                         }
                     ) {
                         Icon(
@@ -146,10 +132,7 @@ fun LoginWebViewScreen(
                                     cookies.contains("DedeUserID")) {
                                     hasIntercepted = true
                                     // Save cookie and return
-                                    viewModel.saveBilibiliCookie(cookies)
-                                    post {
-                                        handleBack()
-                                    }
+                                    viewModel.saveBilibiliCookie(cookies, onSaved = handleBack)
                                 }
                             }
                         }

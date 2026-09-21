@@ -2,8 +2,10 @@ package com.mylive.app.ui.screen.room.player
 
 import android.app.Activity
 import android.graphics.Rect
+import android.os.SystemClock
 import android.view.LayoutInflater
 import com.mylive.app.R
+import com.mylive.app.BuildConfig
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import androidx.activity.compose.BackHandler
@@ -15,6 +17,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -30,6 +33,9 @@ import kotlin.math.roundToInt
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -41,7 +47,9 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.verticalDrag
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.platform.LocalConfiguration
+import com.mylive.app.ui.layout.LocalAppLayout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -56,15 +64,23 @@ import androidx.media3.ui.PlayerView as Media3PlayerView
 import com.mylive.app.core.model.LivePlayQuality
 import kotlinx.coroutines.delay
 
-internal const val PlayerVolumeGestureSensitivity = 2.5f
+internal const val SystemVolumeGestureSensitivity = 2f
+internal const val SystemVolumeGestureThrottleMs = 200L
 
-internal fun playerVolumeForVerticalDrag(
+internal fun systemVolumeForVerticalDrag(
     startVolume: Float,
     totalDragY: Float,
     heightPx: Float
 ): Float {
-    val delta = -totalDragY / heightPx.coerceAtLeast(1f) * PlayerVolumeGestureSensitivity
+    val delta = -totalDragY / heightPx.coerceAtLeast(1f) * SystemVolumeGestureSensitivity
     return (startVolume + delta).coerceIn(0f, 1f)
+}
+
+internal fun quantizeSystemVolumeGesture(volume: Float): Float {
+    val quantizedPercent = (
+        volume.coerceIn(0f, 1f) * 100f / 5f
+    ).roundToInt() * 5f
+    return (quantizedPercent / 100f).coerceIn(0f, 1f)
 }
 
 @kotlin.OptIn(ExperimentalMaterial3Api::class)
@@ -89,6 +105,17 @@ fun PlayerView(
     // Sheets visibility states
     var showLineSheet by remember { mutableStateOf(false) }
     var showDanmuSettingsSheet by remember { mutableStateOf(false) }
+    var showDiagnosticsSheet by remember { mutableStateOf(false) }
+    var diagnosticsSnapshot by remember { mutableStateOf<PlaybackDiagnosticSnapshot?>(null) }
+    var diagnosticDanmakuController by remember { mutableStateOf<DanmakuController?>(null) }
+    LaunchedEffect(showDiagnosticsSheet, playerController, viewState.currentQualityName, diagnosticDanmakuController) {
+        if (!showDiagnosticsSheet) return@LaunchedEffect
+        while (true) {
+            diagnosticsSnapshot = playerController?.playbackDiagnostics(viewState.currentQualityName)
+                ?.withDanmaku(diagnosticDanmakuController?.diagnostics())
+            delay(1000)
+        }
+    }
 
     val context = LocalContext.current
     val activity = context as? Activity
@@ -221,6 +248,7 @@ fun PlayerView(
                 AndroidView(
                     factory = { ctx ->
                         DanmakuSurfaceView(ctx).also { view ->
+                            diagnosticDanmakuController = view.controller
                             applyDanmakuConfig(view.controller, resolvedDanmakuConfig)
                             danmakuActions.onControllerCreated?.invoke(view.controller)
                         }
@@ -228,7 +256,11 @@ fun PlayerView(
                     update = { view ->
                         applyDanmakuConfig(view.controller, resolvedDanmakuConfig)
                     },
-                    onRelease = { view -> view.release() },
+                    onRelease = { view ->
+                        view.release()
+                        if (diagnosticDanmakuController === view.controller) diagnosticDanmakuController = null
+                        danmakuActions.onControllerReleased?.invoke(view.controller)
+                    },
                     modifier = Modifier.fillMaxSize()
                 )
             }
@@ -253,11 +285,6 @@ fun PlayerView(
                             if (!isLocked) {
                                 playerController?.toggleFullscreen()
                             }
-                        },
-                        onLongPress = {
-                            if (!isLocked) {
-                                playerController?.togglePlayPause()
-                            }
                         }
                     )
                 }
@@ -267,10 +294,18 @@ fun PlayerView(
                         val down = awaitFirstDown(requireUnconsumed = false)
                         val startX = down.position.x
                         val isLeftSide = startX < size.width / 2f
+                        val canStartVerticalGesture = down.position.y in
+                            (size.height * 0.25f)..(size.height * 0.75f)
+                        val velocityTracker = VelocityTracker().apply {
+                            addPosition(down.uptimeMillis, down.position)
+                        }
 
                         var lastY = down.position.y
                         var gestureStartVolume = playerController?.state?.value?.volume ?: 1f
                         var totalVerticalDragY = 0f
+                        var lastAppliedSystemVolume = -1f
+                        var lastSystemVolumeAppliedAt = Long.MIN_VALUE
+                        var pendingSystemVolume: Float? = null
                         var accumulatedX = 0f
                         var accumulatedY = 0f
                         var hasDecidedDirection = false
@@ -281,6 +316,7 @@ fun PlayerView(
                         while (true) {
                             val event = awaitPointerEvent()
                             val change = event.changes.firstOrNull { it.id == pointerId } ?: break
+                            velocityTracker.addPosition(change.uptimeMillis, change.position)
                             if (!change.pressed) break
 
                             val positionChange = change.position - change.previousPosition
@@ -295,21 +331,21 @@ fun PlayerView(
                                     hasDecidedDirection = true
                                     if (Math.abs(accumulatedX) > Math.abs(accumulatedY)) {
                                         isHorizontal = true
-                                    } else {
+                                    } else if (canStartVerticalGesture) {
                                         isVertical = true
                                         if (isLeftSide) {
                                             showBrightnessIndicator = true
                                             brightnessValue = playerController?.state?.value?.brightness ?: 0.5f
                                         } else {
                                             showVolumeIndicator = true
-                                            gestureStartVolume = playerController?.state?.value?.volume ?: 1f
+                                            gestureStartVolume = playerController?.currentSystemMediaVolume() ?: 1f
                                             volumeValue = gestureStartVolume
                                         }
                                     }
                                 }
                             }
 
-                            if (hasDecidedDirection) {
+                            if (hasDecidedDirection && (isVertical || isHorizontal)) {
                                 change.consume()
                                 if (isVertical) {
                                     val currentY = change.position.y
@@ -322,13 +358,29 @@ fun PlayerView(
                                         brightnessValue = playerController?.state?.value?.brightness ?: 0.5f
                                     } else {
                                         totalVerticalDragY += dragAmount
-                                        volumeValue = playerVolumeForVerticalDrag(
+                                        volumeValue = quantizeSystemVolumeGesture(
+                                            systemVolumeForVerticalDrag(
                                             startVolume = gestureStartVolume,
                                             totalDragY = totalVerticalDragY,
                                             heightPx = size.height.toFloat()
+                                            )
                                         )
-                                        playerController?.setVolumeDirect(volumeValue)
-                                        volumeValue = playerController?.state?.value?.volume ?: volumeValue
+                                        val now = SystemClock.uptimeMillis()
+                                        val canApplyImmediately =
+                                            lastSystemVolumeAppliedAt == Long.MIN_VALUE ||
+                                                now - lastSystemVolumeAppliedAt >= SystemVolumeGestureThrottleMs
+                                        if (
+                                            playerController != null &&
+                                            volumeValue != lastAppliedSystemVolume &&
+                                            canApplyImmediately
+                                        ) {
+                                            playerController.setSystemVolumeDirect(volumeValue)
+                                            lastAppliedSystemVolume = volumeValue
+                                            lastSystemVolumeAppliedAt = now
+                                            pendingSystemVolume = null
+                                        } else if (volumeValue != lastAppliedSystemVolume) {
+                                            pendingSystemVolume = volumeValue
+                                        }
                                     }
                                 } else if (isHorizontal) {
                                     actions.onHorizontalDragDelta?.invoke(deltaX)
@@ -336,8 +388,19 @@ fun PlayerView(
                             }
                         }
 
+                        if (
+                            isVertical &&
+                            !isLeftSide &&
+                            pendingSystemVolume != null &&
+                            pendingSystemVolume != lastAppliedSystemVolume
+                        ) {
+                            playerController?.setSystemVolumeDirect(pendingSystemVolume!!)
+                        }
+
                         if (isHorizontal) {
-                            actions.onHorizontalDragEnd?.invoke()
+                            actions.onHorizontalDragEnd?.invoke(
+                                velocityTracker.calculateVelocity().x
+                            )
                         }
 
                         showVolumeIndicator = false
@@ -461,6 +524,21 @@ fun PlayerView(
                             isFollowing = viewState.isFollowing,
                             followEnabled = viewState.followEnabled,
                             onRefreshClick = actions.onRefreshClick,
+                            onDiagnosticsClick = if (
+                                shouldShowPlaybackDiagnostics(
+                                    debugBuild = BuildConfig.DEBUG || BuildConfig.BUILD_TYPE == "qa",
+                                    hasController = playerController != null
+                                )
+                            ) {
+                                {
+                                    diagnosticsSnapshot = playerController?.playbackDiagnostics(
+                                        viewState.currentQualityName
+                                    )
+                                    showDiagnosticsSheet = diagnosticsSnapshot != null
+                                }
+                            } else {
+                                null
+                            },
                             isPortrait = isPortrait
                         )
                     }
@@ -562,6 +640,14 @@ fun PlayerView(
             },
             onDismiss = { showDanmuSettingsSheet = false }
         )
+    }
+    if (showDiagnosticsSheet) {
+        diagnosticsSnapshot?.let { snapshot ->
+            PlaybackDiagnosticsBottomSheet(
+                snapshot = snapshot,
+                onDismiss = { showDiagnosticsSheet = false }
+            )
+        }
     }
     }
 }
@@ -673,6 +759,7 @@ private fun PlayerBottomBar(
     isFollowing: Boolean = false,
     followEnabled: Boolean = true,
     onRefreshClick: (() -> Unit)? = null,
+    onDiagnosticsClick: (() -> Unit)? = null,
     isPortrait: Boolean = true
 ) {
     val bottomGradient = remember {
@@ -699,17 +786,20 @@ private fun PlayerBottomBar(
         val itemGap = if (compact) 4.dp else 8.dp
         val horizontalPadding = if (compact) 8.dp else 16.dp
         var showOverflowMenu by remember { mutableStateOf(false) }
+        val overflowMenuScrollState = rememberScrollState()
+        val overflowMenuColor = MenuDefaults.containerColor
         val placeFollowActionOnRight = shouldPlacePlayerFollowActionOnRight(isPortrait)
         val showQualityAction = (!isPortrait || isFullscreen) && onQualityClick != null
         val showLineAction = !isPortrait || isFullscreen
         val showRoomSettingsAction = shouldShowPlayerRoomSettingsAction(isPortrait)
-        val showFullscreenAction = shouldShowPlayerFullscreenAction(isPortrait)
+        val showFullscreenAction = shouldShowPlayerFullscreenAction(isPortrait) || (LocalAppLayout.current.tablet && !isFullscreen)
         val hasOverflowActions = compact && (
             onRefreshClick != null ||
                 showQualityAction ||
                 showLineAction ||
                 (showRoomSettingsAction && onRoomSettingsClick != null) ||
-                onQuickAccessClick != null
+                onQuickAccessClick != null ||
+                onDiagnosticsClick != null
             )
 
         Row(
@@ -898,7 +988,15 @@ private fun PlayerBottomBar(
                     }
                     DropdownMenu(
                         expanded = showOverflowMenu,
-                        onDismissRequest = { showOverflowMenu = false }
+                        onDismissRequest = { showOverflowMenu = false },
+                        modifier = Modifier
+                            .heightIn(max = 280.dp)
+                            .playerOverflowMenuEdgeFades(
+                                scrollState = overflowMenuScrollState,
+                                edgeColor = overflowMenuColor
+                            ),
+                        scrollState = overflowMenuScrollState,
+                        containerColor = overflowMenuColor
                     ) {
                         if (onRefreshClick != null) {
                             DropdownMenuItem(
@@ -948,6 +1046,16 @@ private fun PlayerBottomBar(
                                 }
                             )
                         }
+                        if (onDiagnosticsClick != null) {
+                            DropdownMenuItem(
+                                text = { Text("播放诊断") },
+                                leadingIcon = { Icon(Icons.Default.Info, contentDescription = null) },
+                                onClick = {
+                                    showOverflowMenu = false
+                                    onDiagnosticsClick()
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -985,6 +1093,57 @@ internal fun resolvePlayerDanmuButtonTint(
     return if (danmuEnable) accentColor else Color.White
 }
 
+internal data class PlayerOverflowMenuScrollEdges(
+    val showTop: Boolean,
+    val showBottom: Boolean
+)
+
+internal fun resolvePlayerOverflowMenuScrollEdges(
+    scrollValue: Int,
+    maxScrollValue: Int
+): PlayerOverflowMenuScrollEdges {
+    val boundedMax = maxScrollValue.coerceAtLeast(0)
+    val boundedValue = scrollValue.coerceIn(0, boundedMax)
+    return PlayerOverflowMenuScrollEdges(
+        showTop = boundedValue > 0,
+        showBottom = boundedValue < boundedMax
+    )
+}
+
+private fun Modifier.playerOverflowMenuEdgeFades(
+    scrollState: ScrollState,
+    edgeColor: Color
+): Modifier = drawWithContent {
+    drawContent()
+    val edges = resolvePlayerOverflowMenuScrollEdges(
+        scrollValue = scrollState.value,
+        maxScrollValue = scrollState.maxValue
+    )
+    val edgeHeight = minOf(18.dp.toPx(), size.height)
+    if (edges.showTop) {
+        drawRect(
+            brush = Brush.verticalGradient(
+                colors = listOf(edgeColor.copy(alpha = 0.9f), Color.Transparent),
+                startY = 0f,
+                endY = edgeHeight
+            ),
+            size = Size(size.width, edgeHeight)
+        )
+    }
+    if (edges.showBottom) {
+        val top = size.height - edgeHeight
+        drawRect(
+            brush = Brush.verticalGradient(
+                colors = listOf(Color.Transparent, edgeColor.copy(alpha = 0.9f)),
+                startY = top,
+                endY = size.height
+            ),
+            topLeft = Offset(0f, top),
+            size = Size(size.width, edgeHeight)
+        )
+    }
+}
+
 internal fun shouldUseCompactPlayerBottomBar(availableWidthDp: Int, isPortrait: Boolean): Boolean {
     return !isPortrait && availableWidthDp < 480
 }
@@ -1003,6 +1162,42 @@ internal fun shouldShowPlayerFullscreenAction(isPortrait: Boolean): Boolean {
 
 internal fun shouldShowPlayerDanmuSettingsButton(isPortrait: Boolean): Boolean {
     return isPortrait
+}
+
+internal fun shouldShowPlaybackDiagnostics(debugBuild: Boolean, hasController: Boolean): Boolean =
+    debugBuild && hasController
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PlaybackDiagnosticsBottomSheet(
+    snapshot: PlaybackDiagnosticSnapshot,
+    onDismiss: () -> Unit
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surface
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(bottom = 32.dp)
+        ) {
+            Text(
+                text = "播放诊断",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+            )
+            HorizontalDivider()
+            snapshot.entries.forEach { entry ->
+                ListItem(
+                    headlineContent = { Text(entry.label) },
+                    supportingContent = { Text(entry.value) }
+                )
+            }
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

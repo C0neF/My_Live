@@ -17,4 +17,17 @@ class DanmakuSurfaceViewPolicyTest {
         assertFalse(stopBlock.contains(".join("))
         assertTrue(source.contains("joinStoppedRenderThread"))
     }
+
+    @Test
+    fun idleSurfaceStopsSchedulingVsyncUntilControllerRequestsWork() {
+        val source = File("src/main/java/com/mylive/app/ui/screen/room/player/DanmakuSurfaceView.kt")
+            .readText()
+
+        assertTrue(source.contains("controller.setFrameRequester"))
+        assertTrue(source.contains("controller.needsFrame()"))
+        assertFalse(
+            "frame callback must not unconditionally schedule another vsync",
+            source.contains("thread.onVsync(frameTimeNanos)\n                Choreographer.getInstance().postFrameCallback(this)")
+        )
+    }
 }

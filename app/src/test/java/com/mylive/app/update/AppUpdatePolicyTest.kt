@@ -283,7 +283,7 @@ class AppUpdatePolicyTest {
         assertTrue(navSource.contains("entry<Route.SettingsUpdate>"))
         assertTrue(navSource.contains("AppUpdateScreen(navigator = navigator)"))
         assertTrue(settingsSource.contains("settings_update"))
-        assertTrue(settingsSource.contains("navigator.navigate(Route.SettingsUpdate)"))
+        assertTrue(settingsSource.contains("navigation.navigate(Route.SettingsUpdate)"))
         assertTrue(updateSource.contains("BuildConfig.VERSION_NAME.substringBefore('.')"))
         assertTrue(updateSource.contains("\"v${'$'}updateMajorVersion 稳定版\""))
         assertTrue(updateSource.contains("更新通道：${'$'}updateChannelName"))

@@ -25,7 +25,7 @@ data class DanmakuConfig(
     val renderEmoji: Boolean = true
 )
 
-internal fun applyDanmakuConfig(controller: DanmakuController, config: DanmakuConfig) {
+internal fun applyDanmakuConfig(controller: DanmakuController, config: DanmakuConfig) = controller.updateConfiguration {
     controller.danmuSize = config.size.toFloat()
     controller.danmuSpeed = config.speed.toFloat()
     controller.danmuArea = config.area.toFloat()

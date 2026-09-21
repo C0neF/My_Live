@@ -1,7 +1,6 @@
 package com.mylive.app.ui.screen.settings
 
 import android.widget.Toast
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -61,20 +60,10 @@ fun AppUpdateScreen(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     var launchedInstallFile by remember { mutableStateOf<File?>(null) }
-    var isExiting by remember { mutableStateOf(false) }
     val updateMajorVersion = BuildConfig.VERSION_NAME.substringBefore('.')
     val updateChannelName = "v$updateMajorVersion 稳定版"
 
-    val handleBack: () -> Unit = {
-        if (!isExiting) {
-            isExiting = true
-            navigator.goBack()
-        }
-    }
-
-    BackHandler(enabled = !isExiting) {
-        handleBack()
-    }
+    val handleBack = navigator.rememberRouteActions().onBack
 
     LaunchedEffect(Unit) {
         viewModel.checkForUpdate()

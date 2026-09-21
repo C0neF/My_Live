@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.mylive.app.core.model.LiveRoomItem
 import com.mylive.app.core.model.LiveSubCategory
 import com.mylive.app.core.site.LiveSite
+import com.mylive.app.core.site.mergeRoomCatalogPage
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -52,7 +53,14 @@ class CategoryDetailViewModel @Inject constructor(
     private var activeLoadRequestId = 0L
 
     fun init(siteId: String, categoryId: String, categoryName: String) {
-        if (initialized) return
+        if (initialized && this.siteId == siteId && this.categoryId == categoryId) return
+        loadJob?.cancel()
+        currentPage = 1
+        _rooms.value = emptyList()
+        _loading.value = false
+        _loadingMore.value = false
+        _refreshing.value = false
+        _hasMore.value = true
         initialized = true
 
         this.siteId = siteId
@@ -96,11 +104,11 @@ class CategoryDetailViewModel @Inject constructor(
                 )
                 val result = site.getCategoryRooms(subCategory, page = pageToLoad)
                 if (!isActiveLoadRequest(requestId)) return@launch
-                if (isRefresh || pageToLoad == 1) {
-                    _rooms.value = result.items
-                } else {
-                    _rooms.value = (_rooms.value + result.items).distinctBy { it.roomId }
-                }
+                _rooms.value = mergeRoomCatalogPage(
+                    existing = _rooms.value,
+                    incoming = result.items,
+                    replace = isRefresh || pageToLoad == 1
+                )
                 _hasMore.value = result.hasMore
                 currentPage = pageToLoad + 1
             } catch (e: CancellationException) {

@@ -1,6 +1,15 @@
 package com.mylive.app.ui.screen.room
 
 import com.mylive.app.core.model.LivePlayQuality
+import java.util.concurrent.atomic.AtomicLong
+
+internal class LatestPlaybackRequestGate {
+    private val generation = AtomicLong(0L)
+
+    fun begin(): Long = generation.incrementAndGet()
+
+    fun isCurrent(requestGeneration: Long): Boolean = generation.get() == requestGeneration
+}
 
 internal fun selectLiveRoomPreferredQualityLevel(
     defaultQualityLevel: Int,

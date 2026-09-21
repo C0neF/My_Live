@@ -1,5 +1,7 @@
 package com.mylive.app.data.repository
 
+import com.mylive.app.core.model.TabletOrientationMode
+import com.mylive.app.core.model.AppLayoutMode
 import com.mylive.app.data.local.datastore.SettingsDataStore
 import com.mylive.app.data.local.secure.SensitiveCredentialStore
 import kotlinx.coroutines.flow.Flow
@@ -28,6 +30,27 @@ class SettingsRepository @Inject constructor(
     // Style color
     val styleColor: Flow<Int> = settingsDataStore.getFlow(SettingsDataStore.kStyleColor, 0xff3498db.toInt())
     suspend fun setStyleColor(value: Int) = settingsDataStore.setValue(SettingsDataStore.kStyleColor, value)
+
+    // Layout and orientation are device-local and excluded from profile backup/sync.
+    val appLayoutMode: Flow<AppLayoutMode> = settingsDataStore
+        .getFlow(SettingsDataStore.AppLayoutMode, AppLayoutMode.Auto.persistedValue)
+        .map(AppLayoutMode::fromPersistedValue)
+        .distinctUntilChanged()
+
+    suspend fun setAppLayoutMode(value: AppLayoutMode) {
+        settingsDataStore.setValue(SettingsDataStore.AppLayoutMode, value.persistedValue)
+    }
+    val tabletOrientationMode: Flow<TabletOrientationMode> =
+        settingsDataStore.getFlow(
+            SettingsDataStore.TabletOrientationMode,
+            TabletOrientationMode.FollowSystem.persistedValue
+        )
+            .map(TabletOrientationMode::fromPersistedValue)
+            .distinctUntilChanged()
+
+    suspend fun setTabletOrientationMode(value: TabletOrientationMode) {
+        settingsDataStore.setValue(SettingsDataStore.TabletOrientationMode, value.persistedValue)
+    }
 
     // Danmaku settings
     val danmuEnable: Flow<Boolean> = settingsDataStore.getFlow(SettingsDataStore.DanmuEnable, true)

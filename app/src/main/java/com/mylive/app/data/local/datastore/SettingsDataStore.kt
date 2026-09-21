@@ -24,6 +24,8 @@ class SettingsDataStore(private val context: Context) {
         val LogEnable = booleanPreferencesKey("LogEnable")
         val kStyleColor = intPreferencesKey("kStyleColor")
         val kIsDynamic = booleanPreferencesKey("kIsDynamic")
+        val TabletOrientationMode = intPreferencesKey("TabletOrientationMode")
+        val AppLayoutMode = intPreferencesKey("AppLayoutMode")
 
         // === 排序 ===
         val SiteSort = stringPreferencesKey("SiteSort")

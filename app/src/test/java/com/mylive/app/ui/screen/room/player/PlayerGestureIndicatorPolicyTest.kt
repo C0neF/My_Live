@@ -8,6 +8,18 @@ import java.io.File
 class PlayerGestureIndicatorPolicyTest {
 
     @Test
+    fun playerGestureOverlayDoesNotPauseOnLongPress() {
+        val source = File("src/main/java/com/mylive/app/ui/screen/room/player/PlayerView.kt").readText()
+        val tapGestureSource = source.substringAfter("detectTapGestures(")
+            .substringBefore(".pointerInput(isLocked) {\n                    if (isLocked)")
+
+        assertTrue(tapGestureSource.contains("onTap ="))
+        assertTrue(tapGestureSource.contains("onDoubleTap ="))
+        assertFalse(tapGestureSource.contains("onLongPress ="))
+        assertFalse(tapGestureSource.contains("togglePlayPause()"))
+    }
+
+    @Test
     fun gestureIndicatorUsesStableWidthForThreeDigitPercent() {
         val source = File("src/main/java/com/mylive/app/ui/screen/room/player/PlayerView.kt").readText()
         val indicatorSource = source.substringAfter("private fun IndicatorOverlay(")
@@ -30,24 +42,44 @@ class PlayerGestureIndicatorPolicyTest {
     }
 
     @Test
-    fun volumeGestureUsesAccumulatedDragWithHigherSensitivity() {
+    fun systemVolumeGestureUsesReferenceScalingAndFivePercentSteps() {
         val source = File("src/main/java/com/mylive/app/ui/screen/room/player/PlayerView.kt").readText()
-        val policySource = source.substringAfter("internal fun playerVolumeForVerticalDrag(")
+        val policySource = source.substringAfter("internal fun systemVolumeForVerticalDrag(")
             .substringBefore("@kotlin.OptIn")
 
-        assertTrue(source.contains("internal const val PlayerVolumeGestureSensitivity = 2.5f"))
-        assertTrue(policySource.contains("val delta = -totalDragY / heightPx.coerceAtLeast(1f) * PlayerVolumeGestureSensitivity"))
+        assertTrue(source.contains("internal const val SystemVolumeGestureSensitivity = 2f"))
+        assertTrue(policySource.contains("val delta = -totalDragY / heightPx.coerceAtLeast(1f) * SystemVolumeGestureSensitivity"))
         assertTrue(policySource.contains("return (startVolume + delta).coerceIn(0f, 1f)"))
+        assertTrue(source.contains("internal fun quantizeSystemVolumeGesture("))
+        assertTrue(source.contains("/ 5f"))
     }
 
     @Test
-    fun volumeGestureAppliesDirectVolumeFromGestureStart() {
+    fun volumeGestureAppliesSystemVolumeFromGestureStart() {
         val source = File("src/main/java/com/mylive/app/ui/screen/room/player/PlayerView.kt").readText()
         val gestureSource = source.substringAfter("var gestureStartVolume")
             .substringBefore("} else if (isHorizontal)")
 
-        assertTrue(gestureSource.contains("playerVolumeForVerticalDrag("))
-        assertTrue(gestureSource.contains("playerController?.setVolumeDirect(volumeValue)"))
-        assertFalse(gestureSource.contains("playerController?.setVolume(delta)"))
+        assertTrue(gestureSource.contains("systemVolumeForVerticalDrag("))
+        assertTrue(gestureSource.contains("setSystemVolumeDirect(volumeValue)"))
+        assertTrue(gestureSource.contains("currentSystemMediaVolume()"))
+        assertFalse(gestureSource.contains("playerController?.setVolumeDirect(volumeValue)"))
+    }
+
+    @Test
+    fun verticalGestureStartsOnlyInTheMiddleOfThePlayer() {
+        val source = File("src/main/java/com/mylive/app/ui/screen/room/player/PlayerView.kt").readText()
+
+        assertTrue(source.contains("size.height * 0.25f"))
+        assertTrue(source.contains("size.height * 0.75f"))
+    }
+
+    @Test
+    fun systemVolumeGestureThrottlesNativeUpdatesButKeepsIndicatorResponsive() {
+        val source = File("src/main/java/com/mylive/app/ui/screen/room/player/PlayerView.kt").readText()
+
+        assertTrue(source.contains("SystemVolumeGestureThrottleMs = 200L"))
+        assertTrue(source.contains("SystemClock.uptimeMillis()"))
+        assertTrue(source.contains("pendingSystemVolume"))
     }
 }

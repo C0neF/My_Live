@@ -41,7 +41,9 @@ internal fun <T, K> mergeChatDisplayMessages(
         return sourceMessages.takeLast(maxEnabledMessages.coerceAtLeast(0))
     }
 
-    if (currentDisplay.isEmpty()) return sourceMessages
+    if (currentDisplay.isEmpty()) {
+        return sourceMessages.takeLast(maxEnabledMessages.coerceAtLeast(0))
+    }
 
     val displayedKeys = currentDisplay.mapTo(mutableSetOf()) { keyOf(it) }
     val merged = ArrayList<T>(currentDisplay.size + sourceMessages.size)
@@ -51,5 +53,5 @@ internal fun <T, K> mergeChatDisplayMessages(
             merged.add(message)
         }
     }
-    return merged
+    return merged.takeLast(maxEnabledMessages.coerceAtLeast(0))
 }

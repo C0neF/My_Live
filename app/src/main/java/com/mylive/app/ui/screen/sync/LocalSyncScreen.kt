@@ -1,7 +1,6 @@
 package com.mylive.app.ui.screen.sync
 
 import android.widget.Toast
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -47,16 +46,7 @@ fun LocalSyncScreen(
     var isConnecting by remember { mutableStateOf(false) }
     var showMyInfoDialog by remember { mutableStateOf(false) }
 
-    var isExiting by remember { mutableStateOf(false) }
-    val handleBack: () -> Unit = {
-        if (!isExiting) {
-            isExiting = true
-            navigator.goBack()
-        }
-    }
-    BackHandler(enabled = !isExiting) {
-        handleBack()
-    }
+    val handleBack = navigator.rememberRouteActions().onBack
 
     DisposableEffect(Unit) {
         LanSyncService.start(context)

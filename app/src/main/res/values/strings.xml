@@ -6,6 +6,10 @@
     <string name="nav_follow">关注</string>
     <string name="nav_category">分类</string>
     <string name="nav_mine">我的</string>
+    <string name="tablet_orientation_switch_to_landscape">当前已锁定竖屏，切换并锁定横屏</string>
+    <string name="tablet_orientation_switch_to_portrait">当前已锁定横屏，切换并锁定竖屏</string>
+    <string name="tablet_orientation_action_landscape">切横屏</string>
+    <string name="tablet_orientation_action_portrait">切竖屏</string>
 
     <!-- Home / Search / Follow / Category / Mine / History -->
     <string name="search_title">搜索</string>
@@ -26,7 +30,7 @@
     <string name="mine_account">账号管理</string>
     <string name="mine_sync">数据同步</string>
     <string name="mine_settings">设置</string>
-    <string name="mine_version">My Live v%1$s</string>
+    <string name="mine_version">My Live V3.0.0</string>
 
     <!-- Settings -->
     <string name="settings_title">设置</string>
@@ -159,6 +163,7 @@
     <!-- Account screen extras -->
     <string name="account_status_label">登录状态</string>
     <string name="account_logout">退出登录</string>
+    <string name="account_clear_cookie_action">清除 Cookie</string>
     <string name="account_webview_login">WebView 登录</string>
     <string name="account_webview_login_subtitle">通过内置浏览器登录B站</string>
     <string name="account_cookie_login">Cookie 登录</string>
@@ -170,7 +175,7 @@
     <string name="account_bilibili_cookie_saved">B站 Cookie 已保存</string>
     <string name="account_douyin_cookie_saved">抖音 Cookie 已保存</string>
     <string name="account_bilibili_logged_out">B站 已退出登录</string>
-    <string name="account_douyin_logged_out">抖音 已退出登录</string>
+    <string name="account_douyin_logged_out">抖音 Cookie 已清除</string>
 
     <!-- Danmu option label arrays (displayed in SettingsMenu.value) -->
     <string-array name="danmu_font_size_options">
@@ -356,4 +361,18 @@ https://webcast.amemv.com/webcast/reflow/xxxxx</string>
     <string name="shield_preset_import_failed">导入失败，请检查 JSON 内容</string>
     <string name="shield_preset_import_title">从剪贴板导入预设</string>
     <string name="shield_preset_import_hint">请在此处粘贴导出的预设 JSON</string>
+    <string name="layout_mode_title">平板模式</string>
+    <string name="layout_mode_auto">自动</string>
+    <string name="layout_mode_phone">手机</string>
+    <string name="layout_mode_tablet">平板</string>
+    <string name="layout_active_tablet">当前：平板布局</string>
+    <string name="layout_active_phone">当前：手机布局</string>
+    <string name="layout_mode_description">自动根据设备和窗口大小调整。选择手机后，大屏也保持手机布局；选择平板后，会按可用空间显示侧栏和分栏。</string>
+    <string name="tablet_rotation_title">平板屏幕方向</string>
+    <string name="tablet_rotation_system">跟随系统</string>
+    <string name="tablet_rotation_portrait">竖屏</string>
+    <string name="tablet_rotation_landscape">横屏</string>
+    <string name="tablet_rotation_description">全屏播放临时使用横屏，退出后恢复所选方向。分屏窗口内按系统提供的空间适配。</string>
+    <string name="tablet_live_chat">实时聊天</string>
+    <string name="tablet_orientation_switch_from_system">当前跟随系统，切换并锁定横屏</string>
 </resources>

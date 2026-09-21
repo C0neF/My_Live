@@ -26,7 +26,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.*
-import androidx.activity.compose.BackHandler
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -44,6 +43,8 @@ import androidx.compose.ui.text.font.FontWeight
 import com.mylive.app.ui.component.settings.SettingsMenu
 import com.mylive.app.ui.component.settings.SettingsSwitch
 import com.mylive.app.ui.navigation.Navigator
+import com.mylive.app.ui.layout.AdaptivePageFrame
+import com.mylive.app.ui.layout.LocalAppLayout
 
 private val themeModeValues = listOf(0, 1, 2)
 
@@ -76,18 +77,7 @@ fun AppearanceSettingsScreen(
     val selectedCd = stringResource(R.string.theme_color_selected)
 
     var showThemeDialog by remember { mutableStateOf(false) }
-    var isExiting by remember { mutableStateOf(false) }
-
-    val handleBack: () -> Unit = {
-        if (!isExiting) {
-            isExiting = true
-            navigator.goBack()
-        }
-    }
-
-    BackHandler(enabled = !isExiting) {
-        handleBack()
-    }
+    val handleBack = navigator.rememberRouteActions().onBack
 
     Scaffold(
         topBar = {
@@ -104,10 +94,10 @@ fun AppearanceSettingsScreen(
             )
         }
     ) { padding ->
+        AdaptivePageFrame(Modifier.padding(padding), LocalAppLayout.current.settingsMaxWidthDp) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
                 .background(MaterialTheme.colorScheme.background)
                 .verticalScroll(rememberScrollState())
         ) {
@@ -179,6 +169,7 @@ fun AppearanceSettingsScreen(
                     }
                 }
             }
+        }
         }
     }
 

@@ -107,4 +107,15 @@ class LiveRoomQualityPolicyTest {
             )
         )
     }
+
+    @Test
+    fun onlyLatestPlaybackRequestMayApplyItsResolution() {
+        val requests = LatestPlaybackRequestGate()
+
+        val originalRequest = requests.begin()
+        val latestRequest = requests.begin()
+
+        assertTrue(!requests.isCurrent(originalRequest))
+        assertTrue(requests.isCurrent(latestRequest))
+    }
 }

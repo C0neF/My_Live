@@ -2,7 +2,6 @@ package com.mylive.app.ui.screen.room
 
 import android.app.Activity
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -14,11 +13,14 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.verticalDrag
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -42,9 +44,16 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
+import com.mylive.app.ui.layout.LocalAppLayout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.dismiss
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.setProgress
@@ -94,17 +103,17 @@ import com.mylive.app.ui.screen.follow.FollowViewModel
 import com.mylive.app.data.local.entity.FollowUserEntity
 import com.mylive.app.core.model.LiveSuperChatMessage
 import com.mylive.app.ui.navigation.Route
+import com.mylive.app.ui.navigation.NavigationExitEffect
 import com.mylive.app.ui.screen.room.quickaccess.QuickAccessExtraTab
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.core.EaseOutCubic
+import com.mylive.app.ui.motion.AppMotion
+import com.mylive.app.ui.motion.LocalAppMotionPolicy
 import kotlinx.coroutines.launch
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlin.math.roundToInt
 import java.util.concurrent.atomic.AtomicLong
 
@@ -162,6 +171,19 @@ internal fun liveRoomSidePanelOffsetAfterDrag(
     return (currentOffsetPx + deltaX).coerceIn(0f, panelWidthPx)
 }
 
+internal fun liveRoomSidePanelSettledOffset(
+    currentOffsetPx: Float,
+    velocityX: Float,
+    panelWidthPx: Float
+): Float {
+    if (panelWidthPx <= 0f) return 0f
+    val projectedOffset = AppMotion.projectedEndpoint(
+        currentValue = currentOffsetPx,
+        velocity = velocityX
+    )
+    return if (projectedOffset < panelWidthPx * 0.7f) 0f else panelWidthPx
+}
+
 internal fun liveRoomTabIndex(roomTabs: List<LiveRoomTabType>, target: LiveRoomTabType): Int {
     return roomTabs.indexOf(target).coerceAtLeast(0)
 }
@@ -204,7 +226,8 @@ fun LiveRoomScreen(
     val context = LocalContext.current
     val activity = context as? Activity
 
-    var isExiting by remember { mutableStateOf(false) }
+    val navigation = navigator.rememberRouteActions()
+    val routeActive = navigation.isCurrent
     var isControlsLocked by remember { mutableStateOf(false) }
     val settingsViewModel: SettingsViewModel = hiltViewModel()
     val liveRoomPreferences by settingsViewModel.liveRoomPreferences.collectAsStateWithLifecycle()
@@ -261,7 +284,7 @@ fun LiveRoomScreen(
         ),
         preferences = liveRoomPreferences,
         controlsLocked = isControlsLocked,
-        exiting = isExiting,
+        exiting = !routeActive,
         binding = viewModel,
         settingsRepository = viewModel.settingsRepository,
         onPlaybackSourceExhausted = viewModel::recoverPlaybackAfterSourceFailure
@@ -269,15 +292,17 @@ fun LiveRoomScreen(
     val playerController = playbackHost.playerController
     val isInPip = playbackHost.isInPictureInPicture
     val isFullscreen = playbackHost.isFullscreen
+    val roomLayout = resolveLiveRoomLayout(LocalAppLayout.current, isLandscape, isFullscreen)
 
     LiveDanmakuSurfaceFeed(
         messages = viewModel.newDanmakuMessages,
+        playbackState = playerController?.state,
         controller = pipDanmakuController,
         active = shouldFeedPipDanmakuSurface(
             isInPip = isInPip,
             danmuEnable = pipDanmuEnable,
             pipHideDanmu = pipHideDanmu,
-            isExiting = isExiting
+            routeActive = routeActive
         ),
         clearWhenInactive = true
     )
@@ -286,21 +311,10 @@ fun LiveRoomScreen(
     val roomAutoExitDuration = liveRoomPreferences.roomAutoExitDuration
     val lastInteractionTime = remember { AtomicLong(System.currentTimeMillis()) }
 
-    // Shared back handler: stop playback, restore orientation, then navigate.
-    // Remembered so it keeps a stable identity across the recompositions this screen does per
-    // room-state update; it is passed down as `onBack`, and a fresh lambda each pass would
-    // invalidate every layout below it.
-    val handleBack: () -> Unit = remember(navigator, playbackHost) {
-        {
-            if (!isExiting) {
-                isExiting = true
-                playbackHost.prepareToLeave()
-                if (!navigator.goBack()) {
-                    playbackHost.pause()
-                }
-            }
-        }
+    NavigationExitEffect(navigator = navigator, route = key) {
+        playbackHost.prepareToLeave()
     }
+    val handleBack = navigation.onBack
 
     val currentHandleBack by rememberUpdatedState(handleBack)
     LaunchedEffect(roomAutoExitDuration) {
@@ -314,14 +328,6 @@ fun LiveRoomScreen(
                 break
             }
             kotlinx.coroutines.delay(remainingMillis.coerceAtMost(1000L))
-        }
-    }
-
-    BackHandler {
-        if (isFullscreen) {
-            playbackHost.toggleFullscreen()
-        } else {
-            handleBack()
         }
     }
 
@@ -345,6 +351,7 @@ fun LiveRoomScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .testTag("screen_live_room")
             .background(MaterialTheme.colorScheme.background)
             .pointerInput(Unit) {
                 awaitPointerEventScope {
@@ -393,13 +400,16 @@ fun LiveRoomScreen(
                 actions = PlayerViewActions(
                     danmaku = PlayerDanmakuActions(
                         onChatBubbleStyleChange = settingsViewModel::setChatBubbleStyle,
-                        onControllerCreated = { pipDanmakuController = it }
+                        onControllerCreated = { pipDanmakuController = it },
+                        onControllerReleased = { released ->
+                            if (pipDanmakuController === released) pipDanmakuController = null
+                        }
                     ),
                     onFullscreenClick = { playerController?.toggleFullscreen() }
                 ),
                 modifier = Modifier.fillMaxSize()
             )
-        } else if (isLandscape || isFullscreen) {
+        } else if (roomLayout == LiveRoomLayout.Immersive) {
             LandscapeLayout(
                 uiState = uiState,
                 viewModel = viewModel,
@@ -410,7 +420,7 @@ fun LiveRoomScreen(
                 settingsViewModel = settingsViewModel,
                 liveRoomPreferences = liveRoomPreferences,
                 onQualityClick = { showQualitySheet = true },
-                isExiting = isExiting,
+                routeActive = routeActive,
                 onControlsLockChange = { isControlsLocked = it },
                 onBack = {
                     if (isFullscreen) {
@@ -422,6 +432,7 @@ fun LiveRoomScreen(
             )
         } else {
             PortraitLayout(
+                tabletSplit = roomLayout == LiveRoomLayout.Split,
                 uiState = uiState,
                 viewModel = viewModel,
                 accentSiteId = accentSiteId,
@@ -431,7 +442,7 @@ fun LiveRoomScreen(
                 settingsViewModel = settingsViewModel,
                 liveRoomPreferences = liveRoomPreferences,
                 onQualityClick = { showQualitySheet = true },
-                isExiting = isExiting,
+                routeActive = routeActive,
                 onControlsLockChange = { isControlsLocked = it },
                 onBack = handleBack
             )
@@ -442,6 +453,7 @@ fun LiveRoomScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun PortraitLayout(
+    tabletSplit: Boolean,
     uiState: LiveRoomUiState,
     viewModel: LiveRoomViewModel,
     accentSiteId: String,
@@ -451,7 +463,7 @@ private fun PortraitLayout(
     settingsViewModel: SettingsViewModel,
     liveRoomPreferences: LiveRoomPreferences,
     onQualityClick: () -> Unit,
-    isExiting: Boolean = false,
+    routeActive: Boolean = true,
     onControlsLockChange: (Boolean) -> Unit = {},
     onBack: () -> Unit = {}
 ) {
@@ -524,6 +536,7 @@ private fun PortraitLayout(
             currentSiteId = viewModel.siteId,
             currentRoomId = viewModel.roomId,
             currentCategoryId = uiState.detail?.categoryId,
+            currentResolvedRoomId = uiState.detail?.roomId,
             extraTabs = portraitActions.mapNotNull { action ->
                 if (action.panel != PortraitLiveRoomPanel.SUPER_CHAT) return@mapNotNull null
                 QuickAccessExtraTab(
@@ -573,25 +586,22 @@ private fun PortraitLayout(
 
     LiveDanmakuSurfaceFeed(
         messages = viewModel.newDanmakuMessages,
+        playbackState = playerController?.state,
         controller = danmakuController,
         active = shouldFeedLiveDanmakuSurface(
             hasController = danmakuController != null,
-            isExiting = isExiting
+            enabled = danmuEnable,
+            routeActive = routeActive
         )
     )
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .statusBarsPadding()
-    ) {
-        // Player area (16:9) with danmaku overlay
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(16f / 9f)
-                .background(Color.Black)
-        ) {
+    AdaptiveLiveRoomLayout(
+        splitPane = tabletSplit,
+        chatWidthDp = LocalAppLayout.current.liveChatWidthDp,
+        limitStackedPlayerHeight = LocalAppLayout.current.tablet,
+        modifier = Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding(),
+        player = { playerMaxHeight ->
+        LiveRoomPlayerArea(maximumHeight = playerMaxHeight) {
             val currentQualityName = uiState.playQualities.getOrNull(uiState.currentQualityIndex)?.quality ?: "画质"
             PlayerView(
                 playerController = playerController,
@@ -636,7 +646,10 @@ private fun PortraitLayout(
                         onAreaChange = settingsViewModel::setDanmuArea,
                         onOpacityChange = settingsViewModel::setDanmuOpacity,
                         onChatBubbleStyleChange = settingsViewModel::setChatBubbleStyle,
-                        onControllerCreated = { danmakuController = it }
+                        onControllerCreated = { danmakuController = it },
+                        onControllerReleased = { released ->
+                            if (danmakuController === released) danmakuController = null
+                        }
                     ),
                     onFullscreenClick = { playerController?.toggleFullscreen() },
                     onControlsLockChange = onControlsLockChange
@@ -656,20 +669,20 @@ private fun PortraitLayout(
             onQuickAccessClick = quickAccessAction
         )
 
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-
+        },
+        details = { HostAboutPanel(uiState.detail, Modifier.weight(1f).fillMaxWidth()) },
+        chat = { chatModifier ->
         ChatPanel(
             messagesFlow = viewModel.danmakuMessages,
             noticeFlow = viewModel.danmakuNotice,
-            modifier = Modifier
-                .weight(1f)
-                .background(MaterialTheme.colorScheme.background),
+            modifier = chatModifier.testTag("live_room_chat").background(MaterialTheme.colorScheme.background),
             hostName = uiState.detail?.userName ?: "",
             chatTextSize = chatTextSize,
             chatTextGap = chatTextGap,
             chatBubbleStyle = chatBubbleStyle
         )
-    }
+        }
+    )
 }
 
 @Composable
@@ -738,7 +751,7 @@ private fun LandscapeLayout(
     settingsViewModel: SettingsViewModel,
     liveRoomPreferences: LiveRoomPreferences,
     onQualityClick: () -> Unit,
-    isExiting: Boolean = false,
+    routeActive: Boolean = true,
     onControlsLockChange: (Boolean) -> Unit = {},
     onBack: () -> Unit = {}
 ) {
@@ -784,7 +797,7 @@ private fun LandscapeLayout(
     var showQuickAccess by remember { mutableStateOf(false) }
     var quickAccessInitialTabKey by remember { mutableStateOf<String?>(null) }
     val quickAccessAction = liveRoomQuickAccessAction(liveRoomQuickAccessEnabled) {
-        quickAccessInitialTabKey = "follow"
+        quickAccessInitialTabKey = null
         showQuickAccess = true
     }
 
@@ -800,6 +813,7 @@ private fun LandscapeLayout(
                 currentSiteId = viewModel.siteId,
                 currentRoomId = viewModel.roomId,
                 currentCategoryId = uiState.detail?.categoryId,
+                currentResolvedRoomId = uiState.detail?.roomId,
                 extraTabs = landscapeQuickAccessExtraTabs(
                     settingsViewModel = settingsViewModel,
                     liveRoomPreferences = liveRoomPreferences,
@@ -830,7 +844,11 @@ private fun LandscapeLayout(
     val panelOffset = remember(panelWidthPx) {
         Animatable(liveRoomInitialSidePanelOffsetPx(panelWidthPx))
     }
+    SideEffect {
+        panelOffset.updateBounds(lowerBound = 0f, upperBound = panelWidthPx)
+    }
     val coroutineScope = rememberCoroutineScope()
+    val motionPolicy = LocalAppMotionPolicy.current
     val showSidePanel = panelOffset.value < panelWidthPx
     val panelWidth = remember(panelOffset.value) {
         with(density) { (panelWidthPx - panelOffset.value).toDp() }
@@ -838,13 +856,15 @@ private fun LandscapeLayout(
 
     BackHandler(enabled = showSidePanel) {
         coroutineScope.launch {
-            panelOffset.animateTo(
-                targetValue = panelWidthPx,
-                animationSpec = spring(
-                    dampingRatio = Spring.DampingRatioNoBouncy,
-                    stiffness = Spring.StiffnessMedium
+            if (motionPolicy.reducedMotion) {
+                panelOffset.snapTo(panelWidthPx)
+            } else {
+                panelOffset.animateTo(
+                    targetValue = panelWidthPx,
+                    animationSpec = AppMotion.momentumSpec(),
+                    initialVelocity = 0f
                 )
-            )
+            }
         }
     }
 
@@ -852,10 +872,12 @@ private fun LandscapeLayout(
 
     LiveDanmakuSurfaceFeed(
         messages = viewModel.newDanmakuMessages,
+        playbackState = playerController?.state,
         controller = danmakuController,
         active = shouldFeedLiveDanmakuSurface(
             hasController = danmakuController != null,
-            isExiting = isExiting
+            enabled = danmuEnable,
+            routeActive = routeActive
         )
     )
 
@@ -912,7 +934,10 @@ private fun LandscapeLayout(
                         onAreaChange = settingsViewModel::setDanmuArea,
                         onOpacityChange = settingsViewModel::setDanmuOpacity,
                         onChatBubbleStyleChange = settingsViewModel::setChatBubbleStyle,
-                        onControllerCreated = { danmakuController = it }
+                        onControllerCreated = { danmakuController = it },
+                        onControllerReleased = { released ->
+                            if (danmakuController === released) danmakuController = null
+                        }
                     ),
                     onQuickAccessClick = quickAccessAction,
                     onFollowClick = viewModel::toggleFollow,
@@ -927,24 +952,20 @@ private fun LandscapeLayout(
                             panelOffset.snapTo(newOffset)
                         }
                     },
-                    onHorizontalDragEnd = {
+                    onHorizontalDragEnd = { velocityX ->
                         coroutineScope.launch {
-                            val threshold = panelWidthPx * 0.7f
-                            if (panelOffset.value < threshold) {
-                                panelOffset.animateTo(
-                                    targetValue = 0f,
-                                    animationSpec = spring(
-                                        dampingRatio = Spring.DampingRatioNoBouncy,
-                                        stiffness = Spring.StiffnessMedium
-                                    )
-                                )
+                            val targetOffset = liveRoomSidePanelSettledOffset(
+                                currentOffsetPx = panelOffset.value,
+                                velocityX = velocityX,
+                                panelWidthPx = panelWidthPx
+                            )
+                            if (motionPolicy.reducedMotion) {
+                                panelOffset.snapTo(targetOffset)
                             } else {
                                 panelOffset.animateTo(
-                                    targetValue = panelWidthPx,
-                                    animationSpec = spring(
-                                        dampingRatio = Spring.DampingRatioNoBouncy,
-                                        stiffness = Spring.StiffnessMedium
-                                    )
+                                    targetValue = targetOffset,
+                                    animationSpec = AppMotion.momentumSpec(),
+                                    initialVelocity = velocityX
                                 )
                             }
                         }
@@ -1236,21 +1257,48 @@ private fun PortraitAuxiliaryPanelSheet(
     onDismiss: () -> Unit
 ) {
     val maxSheetHeight = (LocalConfiguration.current.screenHeightDp * 0.72f).dp
+    val isSettings = panel == PortraitLiveRoomPanel.SETTINGS
+    var handleDismissAllowed by remember { mutableStateOf(false) }
+    var handleGestureActive by remember { mutableStateOf(false) }
+    val sheetState = rememberModalBottomSheetState(
+        skipPartiallyExpanded = true,
+        confirmValueChange = { target -> !isSettings || target != SheetValue.Hidden || handleDismissAllowed }
+    )
+    LaunchedEffect(isSettings, handleGestureActive, handleDismissAllowed) {
+        if (!isSettings || handleGestureActive || !handleDismissAllowed) return@LaunchedEffect
+        withFrameNanos { }
+        val settled = snapshotFlow { sheetState.currentValue to sheetState.targetValue }
+            .first { (current, target) -> current == target }
+        if (settled.first == SheetValue.Expanded) handleDismissAllowed = false
+    }
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = MaterialTheme.colorScheme.surface
+        sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.surface,
+        dragHandle = if (panel == PortraitLiveRoomPanel.SETTINGS) {
+            {
+                RoomSettingsSheetDragHandle(
+                    onDownwardDragStarted = { handleDismissAllowed = true },
+                    onGestureActiveChange = { handleGestureActive = it },
+                    onDismiss = onDismiss
+                )
+            }
+        } else {
+            { BottomSheetDefaults.DragHandle() }
+        }
     ) {
+        BackHandler(onBack = onDismiss)
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(max = maxSheetHeight)
+                .then(if (isSettings) Modifier.height(maxSheetHeight) else Modifier.heightIn(max = maxSheetHeight))
                 .navigationBarsPadding()
+                .then(if (isSettings) Modifier.roomPanelContentScrollIsolation().testTag("room_settings_sheet") else Modifier)
         ) {
-            Row(
+            if (!isSettings) Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                    .padding(start = 16.dp, top = 4.dp, end = 16.dp, bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
@@ -1310,6 +1358,30 @@ private fun PortraitAuxiliaryPanelSheet(
     }
 }
 
+@Composable
+private fun RoomSettingsSheetDragHandle(
+    onDownwardDragStarted: () -> Unit,
+    onGestureActiveChange: (Boolean) -> Unit,
+    onDismiss: () -> Unit
+) {
+    Box(
+        modifier = Modifier.fillMaxWidth().height(48.dp)
+            .roomPanelDismissHandleGesture(onDownwardDragStarted, onGestureActiveChange)
+            .semantics {
+                contentDescription = "下滑关闭设置"
+                dismiss { onDismiss(); true }
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Box(Modifier.size(width = 32.dp, height = 4.dp).clip(RoundedCornerShape(50))
+            .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)))
+        Text("设置", Modifier.align(Alignment.CenterStart).padding(start = 20.dp),
+            style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        IconButton(onClick = onDismiss, modifier = Modifier.align(Alignment.CenterEnd).padding(end = 8.dp)) {
+            Icon(Icons.Default.Close, "关闭设置")
+        }
+    }
+}
 // ── Quality Bottom Sheet ────────────────────────────────────────
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -2304,7 +2376,8 @@ fun RoomSettingsPanel(
     isHuyaOrBilibili: Boolean,
     siteId: String = "",
     onOpenShieldSettings: () -> Unit = {},
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    listState: LazyListState = rememberLazyListState()
 ) {
     val chatTextSize = liveRoomPreferences.chatTextSize
     val chatTextGap = liveRoomPreferences.chatTextGap
@@ -2350,6 +2423,12 @@ fun RoomSettingsPanel(
     }
 
     fun setRoomSettingsSectionExpanded(sectionKey: RoomSettingsSectionKey, expanded: Boolean) {
+        // Pin the clicked header in place while its content changes height, including sticky headers.
+        val header = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == sectionKey.name }
+        listState.requestScrollToItem(
+            index = header?.index ?: sectionKey.ordinal * 3,
+            scrollOffset = -(header?.offset ?: 0).coerceAtLeast(0)
+        )
         expandedSectionNames = if (expanded) {
             (expandedSectionNames + sectionKey.name).distinct()
         } else {
@@ -2374,459 +2453,458 @@ fun RoomSettingsPanel(
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-        contentPadding = PaddingValues(bottom = 24.dp)
+            .testTag("room_settings_list"),
+        state = listState,
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 24.dp)
     ) {
-        item {
-            RoomSettingsCollapsibleSection(
-                sectionKey = RoomSettingsSectionKey.PLAYER_DANMAKU,
-                title = "播放器弹幕设置",
-                subtitle = "滚动弹幕显示、表情、区域、延迟和边距",
-                expanded = isRoomSettingsSectionExpanded(RoomSettingsSectionKey.PLAYER_DANMAKU),
-                onExpandedChange = {
-                    setRoomSettingsSectionExpanded(RoomSettingsSectionKey.PLAYER_DANMAKU, it)
-                }
+        RoomSettingsCollapsibleSection(
+            listState = listState,
+            sectionKey = RoomSettingsSectionKey.PLAYER_DANMAKU,
+            title = "播放器弹幕设置",
+            subtitle = "滚动弹幕显示、表情、区域、延迟和边距",
+            expanded = isRoomSettingsSectionExpanded(RoomSettingsSectionKey.PLAYER_DANMAKU),
+            onExpandedChange = {
+                setRoomSettingsSectionExpanded(RoomSettingsSectionKey.PLAYER_DANMAKU, it)
+            }
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    RoomSettingsSwitchRow(
-                        title = "显示播放器弹幕",
-                        subtitle = "在视频画面上显示滚动弹幕",
-                        checked = danmuEnable,
-                        onCheckedChange = { viewModel.setDanmuEnable(it) }
+                RoomSettingsSwitchRow(
+                    title = "显示播放器弹幕",
+                    subtitle = "在视频画面上显示滚动弹幕",
+                    checked = danmuEnable,
+                    onCheckedChange = { viewModel.setDanmuEnable(it) }
+                )
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                RoomSettingsSwitchRow(
+                    title = "渲染表情",
+                    subtitle = "在播放器弹幕中显示平台表情图片",
+                    checked = danmuRenderEmoji,
+                    onCheckedChange = { viewModel.setDanmuRenderEmoji(it) }
+                )
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                RoomSettingsSliderRow(
+                    title = "弹幕字号",
+                    valueText = roomSettingsMultiplierText(normalizedDanmuSize),
+                    value = normalizedDanmuSize.toFloat(),
+                    onValueChange = { viewModel.setDanmuSize(it.toDouble()) },
+                    valueRange = 0.8f..1.5f,
+                    steps = 6
+                )
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                RoomSettingsSliderRow(
+                    title = "弹幕速度",
+                    valueText = roomSettingsMultiplierText(normalizedDanmuSpeed),
+                    value = normalizedDanmuSpeed.toFloat(),
+                    onValueChange = { viewModel.setDanmuSpeed(it.toDouble()) },
+                    valueRange = 0.6f..1.5f,
+                    steps = 8
+                )
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                RoomSettingsSliderRow(
+                    title = "显示区域",
+                    valueText = roomSettingsPercentText(danmuArea),
+                    value = danmuArea.toFloat(),
+                    onValueChange = { viewModel.setDanmuArea(it.toDouble()) },
+                    valueRange = 0.25f..1.0f,
+                    steps = 14
+                )
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                RoomSettingsSliderRow(
+                    title = "显示几行",
+                    valueText = if (danmuLineCount <= 0) "不显示" else "$danmuLineCount 行",
+                    value = danmuLineCount.toFloat(),
+                    onValueChange = { viewModel.setDanmuLineCount(it.toInt()) },
+                    valueRange = 0f..12f,
+                    steps = 11
+                )
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                RoomSettingsSliderRow(
+                    title = "弹幕透明度",
+                    valueText = roomSettingsPercentText(danmuOpacity),
+                    value = danmuOpacity.toFloat(),
+                    onValueChange = { viewModel.setDanmuOpacity(it.toDouble()) },
+                    valueRange = 0.2f..1.0f,
+                    steps = 7
+                )
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                RoomSettingsSliderRow(
+                    title = "弹幕描边",
+                    valueText = roomSettingsStrokeText(danmuStrokeWidth),
+                    value = danmuStrokeWidth.toFloat(),
+                    onValueChange = { viewModel.setDanmuStrokeWidth(it.toDouble()) },
+                    valueRange = 0f..4f,
+                    steps = 7
+                )
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                RoomSettingsSliderRow(
+                    title = "全局弹幕延迟",
+                    valueText = "${danmuDelay.toInt()} ms",
+                    value = danmuDelay.toFloat(),
+                    onValueChange = { viewModel.setDanmuDelay(it.toDouble()) },
+                    valueRange = 0f..5000f,
+                    steps = 49
+                )
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                RoomSettingsSliderRow(
+                    title = "${danmuDelaySiteLabel(siteId)} 平台补偿延迟",
+                    valueText = "$siteDanmuDelay ms",
+                    value = siteDanmuDelay.toFloat(),
+                    onValueChange = {
+                        viewModel.setDanmuDelayBySiteJson(
+                            updateDanmuDelayBySite(
+                                delayBySiteJson = danmuDelayBySiteJson,
+                                siteId = siteId,
+                                delayMs = it.toInt()
+                            )
+                        )
+                    },
+                    valueRange = 0f..5000f,
+                    steps = 49
+                )
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                RoomSettingsSliderRow(
+                    title = "顶部安全边距",
+                    valueText = "${danmuTopMargin.toInt()} dp",
+                    value = danmuTopMargin.toFloat(),
+                    onValueChange = { viewModel.setDanmuTopMargin(it.toDouble()) },
+                    valueRange = 0f..48f,
+                    steps = 11
+                )
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                RoomSettingsSliderRow(
+                    title = "底部安全边距",
+                    valueText = "${danmuBottomMargin.toInt()} dp",
+                    value = danmuBottomMargin.toFloat(),
+                    onValueChange = { viewModel.setDanmuBottomMargin(it.toDouble()) },
+                    valueRange = 0f..48f,
+                    steps = 11
+                )
+            }
+        }
+
+        RoomSettingsCollapsibleSection(
+            listState = listState,
+            sectionKey = RoomSettingsSectionKey.LIVE_BEHAVIOR,
+            title = "直播间行为设置",
+            subtitle = "全屏、小窗和小窗弹幕行为",
+            expanded = isRoomSettingsSectionExpanded(RoomSettingsSectionKey.LIVE_BEHAVIOR),
+            onExpandedChange = {
+                setRoomSettingsSectionExpanded(RoomSettingsSectionKey.LIVE_BEHAVIOR, it)
+            }
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                RoomSettingsSwitchRow(
+                    title = "进入直播间自动全屏",
+                    subtitle = "打开直播间后自动进入横屏全屏播放",
+                    checked = autoFullScreen,
+                    onCheckedChange = { viewModel.setAutoFullScreen(it) }
+                )
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                RoomSettingsSwitchRow(
+                    title = "退出时自动小窗",
+                    subtitle = "按 Home 键或系统手势退到后台时进入小窗",
+                    checked = autoPipOnExit,
+                    onCheckedChange = { viewModel.setAutoPipOnExit(it) }
+                )
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                RoomSettingsSwitchRow(
+                    title = "进入小窗隐藏弹幕",
+                    subtitle = "小窗播放时隐藏播放器滚动弹幕",
+                    checked = pipHideDanmu,
+                    onCheckedChange = { viewModel.setPipHideDanmu(it) }
+                )
+            }
+        }
+
+        RoomSettingsCollapsibleSection(
+            listState = listState,
+            sectionKey = RoomSettingsSectionKey.CHAT,
+            title = "聊天区设置",
+            subtitle = "文字大小、间距、气泡样式和 SC 排序",
+            expanded = isRoomSettingsSectionExpanded(RoomSettingsSectionKey.CHAT),
+            onExpandedChange = {
+                setRoomSettingsSectionExpanded(RoomSettingsSectionKey.CHAT, it)
+            }
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Font size slider
+                Column {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(text = "文字大小", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold))
+                        Text(text = "${chatTextSize.toInt()} sp", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                    }
+                    RoomSettingsSlider(
+                        value = chatTextSize.toFloat(),
+                        onValueChange = { viewModel.setChatTextSize(it.toDouble()) },
+                        valueRange = 8f..36f,
+                        steps = 27,
+                        modifier = Modifier.semantics { contentDescription = "文字大小" }
                     )
+                }
 
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
 
-                    RoomSettingsSwitchRow(
-                        title = "渲染表情",
-                        subtitle = "在播放器弹幕中显示平台表情图片",
-                        checked = danmuRenderEmoji,
-                        onCheckedChange = { viewModel.setDanmuRenderEmoji(it) }
-                    )
-
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-
-                    RoomSettingsSliderRow(
-                        title = "弹幕字号",
-                        valueText = roomSettingsMultiplierText(normalizedDanmuSize),
-                        value = normalizedDanmuSize.toFloat(),
-                        onValueChange = { viewModel.setDanmuSize(it.toDouble()) },
-                        valueRange = 0.8f..1.5f,
-                        steps = 6
-                    )
-
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-
-                    RoomSettingsSliderRow(
-                        title = "弹幕速度",
-                        valueText = roomSettingsMultiplierText(normalizedDanmuSpeed),
-                        value = normalizedDanmuSpeed.toFloat(),
-                        onValueChange = { viewModel.setDanmuSpeed(it.toDouble()) },
-                        valueRange = 0.6f..1.5f,
-                        steps = 8
-                    )
-
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-
-                    RoomSettingsSliderRow(
-                        title = "显示区域",
-                        valueText = roomSettingsPercentText(danmuArea),
-                        value = danmuArea.toFloat(),
-                        onValueChange = { viewModel.setDanmuArea(it.toDouble()) },
-                        valueRange = 0.25f..1.0f,
-                        steps = 14
-                    )
-
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-
-                    RoomSettingsSliderRow(
-                        title = "显示几行",
-                        valueText = if (danmuLineCount <= 0) "不显示" else "$danmuLineCount 行",
-                        value = danmuLineCount.toFloat(),
-                        onValueChange = { viewModel.setDanmuLineCount(it.toInt()) },
+                // Gap slider
+                Column {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(text = "上下间隔", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold))
+                        Text(text = "${chatTextGap.toInt()} dp", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                    }
+                    RoomSettingsSlider(
+                        value = chatTextGap.toFloat(),
+                        onValueChange = { viewModel.setChatTextGap(it.toDouble()) },
                         valueRange = 0f..12f,
-                        steps = 11
-                    )
-
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-
-                    RoomSettingsSliderRow(
-                        title = "弹幕透明度",
-                        valueText = roomSettingsPercentText(danmuOpacity),
-                        value = danmuOpacity.toFloat(),
-                        onValueChange = { viewModel.setDanmuOpacity(it.toDouble()) },
-                        valueRange = 0.2f..1.0f,
-                        steps = 7
-                    )
-
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-
-                    RoomSettingsSliderRow(
-                        title = "弹幕描边",
-                        valueText = roomSettingsStrokeText(danmuStrokeWidth),
-                        value = danmuStrokeWidth.toFloat(),
-                        onValueChange = { viewModel.setDanmuStrokeWidth(it.toDouble()) },
-                        valueRange = 0f..4f,
-                        steps = 7
-                    )
-
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-
-                    RoomSettingsSliderRow(
-                        title = "全局弹幕延迟",
-                        valueText = "${danmuDelay.toInt()} ms",
-                        value = danmuDelay.toFloat(),
-                        onValueChange = { viewModel.setDanmuDelay(it.toDouble()) },
-                        valueRange = 0f..5000f,
-                        steps = 49
-                    )
-
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-
-                    RoomSettingsSliderRow(
-                        title = "${danmuDelaySiteLabel(siteId)} 平台补偿延迟",
-                        valueText = "$siteDanmuDelay ms",
-                        value = siteDanmuDelay.toFloat(),
-                        onValueChange = {
-                            viewModel.setDanmuDelayBySiteJson(
-                                updateDanmuDelayBySite(
-                                    delayBySiteJson = danmuDelayBySiteJson,
-                                    siteId = siteId,
-                                    delayMs = it.toInt()
-                                )
-                            )
-                        },
-                        valueRange = 0f..5000f,
-                        steps = 49
-                    )
-
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-
-                    RoomSettingsSliderRow(
-                        title = "顶部安全边距",
-                        valueText = "${danmuTopMargin.toInt()} dp",
-                        value = danmuTopMargin.toFloat(),
-                        onValueChange = { viewModel.setDanmuTopMargin(it.toDouble()) },
-                        valueRange = 0f..48f,
-                        steps = 11
-                    )
-
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-
-                    RoomSettingsSliderRow(
-                        title = "底部安全边距",
-                        valueText = "${danmuBottomMargin.toInt()} dp",
-                        value = danmuBottomMargin.toFloat(),
-                        onValueChange = { viewModel.setDanmuBottomMargin(it.toDouble()) },
-                        valueRange = 0f..48f,
-                        steps = 11
+                        steps = 11,
+                        modifier = Modifier.semantics { contentDescription = "上下间隔" }
                     )
                 }
-            }
-        }
 
-        item {
-            RoomSettingsCollapsibleSection(
-                sectionKey = RoomSettingsSectionKey.LIVE_BEHAVIOR,
-                title = "直播间行为设置",
-                subtitle = "全屏、小窗和小窗弹幕行为",
-                expanded = isRoomSettingsSectionExpanded(RoomSettingsSectionKey.LIVE_BEHAVIOR),
-                onExpandedChange = {
-                    setRoomSettingsSectionExpanded(RoomSettingsSectionKey.LIVE_BEHAVIOR, it)
-                }
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                // Bubble style switch
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    RoomSettingsSwitchRow(
-                        title = "进入直播间自动全屏",
-                        subtitle = "打开直播间后自动进入横屏全屏播放",
-                        checked = autoFullScreen,
-                        onCheckedChange = { viewModel.setAutoFullScreen(it) }
-                    )
-
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-
-                    RoomSettingsSwitchRow(
-                        title = "退出时自动小窗",
-                        subtitle = "按 Home 键或系统手势退到后台时进入小窗",
-                        checked = autoPipOnExit,
-                        onCheckedChange = { viewModel.setAutoPipOnExit(it) }
-                    )
-
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-
-                    RoomSettingsSwitchRow(
-                        title = "进入小窗隐藏弹幕",
-                        subtitle = "小窗播放时隐藏播放器滚动弹幕",
-                        checked = pipHideDanmu,
-                        onCheckedChange = { viewModel.setPipHideDanmu(it) }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(text = "气泡样式", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold))
+                        Text(text = "使用类似社交聊天的气泡框渲染弹幕", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(
+                        checked = chatBubbleStyle,
+                        onCheckedChange = { viewModel.setChatBubbleStyle(it) }
                     )
                 }
-            }
-        }
 
-        item {
-            RoomSettingsCollapsibleSection(
-                sectionKey = RoomSettingsSectionKey.CHAT,
-                title = "聊天区设置",
-                subtitle = "文字大小、间距、气泡样式和 SC 排序",
-                expanded = isRoomSettingsSectionExpanded(RoomSettingsSectionKey.CHAT),
-                onExpandedChange = {
-                    setRoomSettingsSectionExpanded(RoomSettingsSectionKey.CHAT, it)
-                }
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    // Font size slider
-                    Column {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(text = "文字大小", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold))
-                            Text(text = "${chatTextSize.toInt()} sp", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
-                        }
-                        RoomSettingsSlider(
-                            value = chatTextSize.toFloat(),
-                            onValueChange = { viewModel.setChatTextSize(it.toDouble()) },
-                            valueRange = 8f..36f,
-                            steps = 27
-                        )
-                    }
-
+                if (isHuyaOrBilibili) {
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
 
-                    // Gap slider
-                    Column {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(text = "上下间隔", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold))
-                            Text(text = "${chatTextGap.toInt()} dp", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
-                        }
-                        RoomSettingsSlider(
-                            value = chatTextGap.toFloat(),
-                            onValueChange = { viewModel.setChatTextGap(it.toDouble()) },
-                            valueRange = 0f..12f,
-                            steps = 11
-                        )
-                    }
-
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-
-                    // Bubble style switch
+                    // SC sort desc
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text(text = "气泡样式", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold))
-                            Text(text = "使用类似社交聊天的气泡框渲染弹幕", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        Switch(
-                            checked = chatBubbleStyle,
-                            onCheckedChange = { viewModel.setChatBubbleStyle(it) }
-                        )
-                    }
-
-                    if (isHuyaOrBilibili) {
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-
-                        // SC sort desc
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(text = "SC排序", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold))
-                                Text(
-                                    text = if (superChatSortDesc) "按消失时间倒序" else "按消失时间正序",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Switch(
-                                checked = superChatSortDesc,
-                                onCheckedChange = { viewModel.setSuperChatSortDesc(it) }
+                            Text(text = "SC排序", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold))
+                            Text(
+                                text = if (superChatSortDesc) "按消失时间倒序" else "按消失时间正序",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                    }
-                }
-            }
-        }
-
-        item {
-            RoomSettingsCollapsibleSection(
-                sectionKey = RoomSettingsSectionKey.SHIELD,
-                title = "弹幕屏蔽设置",
-                subtitle = "关键词、用户屏蔽和屏蔽管理入口",
-                expanded = isRoomSettingsSectionExpanded(RoomSettingsSectionKey.SHIELD),
-                onExpandedChange = {
-                    setRoomSettingsSectionExpanded(RoomSettingsSectionKey.SHIELD, it)
-                }
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    RoomSettingsSwitchRow(
-                        title = "启用弹幕屏蔽",
-                        subtitle = "关闭后关键词和用户屏蔽都会暂时失效",
-                        checked = danmuShieldEnable,
-                        onCheckedChange = { viewModel.setDanmuShieldEnable(it) }
-                    )
-
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-
-                    RoomSettingsSwitchRow(
-                        title = "关键词屏蔽",
-                        subtitle = "按普通文本或 /.../ 正则过滤聊天弹幕",
-                        checked = danmuKeywordShieldEnable,
-                        onCheckedChange = { viewModel.setDanmuKeywordShieldEnable(it) }
-                    )
-
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-
-                    RoomSettingsSwitchRow(
-                        title = "用户屏蔽",
-                        subtitle = "按全平台或当前平台用户名过滤聊天弹幕",
-                        checked = danmuUserShieldEnable,
-                        onCheckedChange = { viewModel.setDanmuUserShieldEnable(it) }
-                    )
-
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable(onClick = onOpenShieldSettings),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(text = "打开屏蔽管理", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold))
-                            Text(text = "添加、编辑关键词和屏蔽用户，管理屏蔽预设", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        Icon(
-                            imageVector = Icons.Default.ChevronRight,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        Switch(
+                            checked = superChatSortDesc,
+                            onCheckedChange = { viewModel.setSuperChatSortDesc(it) }
                         )
                     }
                 }
             }
         }
 
-        item {
-            RoomSettingsCollapsibleSection(
-                sectionKey = RoomSettingsSectionKey.FILTER,
-                title = "弹幕过滤设置",
-                subtitle = "重复弹幕过滤、严格模式、窗口和步长",
-                expanded = isRoomSettingsSectionExpanded(RoomSettingsSectionKey.FILTER),
-                onExpandedChange = {
-                    setRoomSettingsSectionExpanded(RoomSettingsSectionKey.FILTER, it)
-                }
+        RoomSettingsCollapsibleSection(
+            listState = listState,
+            sectionKey = RoomSettingsSectionKey.SHIELD,
+            title = "弹幕屏蔽设置",
+            subtitle = "关键词、用户屏蔽和屏蔽管理入口",
+            expanded = isRoomSettingsSectionExpanded(RoomSettingsSectionKey.SHIELD),
+            onExpandedChange = {
+                setRoomSettingsSectionExpanded(RoomSettingsSectionKey.SHIELD, it)
+            }
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Column(
+                RoomSettingsSwitchRow(
+                    title = "启用弹幕屏蔽",
+                    subtitle = "关闭后关键词和用户屏蔽都会暂时失效",
+                    checked = danmuShieldEnable,
+                    onCheckedChange = { viewModel.setDanmuShieldEnable(it) }
+                )
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                RoomSettingsSwitchRow(
+                    title = "关键词屏蔽",
+                    subtitle = "按普通文本或 /.../ 正则过滤聊天弹幕",
+                    checked = danmuKeywordShieldEnable,
+                    onCheckedChange = { viewModel.setDanmuKeywordShieldEnable(it) }
+                )
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                RoomSettingsSwitchRow(
+                    title = "用户屏蔽",
+                    subtitle = "按全平台或当前平台用户名过滤聊天弹幕",
+                    checked = danmuUserShieldEnable,
+                    onCheckedChange = { viewModel.setDanmuUserShieldEnable(it) }
+                )
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                        .clickable(onClick = onOpenShieldSettings),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Deduplicate switch
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(text = "打开屏蔽管理", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold))
+                        Text(text = "添加、编辑关键词和屏蔽用户，管理屏蔽预设", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Icon(
+                        imageVector = Icons.Default.ChevronRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+
+        RoomSettingsCollapsibleSection(
+            listState = listState,
+            sectionKey = RoomSettingsSectionKey.FILTER,
+            title = "弹幕过滤设置",
+            subtitle = "重复弹幕过滤、严格模式、窗口和步长",
+            expanded = isRoomSettingsSectionExpanded(RoomSettingsSectionKey.FILTER),
+            onExpandedChange = {
+                setRoomSettingsSectionExpanded(RoomSettingsSectionKey.FILTER, it)
+            }
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Deduplicate switch
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(text = "重复弹幕过滤", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold))
+                        Text(text = "同一用户在最近若干条内重复刷同一句时只显示一次", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(
+                        checked = danmuDedupeEnable,
+                        onCheckedChange = { viewModel.setDanmuDedupeEnable(it) }
+                    )
+                }
+
+                if (danmuDedupeEnable) {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                    // Strict deduplication mode switch
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text(text = "重复弹幕过滤", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold))
-                            Text(text = "同一用户在最近若干条内重复刷同一句时只显示一次", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(text = "严格去重模式", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold))
+                            Text(text = "全局过滤不同观众发送的相同弹幕（不区分发送人）", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         Switch(
-                            checked = danmuDedupeEnable,
-                            onCheckedChange = { viewModel.setDanmuDedupeEnable(it) }
+                            checked = danmuDedupeStrictMode,
+                            onCheckedChange = { viewModel.setDanmuDedupeStrictMode(it) }
                         )
                     }
 
-                    if (danmuDedupeEnable) {
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
 
-                        // Strict deduplication mode switch
+                    // Deduplicate window slider
+                    Column {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(text = "严格去重模式", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold))
-                                Text(text = "全局过滤不同观众发送的相同弹幕（不区分发送人）", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            Switch(
-                                checked = danmuDedupeStrictMode,
-                                onCheckedChange = { viewModel.setDanmuDedupeStrictMode(it) }
-                            )
+                            Text(text = "过滤窗口", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold))
+                            Text(text = "${danmuDedupeWindow} 条", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
                         }
+                        RoomSettingsSlider(
+                            value = danmuDedupeWindow.toFloat(),
+                            onValueChange = { viewModel.setDanmuDedupeWindow(it.toInt()) },
+                            valueRange = 1f..100f,
+                            steps = 98,
+                            modifier = Modifier.semantics { contentDescription = "过滤窗口" }
+                        )
+                    }
 
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
 
-                        // Deduplicate window slider
-                        Column {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(text = "过滤窗口", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold))
-                                Text(text = "${danmuDedupeWindow} 条", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
-                            }
-                            RoomSettingsSlider(
-                                value = danmuDedupeWindow.toFloat(),
-                                onValueChange = { viewModel.setDanmuDedupeWindow(it.toInt()) },
-                                valueRange = 1f..100f,
-                                steps = 98
-                            )
+                    Column {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(text = "过滤步长", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold))
+                            Text(text = "$danmuDedupeStep 条", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
                         }
-
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-
-                        Column {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(text = "过滤步长", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold))
-                                Text(text = "$danmuDedupeStep 条", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
-                            }
-                            RoomSettingsSlider(
-                                value = danmuDedupeStep.toFloat(),
-                                onValueChange = { viewModel.setDanmuDedupeStep(it.toInt()) },
-                                valueRange = 1f..20f,
-                                steps = 18
-                            )
-                        }
+                        RoomSettingsSlider(
+                            value = danmuDedupeStep.toFloat(),
+                            onValueChange = { viewModel.setDanmuDedupeStep(it.toInt()) },
+                            valueRange = 1f..20f,
+                            steps = 18,
+                            modifier = Modifier.semantics { contentDescription = "过滤步长" }
+                        )
                     }
                 }
             }
@@ -2835,83 +2913,91 @@ fun RoomSettingsPanel(
     }
 }
 
-@Composable
-private fun RoomSettingsCollapsibleSection(
+@OptIn(ExperimentalFoundationApi::class)
+private fun LazyListScope.RoomSettingsCollapsibleSection(
+    listState: LazyListState,
     sectionKey: RoomSettingsSectionKey,
     title: String,
     subtitle: String,
     expanded: Boolean,
     onExpandedChange: (Boolean) -> Unit,
-    modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    val arrowRotation by animateFloatAsState(
-        targetValue = if (expanded) 180f else 0f,
-        animationSpec = tween(durationMillis = 180, easing = EaseOutCubic),
-        label = "roomSettingsSectionArrow_${sectionKey.name}"
-    )
-
-    Card(
-        modifier = modifier
-            .fillMaxWidth()
-            .animateContentSize(
-                animationSpec = tween(durationMillis = 220, easing = EaseOutCubic)
-            ),
-        shape = RoundedCornerShape(12.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable(onClick = { onExpandedChange(!expanded) })
-                .padding(horizontal = 16.dp, vertical = 14.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+    stickyHeader(key = sectionKey.name, contentType = "settings_header") { headerIndex ->
+        val motionPolicy = LocalAppMotionPolicy.current
+        val pinned by remember(listState, headerIndex, expanded) {
+            derivedStateOf {
+                expanded && (listState.firstVisibleItemIndex > headerIndex ||
+                    (listState.firstVisibleItemIndex == headerIndex && listState.firstVisibleItemScrollOffset > 0))
             }
-            Icon(
-                imageVector = Icons.Default.KeyboardArrowDown,
-                contentDescription = if (expanded) "收起$title" else "展开$title",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.graphicsLayer {
-                    rotationZ = arrowRotation
-                }
-            )
         }
-
-        AnimatedVisibility(
-            visible = expanded,
-            enter = expandVertically(
-                animationSpec = tween(durationMillis = 220, easing = EaseOutCubic),
-                expandFrom = Alignment.Top
-            ) + fadeIn(animationSpec = tween(durationMillis = 140)),
-            exit = shrinkVertically(
-                animationSpec = tween(durationMillis = 180, easing = EaseOutCubic),
-                shrinkTowards = Alignment.Top
-            ) + fadeOut(animationSpec = tween(durationMillis = 120))
-        ) {
-            Column {
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-                Column(content = content)
+        val arrowRotation by animateFloatAsState(
+            targetValue = if (expanded) 180f else 0f,
+            animationSpec = motionPolicy.contentSpec(),
+            label = "roomSettingsSectionArrow_${sectionKey.name}"
+        )
+        // Include the opaque gutter in the pinned item so following cards cannot touch it
+        // or show through it while they scroll underneath.
+        Box(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background).padding(bottom = 12.dp)) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                color = MaterialTheme.colorScheme.surface,
+                shadowElevation = if (pinned) 2.dp else 0.dp
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth()
+                        .testTag("room_settings_section_${sectionKey.name}")
+                        .clickable(role = Role.Button, onClickLabel = if (expanded) "收起$title" else "展开$title") {
+                            onExpandedChange(!expanded)
+                        }
+                        .semantics { heading(); stateDescription = if (expanded) "已展开" else "已收起" }
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary)
+                        Text(if (pinned) "当前分组 · 点击收起" else subtitle,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    Icon(Icons.Default.KeyboardArrowDown,
+                        contentDescription = if (expanded) "收起$title" else "展开$title",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.graphicsLayer { rotationZ = arrowRotation })
+                }
             }
         }
     }
+    item(key = "${sectionKey.name}_content", contentType = "settings_content") {
+        val motionPolicy = LocalAppMotionPolicy.current
+        AnimatedVisibility(
+            visible = expanded,
+            enter = if (motionPolicy.reducedMotion) fadeIn(motionPolicy.effectsSpec()) else
+                expandVertically(motionPolicy.contentSpec(), expandFrom = Alignment.Top) + fadeIn(motionPolicy.effectsSpec()),
+            exit = if (motionPolicy.reducedMotion) fadeOut(motionPolicy.effectsSpec()) else
+                shrinkVertically(motionPolicy.contentSpec(), shrinkTowards = Alignment.Top) + fadeOut(motionPolicy.effectsSpec())
+        ) {
+            Column {
+                Surface(modifier = Modifier.fillMaxWidth().testTag("room_settings_content_${sectionKey.name}"),
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surface) {
+                    Column(content = content)
+                }
+                Spacer(Modifier.height(16.dp))
+            }
+        }
+    }
+    // An empty end marker releases the pinned heading at this group's boundary.
+    // Collapsed groups therefore scroll as ordinary, separated cards.
+    stickyHeader(key = "${sectionKey.name}_end", contentType = "settings_boundary") {
+        Spacer(Modifier.fillMaxWidth().height(0.dp))
+    }
 }
-
 @Composable
 private fun RoomSettingsSwitchRow(
     title: String,
@@ -2959,7 +3045,8 @@ private fun RoomSettingsSliderRow(
             value = value,
             onValueChange = onValueChange,
             valueRange = valueRange,
-            steps = steps
+            steps = steps,
+            modifier = Modifier.semantics { contentDescription = title }
         )
     }
 }
@@ -2985,7 +3072,7 @@ private fun roomSettingsOneDecimal(value: Double): String {
 }
 
 @Composable
-private fun RoomSettingsSlider(
+internal fun RoomSettingsSlider(
     value: Float,
     onValueChange: (Float) -> Unit,
     valueRange: ClosedFloatingPointRange<Float>,
@@ -2998,39 +3085,68 @@ private fun RoomSettingsSlider(
     val valueStart = valueRange.start
     val valueEnd = valueRange.endInclusive
     val rangeSize = (valueEnd - valueStart).takeIf { it > 0f } ?: 1f
-    val coercedValue = value.coerceIn(valueStart, valueEnd)
+    val latestValue by rememberUpdatedState(value.coerceIn(valueStart, valueEnd))
+    val commitValue by rememberUpdatedState(onValueChange)
+    var pendingValue by remember(valueRange, steps) { mutableFloatStateOf(latestValue) }
+    var dragging by remember { mutableStateOf(false) }
+    LaunchedEffect(value, valueRange, steps) {
+        if (!dragging) pendingValue = latestValue
+    }
+    // Keep the preview on release until the persisted value arrives, without snapping back.
+    val coercedValue = pendingValue.coerceIn(valueStart, valueEnd)
     val fraction = ((coercedValue - valueStart) / rangeSize).coerceIn(0f, 1f)
     val density = LocalDensity.current
     val horizontalInset = 13.dp
     val horizontalInsetPx = with(density) { horizontalInset.toPx() }
     var widthPx by remember { mutableFloatStateOf(1f) }
 
-    fun commitPosition(x: Float) {
+    fun valueForPosition(x: Float): Float {
         val usableWidth = (widthPx - horizontalInsetPx * 2f).coerceAtLeast(1f)
         val rawFraction = ((x - horizontalInsetPx) / usableWidth).coerceIn(0f, 1f)
-        onValueChange(roomSettingsSliderValueForFraction(rawFraction, valueRange, steps))
+        return roomSettingsSliderValueForFraction(rawFraction, valueRange, steps)
     }
 
+    fun commitPendingValue() {
+        if (!dragging) return
+        dragging = false
+        if (pendingValue != latestValue) commitValue(pendingValue)
+    }
+
+    fun cancelPendingValue() {
+        dragging = false
+        pendingValue = latestValue
+    }
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(42.dp)
+            .height(48.dp)
             .onSizeChanged { widthPx = it.width.toFloat().coerceAtLeast(1f) }
             .semantics {
                 progressBarRangeInfo = ProgressBarRangeInfo(coercedValue, valueRange, steps)
                 setProgress { target ->
-                    onValueChange(roomSettingsSliderSnapValue(target, valueRange, steps))
-                    true
+                    if (!target.isFinite()) false else {
+                        pendingValue = roomSettingsSliderSnapValue(target, valueRange, steps)
+                        if (pendingValue != latestValue) commitValue(pendingValue)
+                        true
+                    }
                 }
             }
             .pointerInput(valueRange, steps, widthPx) {
-                detectTapGestures { offset -> commitPosition(offset.x) }
+                detectTapGestures { offset ->
+                    pendingValue = valueForPosition(offset.x)
+                    if (pendingValue != latestValue) commitValue(pendingValue)
+                }
             }
             .pointerInput(valueRange, steps, widthPx) {
-                detectDragGestures(
-                    onDragStart = { offset -> commitPosition(offset.x) },
-                    onDrag = { change, _ ->
-                        commitPosition(change.position.x)
+                detectHorizontalDragGestures(
+                    onDragStart = { offset ->
+                        dragging = true
+                        pendingValue = valueForPosition(offset.x)
+                    },
+                    onDragEnd = { commitPendingValue() },
+                    onDragCancel = { cancelPendingValue() },
+                    onHorizontalDrag = { change, _ ->
+                        pendingValue = valueForPosition(change.position.x)
                         change.consume()
                     }
                 )

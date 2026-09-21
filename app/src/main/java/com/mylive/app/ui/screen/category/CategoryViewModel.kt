@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.mylive.app.core.model.LiveCategory
 import com.mylive.app.core.site.LiveSite
+import com.mylive.app.core.site.LatestCatalogRequestGate
 import com.mylive.app.core.site.preserveSelectedSiteIndex
 import com.mylive.app.core.site.sortedByDefaultOrder
 import com.mylive.app.core.site.sortedByUserOrder
@@ -56,6 +57,7 @@ class CategoryViewModel @Inject constructor(
 
     private val _loadedSiteId = MutableStateFlow<String?>(null)
     private var loadJob: Job? = null
+    private val loadRequestGate = LatestCatalogRequestGate()
     private var previousSiteIds = liveSites.sortedByDefaultOrder().map { it.id }
 
     // Per-site cache to avoid flicker when swiping between pages
@@ -96,11 +98,14 @@ class CategoryViewModel @Inject constructor(
         val sites = siteList.value
         val index = _selectedSiteIndex.value
         if (index !in sites.indices) {
+            loadRequestGate.invalidate()
+            loadJob?.cancel()
             _isRefreshing.value = false
             return
         }
 
         val site = sites[index]
+        val requestToken = loadRequestGate.begin()
 
         // If already cached with data, use cache immediately (no flicker)
         val cached = siteCache[site.id]
@@ -126,18 +131,22 @@ class CategoryViewModel @Inject constructor(
             siteCache[site.id] = SiteCache(categories = cached?.categories.orEmpty(), loading = true)
             try {
                 val result = site.getCategories()
+                if (!loadRequestGate.isCurrent(requestToken)) return@launch
                 _categories.value = result
                 siteCache[site.id] = SiteCache(categories = result)
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
+                if (!loadRequestGate.isCurrent(requestToken)) return@launch
                 Timber.e(e, "Failed to load categories for ${site.name}")
                 _error.value = e.message ?: "加载分类失败"
                 val fallbackCategories = cached?.categories.orEmpty()
                 _categories.value = fallbackCategories
                 siteCache[site.id] = SiteCache(categories = fallbackCategories, error = _error.value)
             } finally {
-                _loading.value = false
-                _isRefreshing.value = false
+                if (loadRequestGate.isCurrent(requestToken)) {
+                    _loading.value = false
+                    _isRefreshing.value = false
+                }
             }
         }
     }

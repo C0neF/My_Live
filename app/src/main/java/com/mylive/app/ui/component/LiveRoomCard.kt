@@ -21,6 +21,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.mylive.app.ui.layout.LocalAppLayout
 
 @Composable
 fun LiveRoomCard(
@@ -82,7 +83,7 @@ fun LiveRoomCard(
                         fontWeight = FontWeight.Bold,
                         letterSpacing = 0.3.sp
                     ),
-                    fontSize = 9.sp,
+                    fontSize = if (LocalAppLayout.current.tablet) 11.sp else 9.sp,
                     modifier = Modifier
                         .padding(8.dp)
                         .align(Alignment.TopStart)
@@ -112,7 +113,7 @@ fun LiveRoomCard(
                     text = "${formatOnline(online)} 人气",
                     color = Color.White,
                     style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
-                    fontSize = 10.sp
+                    fontSize = if (LocalAppLayout.current.tablet) 12.sp else 10.sp
                 )
             }
         }
@@ -125,9 +126,9 @@ fun LiveRoomCard(
             text = title,
             style = MaterialTheme.typography.bodyMedium.copy(
                 fontWeight = FontWeight.SemiBold,
-                lineHeight = 19.sp
+                lineHeight = if (LocalAppLayout.current.tablet) 23.sp else 19.sp
             ),
-            fontSize = 15.sp,
+            fontSize = if (LocalAppLayout.current.tablet) 16.sp else 15.sp,
             minLines = 2,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,

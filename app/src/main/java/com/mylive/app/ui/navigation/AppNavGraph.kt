@@ -1,13 +1,17 @@
 package com.mylive.app.ui.navigation
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.navigation3.runtime.entryProvider
+import androidx.navigation3.runtime.NavEntryDecorator
+import androidx.navigation3.runtime.NavKey
+import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
+import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
 import androidx.navigation3.ui.NavDisplay
+import com.mylive.app.ui.motion.LocalAppMotionPolicy
 import com.mylive.app.ui.screen.IndexScreen
 import com.mylive.app.ui.screen.category.CategoryDetailScreen
 import com.mylive.app.ui.screen.mine.ParseScreen
@@ -39,10 +43,8 @@ import com.mylive.app.ui.screen.other.DebugLogScreen
 @Composable
 fun AppNavGraph(navigator: Navigator, initialRoute: String? = null) {
     val backStack = navigator.backStack
-
-    BackHandler(enabled = backStack.size > 1) {
-        navigator.goBack()
-    }
+    val currentRoute = backStack.lastOrNull()
+    val motionPolicy = LocalAppMotionPolicy.current
 
     // IndexScreen is always present at the bottom layer, never removed from composition
     Box(modifier = Modifier.fillMaxSize()) {
@@ -52,8 +54,14 @@ fun AppNavGraph(navigator: Navigator, initialRoute: String? = null) {
         // a transparent Box, so IndexScreen underneath is fully visible.
         NavDisplay(
             backStack = backStack,
-            transitionSpec = CupertinoTransition.transitionSpec,
-            popTransitionSpec = CupertinoTransition.popTransitionSpec,
+            entryDecorators = rememberAppEntryDecorators(),
+            onBack = {
+                currentRoute?.let { navigator.goBack(expectedTop = it) }
+            },
+            transitionSpec = CupertinoTransition.transitionSpec(motionPolicy),
+            popTransitionSpec = CupertinoTransition.popTransitionSpec(motionPolicy),
+            predictivePopTransitionSpec =
+                CupertinoTransition.predictivePopTransitionSpec(),
             entryProvider = entryProvider {
                 entry<Route.Index> {
                     // Transparent full-size placeholder; IndexScreen is rendered below.
@@ -155,6 +163,12 @@ fun AppNavGraph(navigator: Navigator, initialRoute: String? = null) {
         }
     }
 }
+
+@Composable
+internal fun rememberAppEntryDecorators(): List<NavEntryDecorator<NavKey>> = listOf(
+    rememberSaveableStateHolderNavEntryDecorator(),
+    rememberViewModelStoreNavEntryDecorator()
+)
 
 private fun parseRoute(routeStr: String): Route? {
     if (routeStr == "/index" || routeStr == "index" || routeStr == "/") return Route.Index

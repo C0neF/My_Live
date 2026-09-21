@@ -2,7 +2,6 @@ package com.mylive.app.ui.screen.sync
 
 import android.graphics.Bitmap
 import android.widget.Toast
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -55,16 +54,7 @@ fun RemoteSyncRoomScreen(
 ) {
     val context = LocalContext.current
 
-    var isExiting by remember { mutableStateOf(false) }
-    val handleBack: () -> Unit = {
-        if (!isExiting) {
-            isExiting = true
-            navigator.goBack()
-        }
-    }
-    BackHandler(enabled = !isExiting) {
-        handleBack()
-    }
+    val handleBack = navigator.rememberRouteActions().onBack
 
     val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
     val roomId by viewModel.roomId.collectAsStateWithLifecycle()

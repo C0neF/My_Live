@@ -24,6 +24,17 @@ internal fun bottomTabRepeatAction(
     return BottomTabRepeatAction.Refresh
 }
 
+internal fun performBottomTabSwitchHapticIfNeeded(
+    currentKey: String,
+    clickedKey: String,
+    useSideNavigation: Boolean,
+    performHaptic: () -> Unit
+) {
+    if (!useSideNavigation && currentKey != clickedKey) {
+        performHaptic()
+    }
+}
+
 internal fun refreshableBottomTabKeys(): Set<String> {
     return setOf("recommend", "follow", "category")
 }

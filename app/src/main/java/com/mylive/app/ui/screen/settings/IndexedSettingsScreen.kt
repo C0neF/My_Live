@@ -1,6 +1,5 @@
 package com.mylive.app.ui.screen.settings
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -29,18 +28,7 @@ fun IndexedSettingsScreen(
     val siteSortStr by viewModel.siteSort.collectAsStateWithLifecycle()
     val homeSortStr by viewModel.homeSort.collectAsStateWithLifecycle()
 
-    var isExiting by remember { mutableStateOf(false) }
-
-    val handleBack: () -> Unit = {
-        if (!isExiting) {
-            isExiting = true
-            navigator.goBack()
-        }
-    }
-
-    BackHandler(enabled = !isExiting) {
-        handleBack()
-    }
+    val handleBack = navigator.rememberRouteActions().onBack
 
     val siteNames = mapOf(
         "bilibili" to "哔哩哔哩",

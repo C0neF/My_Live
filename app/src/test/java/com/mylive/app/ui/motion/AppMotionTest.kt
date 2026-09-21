@@ -1,60 +1,51 @@
 package com.mylive.app.ui.motion
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotSame
-import org.junit.Assert.assertSame
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AppMotionTest {
 
     @Test
-    fun routeTimingMatchesMyLiveGetxCupertinoBaseline() {
-        assertEquals(300, AppMotion.RouteDurationMillis)
-        assertEquals(300, AppMotion.RoutePopDurationMillis)
-        assertEquals(1f / 3f, AppMotion.RouteParallaxFactor, 0.001f)
-        assertEquals(333, AppMotion.routeParallaxOffset(1000))
+    fun routeMotionUsesInterruptibleCriticallyDampedSpring() {
+        val spec = AppMotion.routeSpec<Float>()
+
+        assertEquals(AppMotion.DefaultDampingRatio, spec.dampingRatio, 0.001f)
+        assertEquals(AppMotion.RouteSpringStiffness, spec.stiffness, 0.001f)
     }
 
     @Test
-    fun liveRoomRouteUsesSharedMyLiveGetxCupertinoMotion() {
-        assertEquals(AppMotion.RouteDurationMillis, AppMotion.LiveRoomEnterDurationMillis)
-        assertEquals(AppMotion.RoutePopDurationMillis, AppMotion.LiveRoomExitDurationMillis)
-        assertEquals(AppMotion.RouteParallaxFactor, AppMotion.LiveRoomParallaxFactor, 0.001f)
-        assertSame(AppMotion.MyLivePrimaryForwardEasing, AppMotion.LiveRoomEnterEasing)
-        assertSame(AppMotion.MyLivePrimaryPopEasing, AppMotion.LiveRoomExitEasing)
+    fun momentumMotionKeepsAControlledAmountOfReleaseEnergy() {
+        val spec = AppMotion.momentumSpec()
+
+        assertEquals(AppMotion.MomentumDampingRatio, spec.dampingRatio, 0.001f)
+        assertEquals(AppMotion.MomentumSpringStiffness, spec.stiffness, 0.001f)
+        assertTrue(spec.dampingRatio < AppMotion.DefaultDampingRatio)
     }
 
     @Test
-    fun liveRoomParallaxKeepsFlutterCupertinoDepthCue() {
-        assertEquals(1f / 3f, AppMotion.LiveRoomParallaxFactor, 0.001f)
-        assertEquals(333, AppMotion.liveRoomParallaxOffset(1000))
-        assertEquals(AppMotion.routeParallaxOffset(1000), AppMotion.liveRoomParallaxOffset(1000))
+    fun reducedMotionRemovesLongSpatialSettling() {
+        val normal = AppMotion.routeSpec<Float>(reducedMotion = false)
+        val reduced = AppMotion.routeSpec<Float>(reducedMotion = true)
+
+        assertTrue(reduced.stiffness > normal.stiffness)
+        assertFalse(isReducedMotionScale(1f))
+        assertTrue(isReducedMotionScale(0f))
     }
 
     @Test
-    fun myLiveCupertinoUsesDifferentPrimaryAndSecondaryCurves() {
-        assertSame(AppMotion.MyLivePrimaryForwardEasing, AppMotion.LiveRoomEnterEasing)
-        assertSame(AppMotion.MyLivePrimaryPopEasing, AppMotion.LiveRoomExitEasing)
-        assertNotSame(AppMotion.MyLiveSecondaryForwardEasing, AppMotion.MyLivePrimaryForwardEasing)
-        assertNotSame(AppMotion.MyLiveSecondaryPopEasing, AppMotion.MyLivePrimaryPopEasing)
-    }
-
-    @Test
-    fun liveRoomStartupWorkStartsAfterEnterTransition() {
-        assertEquals(320, AppMotion.LiveRoomDataStartupDelayMillis)
-        assertEquals(360, AppMotion.LiveRoomPlayerStartupDelayMillis)
-        assertTrue(AppMotion.LiveRoomDataStartupDelayMillis > AppMotion.LiveRoomEnterDurationMillis)
-        assertTrue(AppMotion.LiveRoomPlayerStartupDelayMillis > AppMotion.LiveRoomDataStartupDelayMillis)
-    }
-
-    @Test
-    fun pagerDurationIsBoundedForNearAndFarTabs() {
-        assertEquals(220, AppMotion.pagerDurationMillis(0))
-        assertEquals(220, AppMotion.pagerDurationMillis(1))
-        assertEquals(220, AppMotion.pagerDurationMillis(-1))
-        assertEquals(260, AppMotion.pagerDurationMillis(2))
-        assertEquals(260, AppMotion.pagerDurationMillis(-3))
+    fun velocityProjectionPreservesDirectionAndMagnitude() {
+        assertEquals(
+            199f,
+            AppMotion.projectedEndpoint(currentValue = 100f, velocity = 1_000f),
+            0.01f
+        )
+        assertEquals(
+            1f,
+            AppMotion.projectedEndpoint(currentValue = 100f, velocity = -1_000f),
+            0.01f
+        )
     }
 
     @Test
@@ -70,11 +61,5 @@ class AppMotionTest {
         assertEquals(1, AppMotion.indexDirection(fromIndex = 0, toIndex = 2))
         assertEquals(-1, AppMotion.indexDirection(fromIndex = 3, toIndex = 1))
         assertEquals(0, AppMotion.indexDirection(fromIndex = 2, toIndex = 2))
-    }
-
-    @Test
-    fun parallaxOffsetUsesOneThirdOfContainerWidth() {
-        assertEquals(333, AppMotion.routeParallaxOffset(1000))
-        assertTrue(AppMotion.routeParallaxOffset(1) >= 0)
     }
 }

@@ -1,6 +1,5 @@
 package com.mylive.app.ui.screen.settings
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -21,6 +20,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mylive.app.ui.navigation.Navigator
 import com.mylive.app.ui.navigation.Route
 import com.mylive.app.R
+import com.mylive.app.core.site.douyin.DouyinCookieInspector
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -32,18 +32,7 @@ fun AccountScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
 
-    var isExiting by remember { mutableStateOf(false) }
-
-    val handleBack: () -> Unit = {
-        if (!isExiting) {
-            isExiting = true
-            navigator.goBack()
-        }
-    }
-
-    BackHandler(enabled = !isExiting) {
-        handleBack()
-    }
+    val handleBack = navigator.rememberRouteActions().onBack
 
     // Show message snackbar
     LaunchedEffect(uiState.message) {
@@ -123,10 +112,10 @@ fun AccountScreen(
             
             AccountCard(
                 title = stringResource(R.string.account_status_label),
+                subtitle = douyinCookieStatusDescription(uiState.douyinCookieInspection),
                 contentRight = {
                     Text(
-                        text = if (uiState.isLoggedInDouyin) stringResource(R.string.account_status_logged_in)
-                               else stringResource(R.string.account_status_logged_out),
+                        text = douyinCookieStatusLabel(uiState.douyinCookieInspection.kind),
                         style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
                         color = if (uiState.isLoggedInDouyin) MaterialTheme.colorScheme.primary
                                 else MaterialTheme.colorScheme.onSurfaceVariant
@@ -134,13 +123,14 @@ fun AccountScreen(
                 }
             )
 
-            if (uiState.isLoggedInDouyin) {
+            if (uiState.hasDouyinCookie) {
                 AccountCard(
-                    title = stringResource(R.string.account_logout),
+                    title = stringResource(R.string.account_clear_cookie_action),
                     subtitle = stringResource(R.string.account_clear_douyin_cookie),
                     onClick = { viewModel.logoutDouyin() }
                 )
-            } else {
+            }
+            if (!uiState.isLoggedInDouyin) {
                 AccountCard(
                     title = stringResource(R.string.account_webview_login),
                     subtitle = "通过内置浏览器登录抖音",
@@ -170,6 +160,9 @@ fun AccountScreen(
     if (uiState.showDouyinCookieDialog) {
         CookieInputDialog(
             title = stringResource(R.string.account_douyin_cookie_input_title),
+            inputHint = { text ->
+                douyinCookieStatusDescription(DouyinCookieInspector.inspect(text))
+            },
             onConfirm = { viewModel.saveDouyinCookie(it) },
             onDismiss = { viewModel.hideDouyinCookieDialog() }
         )
@@ -247,6 +240,7 @@ private fun AccountCard(
 @Composable
 private fun CookieInputDialog(
     title: String,
+    inputHint: ((String) -> String)? = null,
     onConfirm: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -261,6 +255,9 @@ private fun CookieInputDialog(
                 onValueChange = { cookieText = it },
                 label = { Text(stringResource(R.string.account_cookie_label)) },
                 placeholder = { Text(stringResource(R.string.account_cookie_placeholder)) },
+                supportingText = inputHint?.let { hint ->
+                    { Text(hint(cookieText)) }
+                },
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = 120.dp),

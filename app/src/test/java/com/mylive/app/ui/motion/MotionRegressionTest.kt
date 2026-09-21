@@ -71,15 +71,37 @@ class MotionRegressionTest {
     }
 
     @Test
-    fun liveRoomBackKeepsPlayerStableUntilRoutePop() {
+    fun liveRoomExitIsOwnedByNavigationLayer() {
         val source = readMainSource("com/mylive/app/ui/screen/room/LiveRoomScreen.kt")
-        val handleBackStart = source.indexOf("val handleBack")
-        val handleBackEnd = source.indexOf("LaunchedEffect(roomAutoExitDuration", handleBackStart)
-        val handleBackSource = source.substring(handleBackStart, handleBackEnd)
 
-        assertTrue(handleBackSource.contains("navigator.goBack()"))
-        assertFalse(handleBackSource.contains("playerController?.pause()\n                navigator.goBack()"))
-        assertFalse(handleBackSource.contains("playerController?.pause()\r\n                navigator.goBack()"))
+        assertTrue(source.contains("NavigationExitEffect(navigator = navigator, route = key)"))
+        assertTrue(source.contains("val handleBack = navigation.onBack"))
+        assertFalse(source.contains("var isExiting"))
+        assertFalse(source.contains("BackHandler {\n        if (isFullscreen)"))
+    }
+
+    @Test
+    fun routedPagesDoNotOwnBackGestureOrExitLocks() {
+        val screenRoot = listOf(
+            File("src/main/java/com/mylive/app/ui/screen"),
+            File("My_Live/app/src/main/java/com/mylive/app/ui/screen")
+        ).first(File::isDirectory)
+        val routePageSources = screenRoot.walkTopDown()
+            .filter(File::isFile)
+            .filter { it.extension == "kt" }
+            .filterNot { it.name == "PlayerView.kt" }
+            .toList()
+
+        val exitLockOwners = routePageSources.filter { it.readText().contains("isExiting") }
+        assertTrue(
+            "Page-local isExiting remains in: ${exitLockOwners.joinToString { it.name }}",
+            exitLockOwners.isEmpty()
+        )
+
+        val navSource = readMainSource("com/mylive/app/ui/navigation/AppNavGraph.kt")
+        assertTrue(navSource.contains("predictivePopTransitionSpec"))
+        assertTrue(navSource.contains("onBack = {"))
+        assertFalse(navSource.contains("import androidx.activity.compose.BackHandler"))
     }
 
     @Test
@@ -122,8 +144,8 @@ class MotionRegressionTest {
 
         assertTrue(motionSource.contains("fun <S> AnimatedContentTransitionScope<S>.adaptiveNavigationContentTransform("))
         assertTrue(motionSource.contains("if (useSideNavigation)"))
-        assertTrue(motionSource.contains("verticalContentTransform(direction)"))
-        assertTrue(motionSource.contains("horizontalContentTransform(direction)"))
+        assertTrue(motionSource.contains("verticalContentTransform(direction, motionPolicy)"))
+        assertTrue(motionSource.contains("horizontalContentTransform(direction, motionPolicy)"))
         assertTrue(motionSource.contains("AnimatedContentTransitionScope.SlideDirection.Up"))
         assertTrue(motionSource.contains("AnimatedContentTransitionScope.SlideDirection.Down"))
     }

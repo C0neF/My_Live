@@ -15,7 +15,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.*
-import androidx.activity.compose.BackHandler
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
@@ -55,18 +54,8 @@ fun OtherSettingsScreen(
     val chatTextSizeDefault = stringResource(R.string.chat_text_size_default)
 
     var showChatTextSizeDialog by remember { mutableStateOf(false) }
-    var isExiting by remember { mutableStateOf(false) }
-
-    val handleBack: () -> Unit = {
-        if (!isExiting) {
-            isExiting = true
-            navigator.goBack()
-        }
-    }
-
-    BackHandler(enabled = !isExiting) {
-        handleBack()
-    }
+    val navigation = navigator.rememberRouteActions()
+    val handleBack = navigation.onBack
 
     Scaffold(
         topBar = {
@@ -110,9 +99,7 @@ fun OtherSettingsScreen(
                 title = stringResource(R.string.settings_debug_log),
                 subtitle = stringResource(R.string.settings_debug_log_subtitle),
                 onClick = {
-                    if (!isExiting) {
-                        navigator.navigate(Route.DebugLog)
-                    }
+                    navigation.navigate(Route.DebugLog)
                 }
             )
             HorizontalDivider()

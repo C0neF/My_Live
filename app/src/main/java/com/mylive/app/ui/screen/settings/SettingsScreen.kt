@@ -1,6 +1,5 @@
 package com.mylive.app.ui.screen.settings
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -16,24 +15,16 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.mylive.app.ui.navigation.Navigator
+import com.mylive.app.ui.layout.AdaptivePageFrame
+import com.mylive.app.ui.layout.LocalAppLayout
 import com.mylive.app.ui.navigation.Route
 import com.mylive.app.R
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(navigator: Navigator) {
-    var isExiting by remember { mutableStateOf(false) }
-
-    val handleBack: () -> Unit = {
-        if (!isExiting) {
-            isExiting = true
-            navigator.goBack()
-        }
-    }
-
-    BackHandler(enabled = !isExiting) {
-        handleBack()
-    }
+    val navigation = navigator.rememberRouteActions()
+    val handleBack = navigation.onBack
 
     Scaffold(
         topBar = {
@@ -50,20 +41,19 @@ fun SettingsScreen(navigator: Navigator) {
             )
         }
     ) { padding ->
+        AdaptivePageFrame(Modifier.padding(padding), LocalAppLayout.current.settingsMaxWidthDp) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
                 .verticalScroll(rememberScrollState())
                 .padding(vertical = 6.dp)
         ) {
+            AppLayoutSettingsSection()
             SettingsCard(
                 title = stringResource(R.string.settings_danmu),
                 subtitle = stringResource(R.string.settings_danmu_subtitle),
                 onClick = {
-                    if (!isExiting) {
-                        navigator.navigate(Route.SettingsDanmu)
-                    }
+                    navigation.navigate(Route.SettingsDanmu)
                 }
             )
 
@@ -71,9 +61,7 @@ fun SettingsScreen(navigator: Navigator) {
                 title = stringResource(R.string.settings_play),
                 subtitle = stringResource(R.string.settings_play_subtitle),
                 onClick = {
-                    if (!isExiting) {
-                        navigator.navigate(Route.SettingsPlay)
-                    }
+                    navigation.navigate(Route.SettingsPlay)
                 }
             )
 
@@ -81,9 +69,7 @@ fun SettingsScreen(navigator: Navigator) {
                 title = stringResource(R.string.settings_appearance),
                 subtitle = stringResource(R.string.settings_appearance_subtitle),
                 onClick = {
-                    if (!isExiting) {
-                        navigator.navigate(Route.SettingsAppStyle)
-                    }
+                    navigation.navigate(Route.SettingsAppStyle)
                 }
             )
 
@@ -91,9 +77,7 @@ fun SettingsScreen(navigator: Navigator) {
                 title = stringResource(R.string.settings_auto_exit),
                 subtitle = stringResource(R.string.settings_auto_exit_subtitle),
                 onClick = {
-                    if (!isExiting) {
-                        navigator.navigate(Route.SettingsAutoExit)
-                    }
+                    navigation.navigate(Route.SettingsAutoExit)
                 }
             )
 
@@ -101,9 +85,7 @@ fun SettingsScreen(navigator: Navigator) {
                 title = stringResource(R.string.settings_other),
                 subtitle = stringResource(R.string.settings_other_subtitle),
                 onClick = {
-                    if (!isExiting) {
-                        navigator.navigate(Route.SettingsOther)
-                    }
+                    navigation.navigate(Route.SettingsOther)
                 }
             )
 
@@ -111,9 +93,7 @@ fun SettingsScreen(navigator: Navigator) {
                 title = stringResource(R.string.settings_follow),
                 subtitle = stringResource(R.string.settings_follow_subtitle),
                 onClick = {
-                    if (!isExiting) {
-                        navigator.navigate(Route.SettingsFollow)
-                    }
+                    navigation.navigate(Route.SettingsFollow)
                 }
             )
 
@@ -121,9 +101,7 @@ fun SettingsScreen(navigator: Navigator) {
                 title = stringResource(R.string.settings_indexed),
                 subtitle = stringResource(R.string.settings_indexed_subtitle),
                 onClick = {
-                    if (!isExiting) {
-                        navigator.navigate(Route.SettingsIndexed)
-                    }
+                    navigation.navigate(Route.SettingsIndexed)
                 }
             )
 
@@ -131,9 +109,7 @@ fun SettingsScreen(navigator: Navigator) {
                 title = stringResource(R.string.settings_playback_page),
                 subtitle = stringResource(R.string.settings_playback_page_subtitle),
                 onClick = {
-                    if (!isExiting) {
-                        navigator.navigate(Route.SettingsPlaybackPage)
-                    }
+                    navigation.navigate(Route.SettingsPlaybackPage)
                 }
             )
 
@@ -141,11 +117,10 @@ fun SettingsScreen(navigator: Navigator) {
                 title = stringResource(R.string.settings_update),
                 subtitle = stringResource(R.string.settings_update_subtitle),
                 onClick = {
-                    if (!isExiting) {
-                        navigator.navigate(Route.SettingsUpdate)
-                    }
+                    navigation.navigate(Route.SettingsUpdate)
                 }
             )
+        }
         }
     }
 }

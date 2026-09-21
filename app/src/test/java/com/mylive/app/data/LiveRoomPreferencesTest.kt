@@ -1,6 +1,7 @@
 package com.mylive.app.data
 
 import androidx.datastore.preferences.core.mutablePreferencesOf
+import com.mylive.app.core.model.TabletOrientationMode
 import com.mylive.app.data.local.datastore.SettingsDataStore
 import com.mylive.app.data.repository.LiveRoomPreferences
 import com.mylive.app.data.repository.toLiveRoomPreferences
@@ -31,7 +32,9 @@ class LiveRoomPreferencesTest {
                 SettingsDataStore.HardwareDecode to false,
                 SettingsDataStore.PlayerForceHttps to true,
                 SettingsDataStore.LiveRoomQuickAccessEnabled to false,
-                SettingsDataStore.RoomAutoExitDuration to 30
+                SettingsDataStore.RoomAutoExitDuration to 30,
+                SettingsDataStore.TabletOrientationMode to
+                    TabletOrientationMode.Landscape.persistedValue
             )
         )
 
@@ -41,5 +44,6 @@ class LiveRoomPreferencesTest {
         assertTrue(settings.playerForceHttps)
         assertFalse(settings.liveRoomQuickAccessEnabled)
         assertEquals(30, settings.roomAutoExitDuration)
+        assertEquals(TabletOrientationMode.Landscape, settings.tabletOrientationMode)
     }
 }

@@ -1,6 +1,5 @@
 package com.mylive.app.ui.screen.sync
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -18,24 +17,19 @@ import androidx.compose.ui.unit.dp
 import com.mylive.app.ui.navigation.Navigator
 import com.mylive.app.ui.navigation.Route
 import com.mylive.app.R
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SyncHubScreen(navigator: Navigator) {
-    var isExiting by remember { mutableStateOf(false) }
-
+fun SyncHubScreen(
+    navigator: Navigator,
+    viewModel: SyncHubViewModel = hiltViewModel()
+) {
+    val navigation = navigator.rememberRouteActions()
+    val serverHealth by viewModel.serverHealth.collectAsStateWithLifecycle()
     var showJoinRoomDialog by remember { mutableStateOf(false) }
-
-    val handleBack: () -> Unit = {
-        if (!isExiting) {
-            isExiting = true
-            navigator.goBack()
-        }
-    }
-
-    BackHandler(enabled = !isExiting) {
-        handleBack()
-    }
+    val handleBack = navigation.onBack
 
     if (showJoinRoomDialog) {
         var roomCode by remember { mutableStateOf("") }
@@ -59,8 +53,8 @@ fun SyncHubScreen(navigator: Navigator) {
                 TextButton(
                     onClick = {
                         showJoinRoomDialog = false
-                        if (!isExiting && roomCode.length == 6) {
-                            navigator.navigate(Route.RemoteSyncRoom(roomId = roomCode))
+                        if (roomCode.length == 6) {
+                            navigation.navigate(Route.RemoteSyncRoom(roomId = roomCode))
                         }
                     },
                     enabled = roomCode.length == 6
@@ -90,9 +84,7 @@ fun SyncHubScreen(navigator: Navigator) {
                 },
                 actions = {
                     IconButton(onClick = {
-                        if (!isExiting) {
-                            navigator.navigate(Route.SyncScan)
-                        }
+                        navigation.navigate(Route.SyncScan)
                     }) {
                         Icon(
                             imageVector = Icons.Default.QrCodeScanner,
@@ -110,13 +102,16 @@ fun SyncHubScreen(navigator: Navigator) {
                 .verticalScroll(rememberScrollState())
                 .padding(vertical = 6.dp)
         ) {
+            SyncServerHealthCard(
+                state = serverHealth,
+                onRefresh = viewModel::refreshServerHealth
+            )
+
             SyncCard(
                 title = stringResource(R.string.sync_local_title),
                 subtitle = stringResource(R.string.sync_local_subtitle),
                 onClick = {
-                    if (!isExiting) {
-                        navigator.navigate(Route.LocalSync)
-                    }
+                    navigation.navigate(Route.LocalSync)
                 }
             )
 
@@ -124,9 +119,7 @@ fun SyncHubScreen(navigator: Navigator) {
                 title = stringResource(R.string.sync_create_room_title),
                 subtitle = stringResource(R.string.sync_create_room_subtitle),
                 onClick = {
-                    if (!isExiting) {
-                        navigator.navigate(Route.RemoteSyncRoom())
-                    }
+                    navigation.navigate(Route.RemoteSyncRoom())
                 }
             )
 
@@ -134,7 +127,7 @@ fun SyncHubScreen(navigator: Navigator) {
                 title = stringResource(R.string.sync_join_room_title),
                 subtitle = stringResource(R.string.sync_join_room_subtitle),
                 onClick = {
-                    if (!isExiting) {
+                    if (navigation.isCurrent) {
                         showJoinRoomDialog = true
                     }
                 }
@@ -144,9 +137,7 @@ fun SyncHubScreen(navigator: Navigator) {
                 title = stringResource(R.string.webdav_title),
                 subtitle = stringResource(R.string.sync_webdav_subtitle),
                 onClick = {
-                    if (!isExiting) {
-                        navigator.navigate(Route.RemoteSyncWebDav)
-                    }
+                    navigation.navigate(Route.RemoteSyncWebDav)
                 }
             )
 
@@ -154,13 +145,58 @@ fun SyncHubScreen(navigator: Navigator) {
                 title = stringResource(R.string.sync_profile_title),
                 subtitle = stringResource(R.string.sync_profile_subtitle),
                 onClick = {
-                    if (!isExiting) {
-                        navigator.navigate(Route.ProfileBackup)
-                    }
+                    navigation.navigate(Route.ProfileBackup)
                 }
             )
         }
     }
+}
+
+@Composable
+private fun SyncServerHealthCard(
+    state: SyncServerHealthUiState,
+    onRefresh: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = Icons.Default.Wifi,
+            contentDescription = null,
+            tint = when (state.isReachable) {
+                true -> MaterialTheme.colorScheme.primary
+                false -> MaterialTheme.colorScheme.error
+                null -> MaterialTheme.colorScheme.onSurfaceVariant
+            }
+        )
+        Spacer(modifier = Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = state.endpointName,
+                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold)
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = state.statusText,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        IconButton(onClick = onRefresh, enabled = !state.isProbing) {
+            if (state.isProbing) {
+                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+            } else {
+                Icon(Icons.Default.Refresh, contentDescription = "重新检测同步服务")
+            }
+        }
+    }
+    HorizontalDivider(
+        modifier = Modifier.padding(start = 16.dp),
+        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+    )
 }
 
 @Composable

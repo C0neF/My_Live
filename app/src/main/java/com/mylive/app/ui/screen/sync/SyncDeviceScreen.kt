@@ -1,7 +1,6 @@
 package com.mylive.app.ui.screen.sync
 
 import android.widget.Toast
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -167,16 +166,7 @@ fun SyncDeviceScreen(
     val syncingKey by viewModel.syncingKey.collectAsStateWithLifecycle()
     val syncResults by viewModel.syncResults.collectAsStateWithLifecycle()
 
-    var isExiting by remember { mutableStateOf(false) }
-    val handleBack: () -> Unit = {
-        if (!isExiting) {
-            isExiting = true
-            navigator.goBack()
-        }
-    }
-    BackHandler(enabled = !isExiting) {
-        handleBack()
-    }
+    val handleBack = navigator.rememberRouteActions().onBack
 
     // Extract parameters from Route key
     val address = key.address

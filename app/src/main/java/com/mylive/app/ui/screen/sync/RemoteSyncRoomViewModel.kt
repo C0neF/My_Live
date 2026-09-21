@@ -65,6 +65,7 @@ class RemoteSyncRoomViewModel @Inject constructor(
     }
 
     private fun setupCallbacks() {
+        remoteSyncService.claimCallbacks(this)
         remoteSyncService.onFavoriteReceived = { overlay, content ->
             viewModelScope.launch {
                 try {
@@ -81,41 +82,7 @@ class RemoteSyncRoomViewModel @Inject constructor(
         remoteSyncService.onHistoryReceived = { overlay, content ->
             viewModelScope.launch {
                 try {
-                    val arr = JSONArray(content)
-                    if (overlay) {
-                        historyRepository.clearAllHistory()
-                    }
-                    val existingHistoriesById = historyRepository.getAllHistory().first().associateBy { it.id }
-                    val histories = buildList {
-                        for (i in 0 until arr.length()) {
-                            val item = arr.getJSONObject(i)
-                            val siteId = item.optString("siteId", item.optString("site", ""))
-                            val roomId = item.optString("roomId", item.optString("room", ""))
-                            if (siteId.isBlank() || roomId.isBlank()) continue
-
-                            val id = "${siteId}_${roomId}"
-                            val userName = item.optString("userName", item.optString("name", ""))
-                            val face = item.optString("face", item.optString("avatar", ""))
-                            val updateTime = item.optLong("updateTime", System.currentTimeMillis())
-
-                            val existing = existingHistoriesById[id]
-                            if (existing != null && existing.updateTime > updateTime) {
-                                continue
-                            }
-
-                            add(
-                                HistoryEntity(
-                                    id = id,
-                                    roomId = roomId,
-                                    siteId = siteId,
-                                    userName = userName,
-                                    face = face,
-                                    updateTime = updateTime
-                                )
-                            )
-                        }
-                    }
-                    historyRepository.addHistories(histories)
+                    historyRepository.importFromJson(content, overlay)
                     _toastMessage.emit("已同步历史记录")
                 } catch (e: Exception) {
                     CoreLog.e("RemoteSyncRoomViewModel: History sync failed", e)
@@ -128,11 +95,7 @@ class RemoteSyncRoomViewModel @Inject constructor(
             viewModelScope.launch {
                 try {
                     val keywords = decodeLanSyncShieldKeywords(content)
-                    if (overlay) {
-                        shieldRepository.clearAllKeywords()
-                    }
-                    val shields = keywords.map { kw -> ShieldEntity(value = "keyword:$kw") }
-                    shieldRepository.addShields(shields)
+                    shieldRepository.importKeywords(keywords, overlay)
                     _toastMessage.emit("已同步屏蔽词")
                 } catch (e: Exception) {
                     CoreLog.e("RemoteSyncRoomViewModel: Shield words sync failed", e)
@@ -408,16 +371,8 @@ class RemoteSyncRoomViewModel @Inject constructor(
 
     override fun onCleared() {
         timerJob?.cancel()
-        // RemoteSyncService is a @Singleton that outlives this ViewModel. Detach our callbacks
-        // so it doesn't retain this cleared ViewModel (and its captured viewModelScope).
-        remoteSyncService.onFavoriteReceived = null
-        remoteSyncService.onHistoryReceived = null
-        remoteSyncService.onShieldWordReceived = null
-        remoteSyncService.onBiliAccountReceived = null
-        remoteSyncService.onDouyinAccountReceived = null
-        remoteSyncService.onRoomDestroyed = null
-        remoteSyncService.onRoomUserUpdated = null
-        remoteSyncService.disconnect()
+        // An incoming page may already own the singleton during the outgoing transition.
+        remoteSyncService.releaseCallbacks(this)
         super.onCleared()
     }
 }

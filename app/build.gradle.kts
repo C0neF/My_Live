@@ -28,8 +28,8 @@ android {
         applicationId = "com.mylive.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 27
-        versionName = "2.0.7"
+        versionCode = 28
+        versionName = "2.0.8"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

@@ -5,7 +5,8 @@
 .gradle/
 .kotlin/
 /build/
-**/build/
+# Module outputs only: source packages can also be named build.
+/*/build/
 /captures/
 .externalNativeBuild/
 .cxx/
@@ -46,7 +47,8 @@ PRODUCT.md
 # performance numbers behind v3 changes are reproducible by anyone with the repo and a device.
 /macrobenchmark/build/
 
-# Documentation is local except for the performance contract used by the tracked benchmark module.
+# Versioned project status and performance documentation.
 /docs/*
 !/docs/performance-baseline.md
 !/docs/performance-sampling.md
+!/docs/v3-progress.md

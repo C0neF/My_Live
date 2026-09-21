@@ -6,7 +6,9 @@
 
 本项目源于 MiMo 赠送的 Token 太多用不完（笑），才决定复刻直播客户端 [Simple Live](https://github.com/xiaoyaocz/dart_simple_live)。在此基础上，完全根据个人的审美标准对 UI 界面与操作逻辑进行了重新设计与重构，旨在打造一个更精致、更符合个人使用习惯的直播聚合体验。
 
-当前版本：V2.0.7
+当前分支：**V3 开发分支**。应用版本基线为 **2.0.8（versionCode 28）**；V3 的正式版本号将在发布验收后确定。
+
+功能进度、验证记录和待办见 [V3 开发进度](docs/v3-progress.md)。
 
 ## 功能特性
 
@@ -14,6 +16,7 @@
 - 支持直播间浏览、平台分区、直播间搜索和主播搜索。
 - 支持直播播放、线路/画质切换、弹幕显示与弹幕快捷设置。
 - 支持关注列表、观看历史、直播间快速入口和同类推荐。
+- 支持自动、手机、平板布局模式，以及大屏分栏和设备方向设置。
 - 支持账号 Cookie 登录能力，用于部分平台的登录态功能。
 - 支持局域网同步、远程同步房间和 WebDAV 备份/恢复。
 - 对账号 Cookie、WebDAV 密码等敏感信息使用本地加密存储。
@@ -62,6 +65,15 @@
 .\gradlew.bat :app:assembleDebug
 .\gradlew.bat :app:testDebugUnitTest
 ```
+
+QA 与性能测试构建：
+
+```powershell
+.\gradlew.bat :app:assembleQa
+.\gradlew.bat :macrobenchmark:assembleBenchmark
+```
+
+QA 包名为 `com.mylive.app.qa`，可与正式版同时安装，并启用 Release 压缩规则。性能测试的设备运行与指标口径见 [性能采样说明](docs/performance-sampling.md)和[性能验收要求](docs/performance-baseline.md)。
 
 Release 构建：
 

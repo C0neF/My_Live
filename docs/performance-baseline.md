@@ -121,3 +121,23 @@ app/UI frame metrics, not the video's frame rate. The accepted capture and its J
 under `build/v3-phase2-20261009/emulator/benchmark-clean/`. This is a measurement baseline
 for this environment, not a before/after comparison or a long-session acceptance result. Real
 device weak-network, lifecycle, 15–30 minute playback and matched-version comparison remain open.
+
+## Physical-device closure update (2026-10-23)
+
+The later API 31 physical-device round completed natural PiP, screen-off recovery, both
+background-play policies and a controlled twelve-second WiFi interruption. The final QA
+played a Douyu 2K120 selection for 942.167 seconds and 2K60 for 349.629 seconds; session-end
+diagnostics recorded no playback-phase rebuffer, decoder drop or audio incident in those
+sessions. A separate 959.368-second 2K60 session belongs to the earlier QA build.
+
+Decoder submission, danmaku and window presentation were checked separately. The 2K120
+traces handled about 120 decoder outputs per second and released about 60.1 per second in
+the selected 60 Hz display mode. A separate overlapping SurfaceFlinger sample covered
+33.250 seconds at 59.459 main-window presentations per second, with a maximum interval of
+33.833 ms. That window includes UI and TextureView composition and does not establish
+unique video-frame cadence. Toggling danmaku proved that an earlier roughly 38 fps
+SurfaceView sample was the danmaku layer; the original toggle state was restored.
+
+These checks close the specified session and lifecycle cases, not a matched before/after
+performance comparison. Deferred 4K playback, simultaneous physical devices and sustained
+bandwidth congestion remain outside the tested scope. See the [V3 verification record](v3-progress.md).

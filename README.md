@@ -6,9 +6,9 @@
 
 本项目源于 MiMo 赠送的 Token 太多用不完（笑），才决定复刻直播客户端 [Simple Live](https://github.com/xiaoyaocz/dart_simple_live)。在此基础上，完全根据个人的审美标准对 UI 界面与操作逻辑进行了重新设计与重构，旨在打造一个更精致、更符合个人使用习惯的直播聚合体验。
 
-当前分支：**V3 开发分支**。应用版本基线为 **2.0.8（versionCode 28）**；V3 的正式版本号将在发布验收后确定。
+当前版本：**2.1.0（versionCode 29）**，主分支 **main** 已整合 V3 的功能与可靠性修复。更新内容见 [更新日志](CHANGELOG.md)。
 
-功能进度、验证记录和待办见 [V3 开发进度](docs/v3-progress.md)。
+功能与验证范围见 [V3 验收记录](docs/v3-progress.md)。
 
 ## 功能特性
 

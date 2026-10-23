@@ -99,8 +99,10 @@ class SettingsDataStore(private val context: Context) {
         // === 账号 (不导出) ===
         val BilibiliCookie = stringPreferencesKey("BilibiliCookie")
         val DouyinCookie = stringPreferencesKey("DouyinCookie")
+        val DouyuCookie = stringPreferencesKey("DouyuCookie")
         val EncryptedBilibiliCookie = stringPreferencesKey("EncryptedBilibiliCookie")
         val EncryptedDouyinCookie = stringPreferencesKey("EncryptedDouyinCookie")
+        val EncryptedDouyuCookie = stringPreferencesKey("EncryptedDouyuCookie")
 
         // === WebDAV (不导出) ===
         val WebDAVUri = stringPreferencesKey("WebDAVUri")

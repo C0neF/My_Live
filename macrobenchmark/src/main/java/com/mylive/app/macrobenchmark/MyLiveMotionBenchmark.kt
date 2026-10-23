@@ -99,8 +99,35 @@ class MyLiveMotionBenchmark {
         startActivityAndWait(liveRoomBenchmarkIntent())
         waitForAppForeground()
         waitForTag(LIVE_ROOM_SCREEN_TAG)
+        waitForVideoFrame()
         device.pressBack()
         waitForTag(INDEX_HOME_SCREEN_TAG)
+    }
+
+    @Test
+    fun liveRoomSteadyPlaybackFrames() = benchmarkRule.measureRepeated(
+        packageName = PACKAGE_NAME,
+        metrics = listOf(FrameTimingMetric()),
+        compilationMode = CompilationMode.Partial(),
+        startupMode = StartupMode.WARM,
+        iterations = 1,
+        setupBlock = {
+            pressHome()
+            startActivityAndWait(liveRoomBenchmarkIntent())
+            waitForAppForeground()
+            waitForVideoFrame()
+        }
+    ) {
+        val durationMillis = InstrumentationRegistry.getArguments().getString("mylivePlaybackDurationMs")
+            ?.toLongOrNull() ?: 60_000L
+        require(durationMillis in 1_000L..1_800_000L) { "Playback duration must be 1 second to 30 minutes" }
+        android.os.SystemClock.sleep(durationMillis)
+        waitForVideoFrame()
+    }
+
+    private fun MacrobenchmarkScope.waitForVideoFrame() {
+        val rendered = device.wait(Until.hasObject(By.res("player_video_rendered")), 30_000L)
+        check(rendered) { "Live room opened but no video frame was rendered within 30 seconds" }
     }
 
     private fun liveRoomBenchmarkIntent(): Intent {
@@ -113,7 +140,8 @@ class MyLiveMotionBenchmark {
 
         return launcherIntent.apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
-            putExtra(EXTRA_INITIAL_ROUTE, LIVE_ROOM_BENCHMARK_ROUTE)
+            putExtra(EXTRA_INITIAL_ROUTE,
+                InstrumentationRegistry.getArguments().getString("myliveLiveRoomRoute") ?: LIVE_ROOM_BENCHMARK_ROUTE)
         }
     }
 

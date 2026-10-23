@@ -3,6 +3,7 @@ package com.mylive.app.data.repository
 import com.mylive.app.core.model.TabletOrientationMode
 import com.mylive.app.core.model.AppLayoutMode
 import com.mylive.app.data.local.datastore.SettingsDataStore
+import com.mylive.app.core.model.DanmakuSettingsPolicy
 import com.mylive.app.data.local.secure.SensitiveCredentialStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -57,13 +58,13 @@ class SettingsRepository @Inject constructor(
     suspend fun setDanmuEnable(value: Boolean) = settingsDataStore.setValue(SettingsDataStore.DanmuEnable, value)
 
     val danmuSize: Flow<Double> = settingsDataStore.getFlow(SettingsDataStore.DanmuSize, 16.0)
-    suspend fun setDanmuSize(value: Double) = settingsDataStore.setValue(SettingsDataStore.DanmuSize, value)
+    suspend fun setDanmuSize(value: Double) = settingsDataStore.setValue(SettingsDataStore.DanmuSize, DanmakuSettingsPolicy.sizeMultiplier(value))
 
     val danmuSpeed: Flow<Double> = settingsDataStore.getFlow(SettingsDataStore.DanmuSpeed, 10.0)
-    suspend fun setDanmuSpeed(value: Double) = settingsDataStore.setValue(SettingsDataStore.DanmuSpeed, value)
+    suspend fun setDanmuSpeed(value: Double) = settingsDataStore.setValue(SettingsDataStore.DanmuSpeed, DanmakuSettingsPolicy.speedMultiplier(value))
 
     val danmuArea: Flow<Double> = settingsDataStore.getFlow(SettingsDataStore.DanmuArea, 0.8)
-    suspend fun setDanmuArea(value: Double) = settingsDataStore.setValue(SettingsDataStore.DanmuArea, value)
+    suspend fun setDanmuArea(value: Double) = settingsDataStore.setValue(SettingsDataStore.DanmuArea, DanmakuSettingsPolicy.area(value))
 
     val danmuLineCount: Flow<Int> = settingsDataStore.getFlow(SettingsDataStore.DanmuLineCount, 8)
     suspend fun setDanmuLineCount(value: Int) = settingsDataStore.setValue(SettingsDataStore.DanmuLineCount, value)
@@ -75,7 +76,7 @@ class SettingsRepository @Inject constructor(
     suspend fun setDanmuDelayBySiteJson(value: String) = settingsDataStore.setValue(SettingsDataStore.DanmuDelayBySite, value)
 
     val danmuOpacity: Flow<Double> = settingsDataStore.getFlow(SettingsDataStore.DanmuOpacity, 1.0)
-    suspend fun setDanmuOpacity(value: Double) = settingsDataStore.setValue(SettingsDataStore.DanmuOpacity, value)
+    suspend fun setDanmuOpacity(value: Double) = settingsDataStore.setValue(SettingsDataStore.DanmuOpacity, DanmakuSettingsPolicy.opacity(value))
 
     val danmuShieldEnable: Flow<Boolean> = settingsDataStore.getFlow(SettingsDataStore.DanmuShieldEnable, true)
     suspend fun setDanmuShieldEnable(value: Boolean) = settingsDataStore.setValue(SettingsDataStore.DanmuShieldEnable, value)
@@ -107,10 +108,10 @@ class SettingsRepository @Inject constructor(
     suspend fun setDanmuHideTop(value: Boolean) = settingsDataStore.setValue(SettingsDataStore.DanmuHideTop, value)
 
     val danmuFontWeight: Flow<Int> = settingsDataStore.getFlow(SettingsDataStore.DanmuFontWeight, 4)
-    suspend fun setDanmuFontWeight(value: Int) = settingsDataStore.setValue(SettingsDataStore.DanmuFontWeight, value)
+    suspend fun setDanmuFontWeight(value: Int) = settingsDataStore.setValue(SettingsDataStore.DanmuFontWeight, DanmakuSettingsPolicy.fontWeight(value))
 
     val danmuStrokeWidth: Flow<Double> = settingsDataStore.getFlow(SettingsDataStore.DanmuStrokeWidth, 2.0)
-    suspend fun setDanmuStrokeWidth(value: Double) = settingsDataStore.setValue(SettingsDataStore.DanmuStrokeWidth, value)
+    suspend fun setDanmuStrokeWidth(value: Double) = settingsDataStore.setValue(SettingsDataStore.DanmuStrokeWidth, DanmakuSettingsPolicy.strokeWidth(value))
 
     val danmuTopMargin: Flow<Double> = settingsDataStore.getFlow(SettingsDataStore.DanmuTopMargin, 0.0)
     suspend fun setDanmuTopMargin(value: Double) = settingsDataStore.setValue(SettingsDataStore.DanmuTopMargin, value)

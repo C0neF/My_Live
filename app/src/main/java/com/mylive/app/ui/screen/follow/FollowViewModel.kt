@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.combine
 import com.mylive.app.data.local.entity.FollowUserTagEntity
 import com.mylive.app.data.repository.SettingsRepository
 import com.mylive.app.service.FollowStatusRefreshCoordinator
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import javax.inject.Inject
@@ -157,10 +158,18 @@ class FollowViewModel @Inject constructor(
     )
 
     val updatingStatus: StateFlow<Boolean> = followStatusRefreshCoordinator.isRefreshing
+    val refreshEntries = followStatusRefreshCoordinator.entries
+    val refreshProgress = followStatusRefreshCoordinator.progress
 
     fun updateFollowStatus() {
         viewModelScope.launch {
-            followStatusRefreshCoordinator.refreshAll()
+            try {
+                followStatusRefreshCoordinator.refreshAll()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                Timber.w(error, "Failed to refresh follows")
+            }
         }
     }
 
@@ -205,44 +214,19 @@ class FollowViewModel @Inject constructor(
 
     fun removeTag(tagId: String) {
         viewModelScope.launch {
-            val tag = followRepository.getAllTags().first().find { it.id == tagId } ?: return@launch
-            val followsById = followRepository.getAllFollows().first().associateBy { it.id }
-            val updatedFollows = tag.userIds.mapNotNull { userId ->
-                followsById[userId]?.copy(tag = "")
-            }
-            followRepository.addFollows(updatedFollows)
             followRepository.removeTag(tagId)
         }
     }
 
     fun renameTag(tagId: String, newName: String) {
         viewModelScope.launch {
-            val tag = followRepository.getAllTags().first().find { it.id == tagId } ?: return@launch
-            followRepository.updateTag(tag.copy(tag = newName))
-            val followsById = followRepository.getAllFollows().first().associateBy { it.id }
-            val updatedFollows = tag.userIds.mapNotNull { userId ->
-                followsById[userId]?.copy(tag = newName)
-            }
-            followRepository.addFollows(updatedFollows)
+            followRepository.renameTag(tagId, newName)
         }
     }
 
     fun setFollowTag(follow: FollowUserEntity, targetTag: FollowUserTagEntity?) {
         viewModelScope.launch {
-            val tags = followRepository.getAllTags().first()
-            for (tag in tags) {
-                if (follow.id in tag.userIds) {
-                    followRepository.updateTag(tag.copy(userIds = tag.userIds.filter { it != follow.id }))
-                }
-            }
-            if (targetTag != null) {
-                val updatedUserIds = targetTag.userIds.toMutableList()
-                if (follow.id !in updatedUserIds) {
-                    updatedUserIds.add(follow.id)
-                }
-                followRepository.updateTag(targetTag.copy(userIds = updatedUserIds))
-            }
-            followRepository.addFollow(follow.copy(tag = targetTag?.tag ?: ""))
+            followRepository.assignFollowTag(follow.id, targetTag?.id)
         }
     }
 

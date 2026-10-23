@@ -182,7 +182,7 @@ class SearchViewModel @Inject constructor(
         val site = siteTabs.value.getOrNull(siteIndex) ?: return
         val nextPage = state.currentPage + 1
 
-        _uiState.value = _uiState.value.copy(isLoading = true)
+        _uiState.value = _uiState.value.copy(isLoading = true, error = null)
         loadMoreJob = viewModelScope.launch {
             try {
                 if (searchType == 0) {
@@ -217,7 +217,10 @@ class SearchViewModel @Inject constructor(
             } catch (e: Exception) {
                 if (!isCurrentSearchRequest(requestId, siteIndex, searchType, keyword)) return@launch
                 Timber.e(e, "Load more failed")
-                _uiState.value = _uiState.value.copy(isLoading = false)
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = e.message ?: "加载失败"
+                )
             }
         }
     }

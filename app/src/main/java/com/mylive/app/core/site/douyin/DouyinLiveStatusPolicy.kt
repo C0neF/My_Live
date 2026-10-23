@@ -22,12 +22,16 @@ internal fun parseDouyinLiveStatus(data: JSONObject): Boolean? {
     return null
 }
 
-private fun parseDouyinStatusValue(value: Any?): Int? = when (value) {
-    null,
-    JSONObject.NULL -> null
-    is Number -> value.toInt()
-    is String -> value.trim().toIntOrNull()
-    is JSONObject -> listOf("status", "live_status", "room_status")
-        .firstNotNullOfOrNull { key -> parseDouyinStatusValue(value.opt(key)) }
-    else -> null
+private fun parseDouyinStatusValue(value: Any?): Int? {
+    val status = when (value) {
+        null,
+        JSONObject.NULL -> null
+        is Number -> value.toString().toIntOrNull()
+        is String -> value.trim().toIntOrNull()
+        is JSONObject -> listOf("status", "live_status", "room_status")
+            .firstNotNullOfOrNull { key -> parseDouyinStatusValue(value.opt(key)) }
+        else -> null
+    }
+    // Only live (2) and ended (4) are conclusive; unfamiliar status values remain unknown.
+    return status?.takeIf { it == 2 || it == 4 }
 }

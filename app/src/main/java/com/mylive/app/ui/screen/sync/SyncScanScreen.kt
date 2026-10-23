@@ -11,6 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
 import com.mylive.app.ui.navigation.Navigator
 import com.mylive.app.ui.navigation.Route
 import com.journeyapps.barcodescanner.ScanContract
@@ -104,7 +105,7 @@ private fun handleScanResult(
 
     // LAN pairing QR: mylive-sync://<host>:<port>?token=<token> — carries the pairing token.
     if (trimmed.startsWith("mylive-sync://")) {
-        val uri = android.net.Uri.parse(trimmed)
+        val uri = trimmed.toUri()
         val host = uri.host
         if (host.isNullOrBlank()) {
             Toast.makeText(context, "无效的配对二维码", Toast.LENGTH_LONG).show()

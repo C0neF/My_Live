@@ -18,6 +18,7 @@ import com.mylive.app.data.local.entity.HistoryEntity
 import com.mylive.app.ui.screen.room.player.LivePlaybackEngine
 import com.mylive.app.ui.screen.room.player.PlaybackRequestOrigin
 import com.mylive.app.ui.screen.room.player.LivePlaybackSessionBinding
+import com.mylive.app.ui.screen.room.player.isLiveQualitySupportedByHardware
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
@@ -28,14 +29,15 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import timber.log.Timber
 import javax.inject.Inject
 
@@ -175,11 +177,29 @@ class LiveRoomViewModel @Inject constructor(
      * single consumer in [init] applies them, eliminating the read-modify-write
      * race that would otherwise drop messages under high message rates.
      */
-    private val _messages = MutableSharedFlow<LiveMessage>(
+    private data class QueuedLiveMessage(
+        val route: Pair<String, String>,
+        val message: LiveMessage
+    )
+
+    private val _messages = MutableSharedFlow<QueuedLiveMessage>(
         extraBufferCapacity = 64,
         onBufferOverflow = BufferOverflow.DROP_OLDEST
     )
-    val newDanmakuMessages: SharedFlow<LiveMessage> = _messages.asSharedFlow()
+
+    // Validate in each consumer, after its queue is drained. Filtering only before emission
+    // still lets a suspended overlay collector deliver the previous connection after refresh.
+    @OptIn(kotlinx.coroutines.ExperimentalForInheritanceCoroutinesApi::class)
+    val newDanmakuMessages: SharedFlow<LiveMessage> = object : SharedFlow<LiveMessage> {
+        override val replayCache: List<LiveMessage>
+            get() = _messages.replayCache.filter { isActiveRoute(it.route) }.map { it.message }
+
+        override suspend fun collect(collector: FlowCollector<LiveMessage>): Nothing {
+            _messages.collect { queued ->
+                if (isActiveRoute(queued.route)) collector.emit(queued.message)
+            }
+        }
+    }
 
     /**
      * Non-fatal danmaku notice, shown inside the chat panel.
@@ -215,8 +235,10 @@ class LiveRoomViewModel @Inject constructor(
      * ViewModel must not release the engine.
      */
     private var playbackEngine: LivePlaybackEngine? = null
+    private var roomOpenedAtMillis: Long? = null
 
     private var pendingPlaybackOrigin = PlaybackRequestOrigin.UserSelection
+    private var pendingPlaybackPauseGeneration: Long? = null
     private var playbackSetupError: String? = null
 
     private fun showPlaybackError(message: String) {
@@ -225,6 +247,12 @@ class LiveRoomViewModel @Inject constructor(
     }
 
     override fun bindPlaybackEngine(engine: LivePlaybackEngine) {
+        if (playbackEngine !== engine) {
+            roomOpenedAtMillis?.let(engine::beginRoomLoad)
+            // A route may start before its Session exists. Bind its pause boundary now,
+            // before detail/quality/URL acquisition or engine-ready callbacks can finish.
+            pendingPlaybackPauseGeneration = engine.playbackPauseGeneration
+        }
         playbackEngine = engine
         Timber.d("Playback engine bound")
     }
@@ -272,6 +300,8 @@ class LiveRoomViewModel @Inject constructor(
         val nextSiteId = siteId.trim()
         playbackSetupError = null
         pendingPlaybackOrigin = origin
+        // Capture before any room-detail or quality suspension, including manual refresh.
+        pendingPlaybackPauseGeneration = playbackEngine?.playbackPauseGeneration
         if (nextRoomId.isEmpty()) {
             activeRoute = null
             loadRoomJob?.cancel()
@@ -288,12 +318,20 @@ class LiveRoomViewModel @Inject constructor(
         }
 
         val nextRoute = nextSiteId to nextRoomId
+        if (origin == PlaybackRequestOrigin.UserSelection || roomOpenedAtMillis == null) {
+            roomOpenedAtMillis = android.os.SystemClock.elapsedRealtime()
+            playbackEngine?.beginRoomLoad(checkNotNull(roomOpenedAtMillis))
+        }
         activeRoute = nextRoute
         this.roomId = nextRoomId
         this.siteId = nextSiteId
         _uiState.value = loadingLiveRoomUiState(initialIsFollowing)
         currentSite = null
-        playbackEngine?.stop()
+        if (origin == PlaybackRequestOrigin.SourceRecovery) {
+            playbackEngine?.stopForSourceRecovery()
+        } else {
+            playbackEngine?.stop()
+        }
         clearChatMessages()
         _danmakuNotice.value = null
         _superChats.value = emptyList()
@@ -352,7 +390,9 @@ class LiveRoomViewModel @Inject constructor(
         }
 
         viewModelScope.launch {
-            _messages.collect { message ->
+            _messages.collect { queued ->
+                if (!isActiveRoute(queued.route)) return@collect
+                val message = queued.message
                 if (message.type == LiveMessageType.ONLINE) {
                     _onlineCount.value = message.onlineCount ?: 0
                 } else {
@@ -451,6 +491,15 @@ class LiveRoomViewModel @Inject constructor(
 
             currentSite = site
             val isFollowing = followRepository.isFollowing(site.id, routeRoomId)
+            if (isFollowing && site.id == "douyin") {
+                try {
+                    followRepository.rememberCanonicalRoomId(site.id, routeRoomId, detail.roomId)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    Timber.w(error, "Failed to remember canonical follow room")
+                }
+            }
 
             // Add to history
             try {
@@ -491,12 +540,12 @@ class LiveRoomViewModel @Inject constructor(
             // Notify chat when the room is playing a recorded loop
             if (detail.isRecord) {
                 _messages.tryEmit(
-                    LiveMessage(
+                    QueuedLiveMessage(route, LiveMessage(
                         type = LiveMessageType.CHAT,
                         userName = "LiveSysMessage",
                         message = "当前为轮播录像",
                         color = LiveMessageColor.WHITE
-                    )
+                    ))
                 )
             }
 
@@ -574,7 +623,17 @@ class LiveRoomViewModel @Inject constructor(
             val matchIndex = qualities.indexOfFirst {
                 preferredQuality != null &&
                     (it.data == preferredQuality.data || it.quality == preferredQuality.quality)
-            }.takeIf { it >= 0 } ?: selectPreferredQualityIndex(qualities, preferredLevel)
+            }.takeIf { it >= 0 } ?: run {
+                val preferredIndex = selectPreferredQualityIndex(qualities, preferredLevel)
+                val preferredQualityData = qualities.getOrNull(preferredIndex)?.data
+                if (preferredQualityData is PlayQualityData.Douyu && settingsRepository.hardwareDecode.first()) {
+                    withContext(Dispatchers.Default) {
+                        selectHardwareSupportedQualityIndex(qualities, preferredIndex, ::isLiveQualitySupportedByHardware)
+                    }
+                } else {
+                    preferredIndex
+                }
+            }
             if (!isActiveRoute(route)) return
 
             _uiState.value = _uiState.value.copy(
@@ -605,6 +664,7 @@ class LiveRoomViewModel @Inject constructor(
         quality: LivePlayQuality,
         route: Pair<String, String>,
         requestGeneration: Long,
+        pauseGeneration: Long?,
         origin: PlaybackRequestOrigin = PlaybackRequestOrigin.UserSelection
     ) {
         if (!isCurrentPlaybackRequest(route, requestGeneration)) return
@@ -627,9 +687,9 @@ class LiveRoomViewModel @Inject constructor(
             }
             playbackSetupError = null
             playbackEngine?.play(
-                urls = playUrl.urls,
-                headers = playUrl.headers,
-                origin = origin
+                source = playUrl,
+                origin = origin,
+                pauseGeneration = pauseGeneration
             )
         } catch (e: Throwable) {
             if (e is CancellationException) throw e
@@ -646,6 +706,7 @@ class LiveRoomViewModel @Inject constructor(
         origin: PlaybackRequestOrigin = PlaybackRequestOrigin.UserSelection
     ) {
         val requestGeneration = playbackRequestGate.begin()
+        val pauseGeneration = pendingPlaybackPauseGeneration
         playbackRequestJob?.cancel()
         playbackRequestJob = viewModelScope.launch {
             playWithQuality(
@@ -653,6 +714,7 @@ class LiveRoomViewModel @Inject constructor(
                 quality = quality,
                 route = route,
                 requestGeneration = requestGeneration,
+                pauseGeneration = pauseGeneration,
                 origin = origin
             )
         }
@@ -676,6 +738,8 @@ class LiveRoomViewModel @Inject constructor(
         val qualities = _uiState.value.playQualities
         if (index !in qualities.indices) return
         val route = activeRoute ?: return
+        pendingPlaybackOrigin = PlaybackRequestOrigin.UserSelection
+        pendingPlaybackPauseGeneration = playbackEngine?.playbackPauseGeneration
         _uiState.value = _uiState.value.copy(currentQualityIndex = index)
         requestPlayback(detail, qualities[index], route)
     }
@@ -733,7 +797,7 @@ class LiveRoomViewModel @Inject constructor(
             if (shouldDropMessageForShield(message, route)) return@onMessage
             // Hand off to the serial consumer started in init. tryEmit never fails
             // because the flow is configured with extraBufferCapacity + DROP_OLDEST.
-            _messages.tryEmit(message)
+            _messages.tryEmit(QueuedLiveMessage(route, message))
         }
 
         danmaku.onClose = onClose@ { reason ->
@@ -810,7 +874,8 @@ class LiveRoomViewModel @Inject constructor(
                             isSpecialFollow = false,
                             liveStatus = if (detail.status) 1 else 2,
                             liveStartTime = if (detail.status) System.currentTimeMillis() else null,
-                            showTime = if (detail.status) detail.showTime else null
+                            showTime = if (detail.status) detail.showTime else null,
+                            canonicalRoomId = detail.roomId.takeIf { site.id == "douyin" && it.isNotBlank() }
                         )
                     )
                 }

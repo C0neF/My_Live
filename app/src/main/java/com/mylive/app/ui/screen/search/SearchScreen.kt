@@ -19,6 +19,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import com.mylive.app.ui.theme.Icons
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -61,7 +62,7 @@ fun SearchScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val siteTabs by viewModel.siteTabs.collectAsStateWithLifecycle()
-    var searchText by remember { mutableStateOf("") }
+    var searchText by rememberSaveable { mutableStateOf("") }
     val selectedTab = uiState.selectedSiteIndex
     val selectedPlatformId = siteTabs.getOrNull(selectedTab)?.id
     var showSearchTypeMenu by remember { mutableStateOf(false) }
@@ -409,7 +410,7 @@ private fun SearchResultsContent(
                         )
                     }
                 }
-                uiState.error != null -> {
+                uiState.error != null && uiState.rooms.isEmpty() && uiState.anchors.isEmpty() -> {
                     ErrorState(
                         message = uiState.error ?: "",
                         onRetry = { onSearch(searchText) },
@@ -454,11 +455,16 @@ private fun SearchResultsContent(
                                 }
                             )
                         }
-                        if (uiState.hasMore && !uiState.isLoading) {
+                        if (uiState.hasMore && !uiState.isLoading && uiState.error == null) {
                             item(span = { GridItemSpan(maxLineSpan) }) {
                                 LaunchedEffect(uiState.currentPage, uiState.rooms.size) {
                                     onLoadMore()
                                 }
+                            }
+                        }
+                        if (uiState.error != null && !uiState.isLoading) {
+                            item(span = { GridItemSpan(maxLineSpan) }) {
+                                SearchLoadMoreError(uiState.error.orEmpty(), onLoadMore)
                             }
                         }
                         if (uiState.isLoading && uiState.rooms.isNotEmpty()) {
@@ -552,11 +558,16 @@ private fun SearchResultsContent(
                                 }
                             }
                         }
-                        if (uiState.hasMore && !uiState.isLoading) {
+                        if (uiState.hasMore && !uiState.isLoading && uiState.error == null) {
                             item {
                                 LaunchedEffect(uiState.currentPage, uiState.anchors.size) {
                                     onLoadMore()
                                 }
+                            }
+                        }
+                        if (uiState.error != null && !uiState.isLoading) {
+                            item {
+                                SearchLoadMoreError(uiState.error.orEmpty(), onLoadMore)
                             }
                         }
                         if (uiState.isLoading && uiState.anchors.isNotEmpty()) {
@@ -576,6 +587,21 @@ private fun SearchResultsContent(
         }
     }
 }
+}
+
+@Composable
+private fun SearchLoadMoreError(message: String, onRetry: () -> Unit) {
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = message,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodyMedium
+        )
+        TextButton(onClick = onRetry) { Text("重试") }
+    }
 }
 
 @Composable

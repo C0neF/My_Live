@@ -1,10 +1,8 @@
 package com.mylive.app.ui.screen.settings
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import com.mylive.app.ui.theme.Icons
 import androidx.compose.material3.*
@@ -48,7 +46,6 @@ fun SettingsScreen(navigator: Navigator) {
                 .verticalScroll(rememberScrollState())
                 .padding(vertical = 6.dp)
         ) {
-            AppLayoutSettingsSection()
             SettingsCard(
                 title = stringResource(R.string.settings_danmu),
                 subtitle = stringResource(R.string.settings_danmu_subtitle),

@@ -45,6 +45,7 @@ class RemoteSyncService @Inject constructor() {
     companion object {
         const val K_ROOM_ID_LENGTH = 6
         const val K_DEFAULT_URL = "wss://mylive.conef.hidns.co"
+        private const val CREATE_ROOM_PATH = "/sync/create"
         const val K_DEFAULT_LOCAL_PROXY = "127.0.0.1:51888"
         const val K_ANDROID_EMULATOR_PROXY = "10.0.2.2:51888"
         const val K_GENYMOTION_PROXY = "10.0.3.2:51888"
@@ -255,11 +256,9 @@ class RemoteSyncService @Inject constructor() {
         timeoutMillis: Long = 8_000L
     ): RemoteSyncProbeResult = withContext(Dispatchers.IO) {
         val baseUrl = configuredUrl.trim().ifEmpty { defaultSyncServerUrl }.trimEnd('/')
-        val probeUrl = if (URI(baseUrl).path.trimEnd('/').endsWith("/sync")) {
-            baseUrl
-        } else {
-            appendWebSocketPath(baseUrl, "/sync")
-        }
+        // The relay exposes room WebSockets, not a standalone /sync endpoint. A heartbeat
+        // on the create route checks the protocol without sending the createRoom command.
+        val probeUrl = appendWebSocketPath(baseUrl, CREATE_ROOM_PATH)
         val requestId = "probe_${requestIdCounter.incrementAndGet()}"
         val opened = CompletableDeferred<Unit>()
         val pong = CompletableDeferred<Unit>()
@@ -516,9 +515,9 @@ class RemoteSyncService @Inject constructor() {
      */
     suspend fun createRoom(configuredUrl: String, configuredProxyUrl: String, clientInfo: JSONObject): RemoteSyncResp {
         val baseUrl = configuredUrl.trim().trimEnd('/')
-        val createUrl = appendWebSocketPath(baseUrl, "/sync/create")
+        val createUrl = appendWebSocketPath(baseUrl, CREATE_ROOM_PATH)
         try {
-            connect(createUrl, configuredProxyUrl, "/sync/create")
+            connect(createUrl, configuredProxyUrl, CREATE_ROOM_PATH)
         } catch (e: Exception) {
             if (e is CancellationException) throw e
             return RemoteSyncResp(false, e.message ?: "创建房间连接失败", null)

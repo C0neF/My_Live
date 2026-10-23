@@ -317,7 +317,11 @@ class HuyaSite @Inject constructor(
                     HuyaBitRateModel(name = "高清", bitRate = 2000)
                 ) else huyaBitrates
             )
-            roomPlayDataCache[roomId] = playData
+            val canonicalRoomId = tLiveInfo.optStringValue("lProfileRoom").ifBlank { roomId }
+            roomPlayDataCache[canonicalRoomId] = playData
+            if (roomId != canonicalRoomId) {
+                roomPlayDataCache[roomId] = playData
+            }
 
             // Cache danmaku args for the danmaku connection
             val ayyuid = asPositiveLong(tLiveInfo.opt("lYyid"))
@@ -330,13 +334,13 @@ class HuyaSite @Inject constructor(
             LiveRoomDetail(
                 cover = tLiveInfo.optString("sScreenshot", ""),
                 online = tLiveInfo.optInt("lTotalCount", 0),
-                roomId = tLiveInfo.optStringValue("lProfileRoom"),
+                roomId = canonicalRoomId,
                 title = title,
                 userName = tProfileInfo.optString("sNick", ""),
                 userAvatar = tProfileInfo.optString("sAvatar180", ""),
                 introduction = tLiveInfo.optString("sIntroduction", ""),
                 notice = roomInfo.optString("welcomeText", ""),
-                status = roomInfo.getJSONObject("roomInfo").optInt("eLiveStatus") == 2,
+                status = isRoomLive(roomInfo.getJSONObject("roomInfo")),
                 url = "https://www.huya.com/$roomId",
                 categoryId = categoryId,
                 categoryName = categoryName.ifEmpty { null },
@@ -619,11 +623,17 @@ class HuyaSite @Inject constructor(
 
     override suspend fun getLiveStatus(roomId: String): Boolean = withContext(Dispatchers.IO) {
         val roomInfo = getRoomInfo(roomId)
-        roomInfo.getJSONObject("roomInfo").optInt("eLiveStatus") == 2
+        isRoomLive(roomInfo.getJSONObject("roomInfo"))
     }
 
     override suspend fun getFollowPresence(roomId: String): FollowPresence {
         return FollowPresence(isLive = getLiveStatus(roomId))
+    }
+
+    private fun isRoomLive(roomInfo: JSONObject): Boolean {
+        val status = roomInfo.opt("eLiveStatus")?.toString()?.toIntOrNull()
+            ?: throw CoreError("虎牙直播状态响应异常：无法确认开播状态")
+        return status == 2
     }
 
     // ── Super chat (headline messages) ─────────────────────────────────────

@@ -31,6 +31,7 @@ import com.mylive.app.ui.theme.Icons
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
@@ -51,9 +52,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mylive.app.R
 import com.mylive.app.core.common.readUtf8TextWithinLimit
 import com.mylive.app.data.local.entity.FollowUserEntity
+import com.mylive.app.data.local.entity.playbackRoomId
 import com.mylive.app.data.local.entity.FollowUserTagEntity
 import com.mylive.app.ui.component.BackToTopButton
 import com.mylive.app.ui.component.FollowUserItem
+import com.mylive.app.ui.component.FollowRefreshProgressLine
+import com.mylive.app.ui.component.followRefreshHint
+import com.mylive.app.ui.component.rememberFollowRefreshEntry
 import com.mylive.app.ui.component.backToTopButtonMetrics
 import com.mylive.app.ui.component.status.EmptyState
 import com.mylive.app.ui.motion.AppMotion
@@ -85,6 +90,7 @@ fun FollowScreen(
     val userTags by viewModel.userTags.collectAsStateWithLifecycle()
 
     val updatingStatus by viewModel.updatingStatus.collectAsStateWithLifecycle()
+    val refreshProgress by viewModel.refreshProgress.collectAsStateWithLifecycle()
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
     val gridState = rememberLazyGridState()
@@ -92,7 +98,7 @@ fun FollowScreen(
     val inactiveListState = rememberLazyListState()
     val cardColumns = followCardColumns.coerceAtLeast(1)
     val useTabletTwoColumnLayout = followUseTabletTwoColumnLayout(cardColumns)
-    var selectedTabletPlatformId by remember { mutableStateOf<String?>(null) }
+    var selectedTabletPlatformId by rememberSaveable { mutableStateOf<String?>(null) }
     val tabletPlatformOptions = remember(allFollows) {
         followTabletPlatformOptions(allFollows)
     }
@@ -172,13 +178,6 @@ fun FollowScreen(
             }
                 .distinctUntilChanged()
                 .collect { isAtTop = it }
-        }
-    }
-
-    LaunchedEffect(useTabletTwoColumnLayout, selectedTabletPlatformId) {
-        if (useTabletTwoColumnLayout) {
-            liveListState.scrollToItem(0)
-            inactiveListState.scrollToItem(0)
         }
     }
 
@@ -293,7 +292,15 @@ fun FollowScreen(
             FollowTabletPlatformBar(
                 options = tabletPlatformOptions,
                 selectedSiteId = selectedTabletPlatformId,
-                onSelected = { selectedTabletPlatformId = it }
+                onSelected = { siteId ->
+                    if (selectedTabletPlatformId != siteId) {
+                        selectedTabletPlatformId = siteId
+                        scope.launch {
+                            liveListState.scrollToItem(0)
+                            inactiveListState.scrollToItem(0)
+                        }
+                    }
+                }
             )
         } else {
             // Compact filter bar: platform options are few, so show them all without horizontal scroll.
@@ -361,6 +368,7 @@ fun FollowScreen(
             }
         }
 
+        FollowRefreshProgressLine(refreshProgress)
         PullToRefreshBox(
             isRefreshing = updatingStatus,
             onRefresh = { viewModel.updateFollowStatus() },
@@ -925,6 +933,7 @@ private fun SwipeableFollowItem(
 ) {
     val density = LocalDensity.current
     val actionButtonWidth = 72.dp
+    val refreshEntry = rememberFollowRefreshEntry(viewModel.refreshEntries, follow.id)
     val buttonWidth = with(density) { actionButtonWidth.toPx() }
     val totalReveal = buttonWidth * 2 // 两个按钮的总宽度
     val cardMetrics = followCompactCardMetrics()
@@ -1081,6 +1090,7 @@ private fun SwipeableFollowItem(
                 userName = follow.userName,
                 faceUrl = follow.face,
                 liveStatus = follow.liveStatus,
+                refreshHint = followRefreshHint(refreshEntry),
                 siteId = follow.siteId,
                 showTime = follow.showTime,
                 isSpecialFollow = follow.isSpecialFollow,
@@ -1099,7 +1109,7 @@ private fun SwipeableFollowItem(
                     } else {
                         navigator.navigateToRoom(
                             siteId = follow.siteId,
-                            roomId = follow.roomId,
+                            roomId = follow.playbackRoomId,
                             initialIsFollowing = true
                         )
                     }

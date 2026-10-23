@@ -43,9 +43,11 @@ class PlaybackDiagnosticsTest {
             width = 1920, height = 1080, frameRate = 60f, bitrate = 0, decoderName = null,
             droppedFrames = 5, bufferingCount = 2, stallRecoveryCount = 1,
             firstFrameMillis = 450, outputFrameRate = 45f, playMillis = 8_000, rebufferMillis = 2_000,
-            bufferedMillis = 1_200, recoveryAttempts = 2, lastRecoveryReason = "播放停滞换线"
+            bufferedMillis = 1_200, recoveryAttempts = 2, lastRecoveryReason = "播放停滞换线",
+            decoderConfiguredFrameRate = 120f
         ))
         assertEquals("60.0 fps", snapshot.valueFor("源帧率"))
+        assertEquals("120.0 fps", snapshot.valueFor("解码帧率配置"))
         assertEquals("45.0 fps", snapshot.valueFor("视频输出帧率（近段）"))
         assertEquals("450 ms", snapshot.valueFor("播放器首帧"))
         assertEquals("2.0 s / 20.0%", snapshot.valueFor("播放阶段再缓冲"))

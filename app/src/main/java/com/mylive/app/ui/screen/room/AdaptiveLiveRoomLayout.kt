@@ -1,5 +1,6 @@
 package com.mylive.app.ui.screen.room
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -49,12 +50,11 @@ internal fun AdaptiveLiveRoomLayout(
     limitStackedPlayerHeight: Boolean,
     modifier: Modifier = Modifier,
     player: @Composable ColumnScope.(Dp) -> Unit,
-    details: @Composable ColumnScope.() -> Unit,
     chat: @Composable (Modifier) -> Unit
 ) {
     BoxWithConstraints(modifier) {
         val playerMaxHeight = when {
-            splitPane -> maxHeight * 0.62f
+            splitPane -> maxHeight
             limitStackedPlayerHeight -> maxHeight * 0.52f
             else -> Dp.Infinity
         }
@@ -63,18 +63,18 @@ internal fun AdaptiveLiveRoomLayout(
                 Surface(
                     modifier = Modifier.weight(1f).fillMaxHeight().testTag("tablet_live_player"),
                     shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surface
+                    color = MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                 ) {
                     Column(Modifier.fillMaxSize()) {
                         player(playerMaxHeight)
-                        HorizontalDivider()
-                        details()
                     }
                 }
                 Surface(
                     modifier = Modifier.width(chatWidthDp.dp).fillMaxHeight().testTag("tablet_live_chat"),
                     shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surface
+                    color = MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                 ) {
                     Column(Modifier.fillMaxSize()) {
                         Text(
@@ -99,9 +99,18 @@ internal fun AdaptiveLiveRoomLayout(
 
 /** A short window must constrain the surface itself, not only its reported layout bounds. */
 @Composable
-internal fun LiveRoomPlayerArea(maximumHeight: Dp, content: @Composable () -> Unit) {
-    BoxWithConstraints(Modifier.fillMaxWidth().testTag("live_room_player")) {
-        val playerHeight = (maxWidth / (16f / 9f)).coerceAtMost(maximumHeight)
+internal fun LiveRoomPlayerArea(
+    maximumHeight: Dp,
+    modifier: Modifier = Modifier,
+    fillAvailableHeight: Boolean = false,
+    content: @Composable () -> Unit
+) {
+    BoxWithConstraints(modifier.fillMaxWidth().testTag("live_room_player")) {
+        val playerHeight = if (fillAvailableHeight && maxHeight != Dp.Infinity) {
+            maxHeight
+        } else {
+            (maxWidth / (16f / 9f)).coerceAtMost(maximumHeight)
+        }
         Box(Modifier.fillMaxWidth().height(playerHeight).background(Color.Black)) {
             content()
         }

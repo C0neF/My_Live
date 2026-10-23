@@ -46,6 +46,8 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import com.mylive.app.ui.layout.LocalAppLayout
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
@@ -84,6 +86,11 @@ import com.mylive.app.ui.emoji.EmojiImage
 import com.mylive.app.ui.screen.room.player.LiveDanmakuSurfaceFeed
 import com.mylive.app.ui.screen.room.player.LivePlaybackHostContent
 import com.mylive.app.ui.screen.room.player.DanmakuConfig
+import com.mylive.app.data.local.entity.playbackRoomId
+import com.mylive.app.core.model.DanmakuSettingsPolicy
+import com.mylive.app.ui.component.FollowRefreshProgressLine
+import com.mylive.app.ui.component.followRefreshHint
+import com.mylive.app.ui.component.rememberFollowRefreshEntry
 import com.mylive.app.ui.screen.room.player.PlayerDanmakuActions
 import com.mylive.app.ui.screen.room.player.PlayerController
 import com.mylive.app.ui.screen.room.player.PlayerView
@@ -601,7 +608,11 @@ private fun PortraitLayout(
         limitStackedPlayerHeight = LocalAppLayout.current.tablet,
         modifier = Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding(),
         player = { playerMaxHeight ->
-        LiveRoomPlayerArea(maximumHeight = playerMaxHeight) {
+        LiveRoomPlayerArea(
+            maximumHeight = playerMaxHeight,
+            modifier = if (tabletSplit) Modifier.weight(1f) else Modifier,
+            fillAvailableHeight = tabletSplit
+        ) {
             val currentQualityName = uiState.playQualities.getOrNull(uiState.currentQualityIndex)?.quality ?: "画质"
             PlayerView(
                 playerController = playerController,
@@ -670,12 +681,13 @@ private fun PortraitLayout(
         )
 
         },
-        details = { HostAboutPanel(uiState.detail, Modifier.weight(1f).fillMaxWidth()) },
         chat = { chatModifier ->
         ChatPanel(
             messagesFlow = viewModel.danmakuMessages,
             noticeFlow = viewModel.danmakuNotice,
-            modifier = chatModifier.testTag("live_room_chat").background(MaterialTheme.colorScheme.background),
+            modifier = chatModifier.testTag("live_room_chat").background(
+                if (tabletSplit) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.background
+            ),
             hostName = uiState.detail?.userName ?: "",
             chatTextSize = chatTextSize,
             chatTextGap = chatTextGap,
@@ -1256,7 +1268,10 @@ private fun PortraitAuxiliaryPanelSheet(
     superChatSortDesc: Boolean,
     onDismiss: () -> Unit
 ) {
-    val maxSheetHeight = (LocalConfiguration.current.screenHeightDp * 0.72f).dp
+    val windowHeight = with(LocalDensity.current) {
+        LocalWindowInfo.current.containerSize.height.toDp()
+    }
+    val maxSheetHeight = windowHeight * 0.72f
     val isSettings = panel == PortraitLiveRoomPanel.SETTINGS
     var handleDismissAllowed by remember { mutableStateOf(false) }
     var handleGestureActive by remember { mutableStateOf(false) }
@@ -1847,143 +1862,6 @@ private fun ChatMessageItem(
     }
 }
 
-// ── Host About Panel ────────────────────────────────────────────
-
-@Composable
-fun HostAboutPanel(
-    detail: com.mylive.app.core.model.LiveRoomDetail?,
-    modifier: Modifier = Modifier
-) {
-    detail ?: return
-    LazyColumn(
-        modifier = modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        // Notice Card
-        if (!detail.notice.isNullOrBlank()) {
-            item {
-                Card(
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f)
-                    )
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp)
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("📢", fontSize = 18.sp)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "主播公告",
-                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(10.dp))
-                        Text(
-                            text = detail.notice!!,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-        }
-
-        // Introduction Card
-        if (!detail.introduction.isNullOrBlank()) {
-            item {
-                Card(
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surface
-                    ),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp)
-                    ) {
-                        Text(
-                            text = "关于主播",
-                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(modifier = Modifier.height(10.dp))
-                        Text(
-                            text = detail.introduction!!,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-        }
-
-        // Stream Details Card
-        item {
-            Card(
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                ),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Text(
-                        text = "直播间信息",
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-
-                    InfoRow(label = "直播房间号", value = detail.roomId)
-                    detail.showTime?.let {
-                        InfoRow(label = "开播时间", value = it)
-                    }
-                    InfoRow(
-                        label = "当前状态",
-                        value = if (detail.status) "直播中" else "未开播"
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun InfoRow(label: String, value: String) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Text(
-            text = value,
-            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-            color = MaterialTheme.colorScheme.onSurface
-        )
-    }
-}
-
 // ── Super Chat Card ─────────────────────────────────────────────
 
 @Composable
@@ -2138,7 +2016,8 @@ fun SuperChatPanel(
 fun FollowUserItem(
     item: FollowUserEntity,
     isPlaying: Boolean,
-    onTap: () -> Unit
+    onTap: () -> Unit,
+    refreshHint: String? = null
 ) {
     Card(
         modifier = Modifier
@@ -2225,18 +2104,23 @@ fun FollowUserItem(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(4.dp))
-
-                // Room ID
-                Text(
-                    text = "房间号: ${item.roomId}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                if (item.siteId != "douyin") {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "房间号: ${item.roomId}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                refreshHint?.let {
+                    Text(it, style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
             }
 
             // Live status indicator badge
-            val statusText = if (item.liveStatus == 1) "直播中" else "未开播"
+            val statusText = when (item.liveStatus) { 1 -> "直播中"; 2 -> "未开播"; else -> "待更新" }
             val statusColor = if (item.liveStatus == 1) Color.Red else Color.Gray
             Surface(
                 shape = RoundedCornerShape(16.dp),
@@ -2261,13 +2145,14 @@ fun FollowUserItem(
 @Composable
 fun FollowListPanel(
     navigator: Navigator,
-    viewModel: FollowViewModel = hiltViewModel(),
     currentRoomId: String,
     currentSiteId: String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    viewModel: FollowViewModel = hiltViewModel()
 ) {
     val follows by viewModel.follows.collectAsStateWithLifecycle()
     val isRefreshing by viewModel.updatingStatus.collectAsStateWithLifecycle()
+    val refreshProgress by viewModel.refreshProgress.collectAsStateWithLifecycle()
     var filterIndex by remember { mutableIntStateOf(0) } // 0: 全部, 1: 直播中, 2: 未开播
 
     val filteredFollows = remember(follows, filterIndex) {
@@ -2319,6 +2204,7 @@ fun FollowListPanel(
             }
         }
 
+        FollowRefreshProgressLine(refreshProgress)
         if (filteredFollows.isEmpty()) {
             Box(
                 modifier = Modifier
@@ -2345,14 +2231,15 @@ fun FollowListPanel(
                     key = { it.id },
                     contentType = { "room_follow" }
                 ) { item ->
-                    val isPlaying = item.roomId == currentRoomId && item.siteId == currentSiteId
+                    val isPlaying = (item.roomId == currentRoomId || item.playbackRoomId == currentRoomId) && item.siteId == currentSiteId
                     FollowUserItem(
                         item = item,
                         isPlaying = isPlaying,
+                        refreshHint = followRefreshHint(rememberFollowRefreshEntry(viewModel.refreshEntries, item.id)),
                         onTap = {
                             navigator.navigate(
                                 Route.LiveRoomDetail(
-                                    roomId = item.roomId,
+                                    roomId = item.playbackRoomId,
                                     siteId = item.siteId,
                                     initialIsFollowing = true
                                 ),
@@ -2371,12 +2258,12 @@ fun FollowListPanel(
 
 @Composable
 fun RoomSettingsPanel(
-    viewModel: SettingsViewModel = hiltViewModel(),
     liveRoomPreferences: LiveRoomPreferences,
     isHuyaOrBilibili: Boolean,
+    modifier: Modifier = Modifier,
+    viewModel: SettingsViewModel = hiltViewModel(),
     siteId: String = "",
     onOpenShieldSettings: () -> Unit = {},
-    modifier: Modifier = Modifier,
     listState: LazyListState = rememberLazyListState()
 ) {
     val chatTextSize = liveRoomPreferences.chatTextSize
@@ -2407,6 +2294,9 @@ fun RoomSettingsPanel(
     val pipHideDanmu = liveRoomPreferences.pipHideDanmu
     val normalizedDanmuSize = roomSettingsNormalizedDanmuSize(danmuSize)
     val normalizedDanmuSpeed = roomSettingsNormalizedDanmuSpeed(danmuSpeed)
+    val normalizedDanmuArea = DanmakuSettingsPolicy.area(danmuArea)
+    val normalizedDanmuOpacity = DanmakuSettingsPolicy.opacity(danmuOpacity)
+    val normalizedDanmuStroke = DanmakuSettingsPolicy.strokeWidth(danmuStrokeWidth)
     val siteDanmuDelay = remember(danmuDelayBySiteJson, siteId, danmuDelay) {
         resolveDanmuDelayMs(
             globalDelayMs = danmuDelay.toInt(),
@@ -2496,8 +2386,8 @@ fun RoomSettingsPanel(
                     valueText = roomSettingsMultiplierText(normalizedDanmuSize),
                     value = normalizedDanmuSize.toFloat(),
                     onValueChange = { viewModel.setDanmuSize(it.toDouble()) },
-                    valueRange = 0.8f..1.5f,
-                    steps = 6
+                    valueRange = DanmakuSettingsPolicy.sizeRange,
+                    steps = DanmakuSettingsPolicy.sizeValues.size - 2
                 )
 
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
@@ -2507,18 +2397,18 @@ fun RoomSettingsPanel(
                     valueText = roomSettingsMultiplierText(normalizedDanmuSpeed),
                     value = normalizedDanmuSpeed.toFloat(),
                     onValueChange = { viewModel.setDanmuSpeed(it.toDouble()) },
-                    valueRange = 0.6f..1.5f,
-                    steps = 8
+                    valueRange = DanmakuSettingsPolicy.speedRange,
+                    steps = DanmakuSettingsPolicy.speedValues.size - 2
                 )
 
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
 
                 RoomSettingsSliderRow(
                     title = "显示区域",
-                    valueText = roomSettingsPercentText(danmuArea),
-                    value = danmuArea.toFloat(),
+                    valueText = roomSettingsPercentText(normalizedDanmuArea),
+                    value = normalizedDanmuArea.toFloat(),
                     onValueChange = { viewModel.setDanmuArea(it.toDouble()) },
-                    valueRange = 0.25f..1.0f,
+                    valueRange = DanmakuSettingsPolicy.areaRange,
                     steps = 14
                 )
 
@@ -2537,22 +2427,22 @@ fun RoomSettingsPanel(
 
                 RoomSettingsSliderRow(
                     title = "弹幕透明度",
-                    valueText = roomSettingsPercentText(danmuOpacity),
-                    value = danmuOpacity.toFloat(),
+                    valueText = roomSettingsPercentText(normalizedDanmuOpacity),
+                    value = normalizedDanmuOpacity.toFloat(),
                     onValueChange = { viewModel.setDanmuOpacity(it.toDouble()) },
-                    valueRange = 0.2f..1.0f,
-                    steps = 7
+                    valueRange = DanmakuSettingsPolicy.opacityRange,
+                    steps = DanmakuSettingsPolicy.opacityValues.size - 2
                 )
 
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
 
                 RoomSettingsSliderRow(
                     title = "弹幕描边",
-                    valueText = roomSettingsStrokeText(danmuStrokeWidth),
-                    value = danmuStrokeWidth.toFloat(),
+                    valueText = roomSettingsStrokeText(normalizedDanmuStroke),
+                    value = normalizedDanmuStroke.toFloat(),
                     onValueChange = { viewModel.setDanmuStrokeWidth(it.toDouble()) },
-                    valueRange = 0f..4f,
-                    steps = 7
+                    valueRange = DanmakuSettingsPolicy.strokeRange,
+                    steps = DanmakuSettingsPolicy.strokeValues.size - 2
                 )
 
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
@@ -3052,19 +2942,19 @@ private fun RoomSettingsSliderRow(
 }
 
 private fun roomSettingsNormalizedDanmuSize(value: Double): Double =
-    if (value <= 2.0) value.coerceIn(0.8, 1.5) else (value / 16.0).coerceIn(0.8, 1.5)
+    DanmakuSettingsPolicy.sizeMultiplier(value)
 
 private fun roomSettingsNormalizedDanmuSpeed(value: Double): Double =
-    if (value > 5.0) 1.0 else value.coerceIn(0.6, 1.5)
+    DanmakuSettingsPolicy.speedMultiplier(value)
 
 private fun roomSettingsMultiplierText(value: Double): String =
-    "${roomSettingsOneDecimal(value)}x"
+    DanmakuSettingsPolicy.multiplierText(value)
 
 private fun roomSettingsPercentText(value: Double): String =
-    "${(value.coerceIn(0.0, 1.0) * 100).roundToInt()}%"
+    DanmakuSettingsPolicy.percentText(value)
 
 private fun roomSettingsStrokeText(value: Double): String =
-    if (value <= 0.0) "无" else "${roomSettingsOneDecimal(value)} px"
+    DanmakuSettingsPolicy.strokeText(value)
 
 private fun roomSettingsOneDecimal(value: Double): String {
     val rounded = (value * 10).roundToInt()

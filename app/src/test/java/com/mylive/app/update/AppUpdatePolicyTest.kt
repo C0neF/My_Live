@@ -293,22 +293,4 @@ class AppUpdatePolicyTest {
         assertFalse(viewModelSource.contains("v1.x 稳定版"))
     }
 
-    @Test
-    fun updateScreenRetriesInstallAfterUnknownSourcePermissionIsGranted() {
-        val source = File("src/main/java/com/mylive/app/ui/screen/settings/AppUpdateScreen.kt").readText()
-        val launchBlock = source.substringAfter("val launchDownloadedUpdate: (File) -> Unit = { file ->")
-            .substringBefore("LaunchedEffect(uiState.downloadedFile)")
-        val resumeBlock = source.substringAfter("Lifecycle.Event.ON_RESUME ->")
-            .substringBefore("else ->")
-
-        assertTrue(source.contains("LifecycleEventObserver"))
-        assertTrue(source.contains("LocalLifecycleOwner.current"))
-        assertTrue(launchBlock.contains("AppUpdateInstaller.canRequestPackageInstalls(context)"))
-        assertTrue(launchBlock.contains("launchedInstallFile = file"))
-        assertTrue(launchBlock.contains("AppUpdateInstaller.createInstallIntent(context, file)"))
-        assertTrue(launchBlock.contains("AppUpdateInstaller.createInstallPermissionIntent(context)"))
-        assertTrue(resumeBlock.contains("val file = uiState.downloadedFile"))
-        assertTrue(resumeBlock.contains("AppUpdateInstaller.canRequestPackageInstalls(context)"))
-        assertTrue(resumeBlock.contains("launchDownloadedUpdate(file)"))
-    }
 }

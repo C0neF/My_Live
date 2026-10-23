@@ -97,7 +97,9 @@ fun DouyinWebLoginScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("抖音网页登录") },
+                title = {
+                    Text(stringResource(R.string.account_web_login_title, stringResource(R.string.account_douyin_section)))
+                },
                 navigationIcon = {
                     IconButton(onClick = handleBack) {
                         Icon(

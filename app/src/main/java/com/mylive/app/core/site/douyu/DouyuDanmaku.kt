@@ -141,45 +141,18 @@ class DouyuDanmaku(private val webSocketUtils: WebSocketUtils) : LiveDanmaku {
     // ── STT format parsing ──────────────────────────────────────────────
 
     /**
-     * Parse Douyu STT (Serialized Text Transport) format into a JSON-like structure.
-     *
-     * STT rules:
-     * - Key-value pairs separated by `/`: `key@=value/key2@=value2/`
-     * - Nested objects: value itself contains `@=` pairs
-     * - Arrays: fields separated by `//`
-     * - Escaping: `@S` -> `/`, `@A` -> `@`
-     *
-     * @return JSONObject for maps, JSONArray for arrays, String for leaf values
+     * Read top-level STT fields before decoding their escapes. Chat fields are strings:
+     * decoded URLs or literal `@=` text must not be parsed again as arrays or objects.
      */
-    private fun parseStt(str: String): Any? {
-        // Array: fields separated by "//"
-        if (str.contains("//")) {
-            val result = org.json.JSONArray()
-            for (field in str.split("//")) {
-                if (field.isEmpty()) continue
-                result.put(parseStt(field))
-            }
-            return result
+    private fun parseStt(str: String): JSONObject {
+        val result = JSONObject()
+        for (field in str.split('/')) {
+            if (field.isEmpty()) continue
+            val tokens = field.split("@=", limit = 2)
+            if (tokens.size < 2) continue
+            result.put(unescapeSlashAt(tokens[0]), unescapeSlashAt(tokens[1]))
         }
-        // Object: key@=value pairs separated by "/"
-        if (str.contains("@=")) {
-            val result = JSONObject()
-            for (field in str.split('/')) {
-                if (field.isEmpty()) continue
-                val tokens = field.split("@=", limit = 2)
-                if (tokens.size < 2) continue
-                val key = tokens[0]
-                val value = unescapeSlashAt(tokens[1])
-                result.put(key, parseStt(value))
-            }
-            return result
-        }
-        // Nested escaped value
-        if (str.contains("@A=")) {
-            return parseStt(unescapeSlashAt(str))
-        }
-        // Leaf string value
-        return unescapeSlashAt(str)
+        return result
     }
 
     /**
@@ -199,7 +172,7 @@ class DouyuDanmaku(private val webSocketUtils: WebSocketUtils) : LiveDanmaku {
     private fun decodeMessage(data: ByteArray) {
         try {
             val result = deserializeDouyu(data) ?: return
-            val jsonData = parseStt(result) as? JSONObject ?: return
+            val jsonData = parseStt(result)
 
             val type = jsonData.optString("type", "")
             if (type == "chatmsg") {

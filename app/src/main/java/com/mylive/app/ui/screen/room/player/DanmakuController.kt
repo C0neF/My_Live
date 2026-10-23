@@ -15,6 +15,7 @@ import coil.Coil
 import coil.request.ImageRequest
 import com.mylive.app.core.common.buildPlayerDanmakuDisplaySpans
 import com.mylive.app.core.model.LiveMessage
+import com.mylive.app.core.model.DanmakuSettingsPolicy
 import com.mylive.app.core.model.LiveMessageDanmakuPosition
 import com.mylive.app.core.model.LiveMessageSpan
 import com.mylive.app.core.model.LiveMessageType
@@ -90,13 +91,7 @@ private data class DanmakuGeometry(
         shouldDisplayDanmakuPosition(position, hideScroll, hideTop, hideBottom)
 }
 
-internal fun normalizeDanmakuFontWeight(weight: Int): Int = when (weight) {
-    2, 200 -> 2
-    6, 600 -> 6
-    8, 800 -> 8
-    4, 400 -> 4
-    else -> 4
-}
+internal fun normalizeDanmakuFontWeight(weight: Int): Int = DanmakuSettingsPolicy.fontWeight(weight) / 100
 
 /**
  * Producers only parse/enqueue. Paint, geometry and the active list belong to the render thread.

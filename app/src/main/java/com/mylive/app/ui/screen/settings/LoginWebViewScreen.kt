@@ -42,7 +42,9 @@ fun LoginWebViewScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("哔哩哔哩账号登录") },
+                title = {
+                    Text(stringResource(R.string.account_web_login_title, stringResource(R.string.account_bilibili_section)))
+                },
                 navigationIcon = {
                     IconButton(onClick = handleBack) {
                         Icon(

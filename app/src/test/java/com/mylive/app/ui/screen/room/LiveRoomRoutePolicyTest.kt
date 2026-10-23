@@ -303,7 +303,7 @@ class LiveRoomRoutePolicyTest {
         assertTrue(routeSource.contains("val initialIsFollowing: Boolean? = null"))
         assertTrue(navigatorSource.contains("initialIsFollowing: Boolean? = null"))
         assertTrue(followSource.contains("initialIsFollowing = true"))
-        assertTrue(quickAccessSource.contains("onNavigateToRoom(user.siteId, user.roomId, true)"))
+        assertTrue(quickAccessSource.contains("onNavigateToRoom(user.siteId, user.playbackRoomId, true)"))
         assertTrue(roomScreenSource.contains("initialIsFollowing = true"))
     }
 }

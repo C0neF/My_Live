@@ -165,7 +165,8 @@ class BottomTabRefreshPolicyTest {
     fun sideNavigationUsesCompactBottomPaddingForTopLevelTabs() {
         val source = readMainSource("com/mylive/app/ui/screen/IndexScreen.kt")
 
-        assertTrue(source.contains("val contentBottomPadding = indexTopLevelContentBottomPaddingDp(useSideNavigation).dp"))
+        assertTrue(source.contains("val contentBottomPadding = indexTopLevelContentBottomPaddingDp("))
+        assertTrue(source.contains("dockContentPaddingDp = ceil(dockContentPadding.value).toInt()"))
         assertTrue(source.contains("contentBottomPadding = contentBottomPadding"))
         assertTrue(source.contains("val revealBottomBar = if (useSideNavigation)"))
         assertTrue(source.contains("bottomBarOffsetPx = indexBottomBarOffsetAfterRevealRequest"))
@@ -182,6 +183,8 @@ class BottomTabRefreshPolicyTest {
     fun sideNavigationDoesNotReservePhoneBottomBarSpace() {
         assertEquals(96, indexTopLevelContentBottomPaddingDp(useSideNavigation = false))
         assertEquals(24, indexTopLevelContentBottomPaddingDp(useSideNavigation = true))
+        assertEquals(128, indexTopLevelContentBottomPaddingDp(false, dockContentPaddingDp = 128))
+        assertEquals(24, indexTopLevelContentBottomPaddingDp(true, dockContentPaddingDp = 128))
     }
 
     @Test

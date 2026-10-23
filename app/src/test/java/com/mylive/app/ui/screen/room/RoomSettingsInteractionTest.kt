@@ -55,7 +55,7 @@ class RoomSettingsInteractionTest {
         compose.setContent {
             MaterialTheme {
                 listState = rememberLazyListState()
-                RoomSettingsPanel(settings, LiveRoomPreferences(), true, siteId = "bilibili",
+                RoomSettingsPanel(viewModel = settings, liveRoomPreferences = LiveRoomPreferences(), isHuyaOrBilibili = true, siteId = "bilibili",
                     modifier = if (heightDp != null) Modifier.fillMaxWidth().height(heightDp.dp) else Modifier.fillMaxSize(),
                     listState = listState)
             }

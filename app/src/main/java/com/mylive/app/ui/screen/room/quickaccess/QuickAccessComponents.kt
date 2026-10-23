@@ -114,7 +114,7 @@ internal fun QuickAccessFilterSummary(count: String, filters: QuickAccessFilters
 @Composable
 internal fun QuickAccessRoomRow(name: String, face: String, subtitle: String, current: Boolean,
     onClick: () -> Unit, status: String? = null, live: Boolean = false, special: Boolean = false,
-    onLongClick: (() -> Unit)? = null, onDelete: (() -> Unit)? = null) {
+    onLongClick: (() -> Unit)? = null, onDelete: (() -> Unit)? = null, refreshHint: String? = null) {
     val accent = quickAccessAccentColor()
     Surface(shape = RoundedCornerShape(18.dp),
         color = if (current) accent.copy(alpha = 0.09f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f),
@@ -139,6 +139,10 @@ internal fun QuickAccessRoomRow(name: String, face: String, subtitle: String, cu
                 }
                 Text(subtitle, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
+                refreshHint?.let {
+                    Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
             }
             Spacer(Modifier.width(8.dp))
             if (current || status != null) Text(if (current) "当前观看" else status.orEmpty(),

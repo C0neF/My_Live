@@ -2,6 +2,12 @@ package com.mylive.app.ui.screen.room.player
 
 internal const val MAX_PLAYBACK_RECOVERY_ATTEMPTS = 3
 
+internal enum class PlaybackSourceRecoveryAction { SwitchToNextUrl, RequestFreshSource }
+
+internal fun playbackSourceRecoveryAction(currentUrlIndex: Int, urlCount: Int): PlaybackSourceRecoveryAction =
+    if (currentUrlIndex in 0 until (urlCount - 1)) PlaybackSourceRecoveryAction.SwitchToNextUrl
+    else PlaybackSourceRecoveryAction.RequestFreshSource
+
 /** One budget for all automatic retries in a logical viewing session, across media/decoder swaps. */
 internal class PlaybackRecoveryBudget(
     private val maxAttempts: Int = MAX_PLAYBACK_RECOVERY_ATTEMPTS,

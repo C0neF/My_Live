@@ -10,6 +10,8 @@ import com.mylive.app.data.local.entity.FollowUserTagEntity
 import com.mylive.app.data.local.entity.HistoryEntity
 import com.mylive.app.data.repository.*
 import com.mylive.app.service.FollowStatusRefreshCoordinator
+import com.mylive.app.service.FollowRefreshEntry
+import com.mylive.app.service.FollowRefreshProgress
 import io.mockk.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
@@ -37,6 +39,8 @@ internal class QuickAccessTestFixture {
     }
     val coordinator = mockk<FollowStatusRefreshCoordinator> {
         every { isRefreshing } returns MutableStateFlow(false)
+        every { entries } returns MutableStateFlow<Map<String, FollowRefreshEntry>>(emptyMap())
+        every { progress } returns MutableStateFlow(FollowRefreshProgress())
         coEvery { refreshAll() } returns emptyList()
     }
     val saved = SavedStateHandle()

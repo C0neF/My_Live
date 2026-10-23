@@ -96,6 +96,21 @@ class LiveRoomRefreshBehaviorTest {
         assertEquals(PlaybackRequestOrigin.SourceRecovery, engine.origin)
     }
 
+    @Test fun resolvedSourceFrameRateAndHeadersReachTheEngineOnInitialPlayAndRecovery() {
+        var resolved = LivePlayUrl(listOf("https://example.test/2k120.flv"),
+            headers = mapOf("Referer" to "https://example.test/"), videoFrameRateHint = 120f)
+        coEvery { site.getPlayUrls(any(), any()) } coAnswers { resolved }
+        vm.openRoute("1", "fake")
+        shadowOf(Looper.getMainLooper()).idle()
+        assertSame(resolved, engine.source)
+
+        resolved = resolved.copy(urls = listOf("https://example.test/2k60.flv"), videoFrameRateHint = 60f)
+        assertTrue(vm.recoverPlaybackAfterSourceFailure())
+        shadowOf(Looper.getMainLooper()).idle()
+        assertSame(resolved, engine.source)
+        assertEquals(PlaybackRequestOrigin.SourceRecovery, engine.origin)
+    }
+
     @Test fun initialFailureIsDeliveredWhenPlayerAttachesLater() {
         vm.unbindPlaybackEngine(engine)
         failQualities = true
@@ -138,6 +153,11 @@ class LiveRoomRefreshBehaviorTest {
         override val state = MutableStateFlow(PlayerState())
         var urls = emptyList<String>()
         var origin = PlaybackRequestOrigin.UserSelection
+        var source: LivePlayUrl? = null
+        override fun play(source: LivePlayUrl, origin: PlaybackRequestOrigin) {
+            this.source = source
+            play(source.urls, source.headers, origin = origin, startIndex = 0)
+        }
         override fun play(urls: List<String>, headers: Map<String, String>?, startIndex: Int, origin: PlaybackRequestOrigin) {
             this.urls = urls
             this.origin = origin

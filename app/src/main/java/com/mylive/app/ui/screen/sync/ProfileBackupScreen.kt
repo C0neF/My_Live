@@ -28,6 +28,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
@@ -41,6 +42,7 @@ sealed class ProfileMessage {
     object ImportOk : ProfileMessage()
     data class ImportFailed(val reason: String) : ProfileMessage()
     object InvalidJson : ProfileMessage()
+    object UnsupportedVersion : ProfileMessage()
 }
 
 data class ProfileBackupUiState(
@@ -61,8 +63,12 @@ class ProfileBackupViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isExporting = true)
             try {
-                onResult(profileBackupManager.exportProfileJson())
+                val json = profileBackupManager.exportProfileJson()
+                withContext(Dispatchers.IO) { onResult(json) }
                 _uiState.value = _uiState.value.copy(isExporting = false, message = ProfileMessage.ExportOk)
+            } catch (cancelled: CancellationException) {
+                _uiState.value = _uiState.value.copy(isExporting = false)
+                throw cancelled
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(isExporting = false, message = ProfileMessage.ExportFailed(e.message ?: ""))
             }
@@ -75,8 +81,13 @@ class ProfileBackupViewModel @Inject constructor(
             try {
                 profileBackupManager.importProfileJson(jsonString)
                 _uiState.value = _uiState.value.copy(isImporting = false, message = ProfileMessage.ImportOk)
+            } catch (cancelled: CancellationException) {
+                _uiState.value = _uiState.value.copy(isImporting = false)
+                throw cancelled
             } catch (e: IllegalArgumentException) {
-                _uiState.value = _uiState.value.copy(isImporting = false, message = ProfileMessage.InvalidJson)
+                val message = if (e.message == "unsupported_profile_version") ProfileMessage.UnsupportedVersion
+                    else ProfileMessage.InvalidJson
+                _uiState.value = _uiState.value.copy(isImporting = false, message = message)
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(isImporting = false, message = ProfileMessage.ImportFailed(e.message ?: ""))
             }
@@ -109,6 +120,7 @@ fun ProfileBackupScreen(
             is ProfileMessage.ImportOk -> context.getString(R.string.profile_import_ok)
             is ProfileMessage.ImportFailed -> context.getString(R.string.profile_import_failed, msg.reason)
             is ProfileMessage.InvalidJson -> context.getString(R.string.profile_invalid_json)
+            is ProfileMessage.UnsupportedVersion -> context.getString(R.string.profile_unsupported_version)
         }
         snackbarHostState.showSnackbar(text)
         viewModel.clearMessage()
@@ -120,9 +132,9 @@ fun ProfileBackupScreen(
     ) { uri: Uri? ->
         uri?.let {
             viewModel.exportProfile { jsonString ->
-                context.contentResolver.openOutputStream(it)?.use { outputStream ->
-                    outputStream.write(jsonString.toByteArray())
-                }
+                val output = context.contentResolver.openOutputStream(it)
+                    ?: error("无法写入导出文件")
+                output.use { it.write(jsonString.toByteArray(Charsets.UTF_8)) }
             }
         }
     }

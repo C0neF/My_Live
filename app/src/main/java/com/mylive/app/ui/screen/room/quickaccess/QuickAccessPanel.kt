@@ -25,9 +25,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -123,9 +123,11 @@ fun QuickAccessPanel(
     val coroutineScope = rememberCoroutineScope()
     val motionPolicy = LocalAppMotionPolicy.current
     val focusManager = LocalFocusManager.current
-    val configuration = LocalConfiguration.current
-    val compact = configuration.screenHeightDp < 480
-    val panelHeight = resolveQuickAccessPanelHeightDp(configuration.screenHeightDp).dp
+    val windowHeightDp = with(LocalDensity.current) {
+        LocalWindowInfo.current.containerSize.height.toDp().value.toInt()
+    }
+    val compact = windowHeightDp < 480
+    val panelHeight = resolveQuickAccessPanelHeightDp(windowHeightDp).dp
     val headerDirectionThresholdPx = with(LocalDensity.current) { 12.dp.toPx() }
     var headerVisible by remember { mutableStateOf(true) }
     var headerAccumulatedDeltaY by remember { mutableFloatStateOf(0f) }

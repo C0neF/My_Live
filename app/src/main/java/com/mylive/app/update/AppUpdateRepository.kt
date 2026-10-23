@@ -4,13 +4,19 @@ import android.content.Context
 import com.mylive.app.BuildConfig
 import com.mylive.app.core.common.HttpClient
 import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.suspendCancellableCoroutine
+import okhttp3.Call
+import okhttp3.Callback
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.Response
 import java.io.File
+import java.io.IOException
+import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.coroutines.resumeWithException
 
 @Singleton
 class AppUpdateRepository @Inject constructor(
@@ -36,7 +42,7 @@ class AppUpdateRepository @Inject constructor(
     suspend fun downloadApk(
         updateInfo: AppUpdateInfo,
         onProgress: (Int) -> Unit
-    ): File = withContext(Dispatchers.IO) {
+    ): File {
         val request = Request.Builder()
             .url(updateInfo.apkDownloadUrl)
             .header("User-Agent", "MyLive/${BuildConfig.VERSION_NAME}")
@@ -44,60 +50,79 @@ class AppUpdateRepository @Inject constructor(
         require(updateInfo.apkSizeBytes <= 0 || updateInfo.apkSizeBytes <= MAX_APK_SIZE_BYTES) {
             "下载失败：安装包超过大小限制"
         }
-        val updateDir = File(context.cacheDir, "updates").apply { mkdirs() }
-        val targetFile = File(updateDir, updateInfo.apkName.sanitizeFileName())
+        val updateDir = File(context.cacheDir, "updates")
+        // Navigation entries can overlap while a previous download is being cancelled. Each
+        // request owns both paths, so its completion/cleanup cannot replace another request's APK.
+        val targetFile = File(updateDir, "${UUID.randomUUID()}-${updateInfo.apkName.sanitizeFileName()}")
         val temporaryFile = File(updateDir, "${targetFile.name}.part")
-        temporaryFile.delete()
-        try {
-            okHttpClient.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) {
-                    error("下载失败：HTTP ${response.code}")
+        return suspendCancellableCoroutine { continuation ->
+            val call = okHttpClient.newCall(request)
+            // Keep this hook installed while the callback reads the body, not just until headers
+            // arrive: cancelling the Call also unblocks a pending network read.
+            continuation.invokeOnCancellation { call.cancel() }
+            call.enqueue(object : Callback {
+                override fun onFailure(call: Call, e: IOException) {
+                    continuation.resumeWithException(e)
                 }
-                val body = response.body ?: error("下载失败：文件为空")
-                val responseSize = body.contentLength()
-                require(responseSize <= 0 || responseSize <= MAX_APK_SIZE_BYTES) {
-                    "下载失败：安装包超过大小限制"
-                }
-                val totalBytes = if (responseSize > 0) responseSize else updateInfo.apkSizeBytes
-                var downloadedBytes = 0L
-                body.byteStream().use { input ->
-                    temporaryFile.outputStream().use { output ->
-                        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                        while (true) {
-                            val read = input.read(buffer)
-                            if (read == -1) break
-                            downloadedBytes += read
-                            require(downloadedBytes <= MAX_APK_SIZE_BYTES) {
+
+                override fun onResponse(call: Call, response: Response) {
+                    try {
+                        response.use {
+                            continuation.context.ensureActive()
+                            if (!response.isSuccessful) {
+                                error("下载失败：HTTP ${response.code}")
+                            }
+                            val body = response.body ?: error("下载失败：文件为空")
+                            val responseSize = body.contentLength()
+                            require(responseSize <= 0 || responseSize <= MAX_APK_SIZE_BYTES) {
                                 "下载失败：安装包超过大小限制"
                             }
-                            output.write(buffer, 0, read)
-                            if (totalBytes > 0) {
-                                onProgress(
-                                    ((downloadedBytes * 100) / totalBytes)
-                                        .toInt()
-                                        .coerceIn(0, 100)
-                                )
+                            val totalBytes = if (responseSize > 0) responseSize else updateInfo.apkSizeBytes
+                            var downloadedBytes = 0L
+                            updateDir.mkdirs()
+                            body.byteStream().use { input ->
+                                temporaryFile.outputStream().use { output ->
+                                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                                    while (true) {
+                                        continuation.context.ensureActive()
+                                        val read = input.read(buffer)
+                                        if (read == -1) break
+                                        continuation.context.ensureActive()
+                                        downloadedBytes += read
+                                        require(downloadedBytes <= MAX_APK_SIZE_BYTES) {
+                                            "下载失败：安装包超过大小限制"
+                                        }
+                                        output.write(buffer, 0, read)
+                                        if (totalBytes > 0) {
+                                            onProgress(
+                                                ((downloadedBytes * 100) / totalBytes)
+                                                    .toInt()
+                                                    .coerceIn(0, 100)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                            require(downloadedBytes > 0) { "下载失败：文件为空" }
+                            require(responseSize <= 0 || downloadedBytes == responseSize) {
+                                "下载失败：文件不完整"
                             }
                         }
+                        continuation.context.ensureActive()
+                        if (!temporaryFile.renameTo(targetFile)) {
+                            error("下载失败：无法保存安装包")
+                        }
+                        continuation.context.ensureActive()
+                        onProgress(100)
+                        continuation.resume(targetFile) { _, file, _ -> file.delete() }
+                    } catch (error: Throwable) {
+                        temporaryFile.delete()
+                        targetFile.delete()
+                        continuation.resumeWithException(error)
                     }
                 }
-                require(downloadedBytes > 0) { "下载失败：文件为空" }
-                require(responseSize <= 0 || downloadedBytes == responseSize) {
-                    "下载失败：文件不完整"
-                }
-            }
-            if (targetFile.exists() && !targetFile.delete()) {
-                error("下载失败：无法替换旧安装包")
-            }
-            if (!temporaryFile.renameTo(targetFile)) {
-                error("下载失败：无法保存安装包")
-            }
-        } catch (error: Throwable) {
-            temporaryFile.delete()
-            throw error
+            })
         }
-        onProgress(100)
-        targetFile
     }
 
     private fun String.sanitizeFileName(): String {

@@ -26,6 +26,7 @@ class AccountRequestCredentialsTest {
     private val accounts = AccountRepository(mockk<SensitiveCredentialStore> {
         every { bilibiliCookie } returns bilibili
         every { douyinCookie } returns douyin
+        every { douyuCookie } returns MutableStateFlow("")
     })
 
     @Test fun bilibiliUsesPersistedCookieWithoutAnyRoomViewModelAndReflectsLogout() = runBlocking {

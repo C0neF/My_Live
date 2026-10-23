@@ -107,7 +107,7 @@ class PlayerControllerPolicyTest {
 
         assertTrue(source.contains("Handler(Looper.getMainLooper())"))
         assertTrue(source.contains("stallMonitor.sample("))
-        assertTrue(source.contains("playbackStallRecoveryAction("))
+        assertTrue(source.contains("playbackSourceRecoveryAction("))
         assertTrue(source.contains("onPlaybackSourceExhausted?.invoke()"))
         assertFalse(source.contains("Timer(\"playback-stall"))
     }

@@ -20,6 +20,10 @@ val hasReleaseSigning = listOf(
     releaseKeyPassword
 ).all { !it.isNullOrBlank() }
 
+// Keep physical-device regression runs separate from both the user's app and the QA install.
+val isolatedDeviceTests = providers.gradleProperty("isolatedDeviceTests")
+    .map(String::toBoolean).getOrElse(false)
+
 android {
     namespace = "com.mylive.app"
     compileSdk = 36
@@ -54,9 +58,18 @@ android {
     sourceSets {
         // Make the exported Room schemas available to MigrationTestHelper in instrumented tests.
         getByName("androidTest").assets.directories.add("$projectDir/schemas")
+        // Execute the same loopback protocol contracts on the JVM and the isolated device app.
+        getByName("test").kotlin.directories.add("src/sharedTest/java")
+        getByName("androidTest").kotlin.directories.add("src/sharedTest/java")
     }
 
     buildTypes {
+        debug {
+            if (isolatedDeviceTests) {
+                applicationIdSuffix = ".audit"
+                versionNameSuffix = "-audit"
+            }
+        }
         release {
             if (hasReleaseSigning) {
                 signingConfig = signingConfigs.getByName("release")
@@ -233,5 +246,6 @@ dependencies {
     kspAndroidTest(libs.hilt.compiler)
     androidTestImplementation(libs.androidx.test.rules)
     androidTestImplementation(libs.room.testing)
+    androidTestImplementation(libs.okhttp.mockwebserver)
     debugImplementation(libs.compose.ui.test.manifest)
 }

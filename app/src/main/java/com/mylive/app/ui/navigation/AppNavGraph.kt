@@ -30,6 +30,7 @@ import com.mylive.app.ui.screen.sync.ProfileBackupScreen
 import com.mylive.app.ui.screen.sync.SyncHubScreen
 import com.mylive.app.ui.screen.sync.WebDavSyncScreen
 import com.mylive.app.ui.screen.settings.DouyinWebLoginScreen
+import com.mylive.app.ui.screen.settings.DouyuWebLoginScreen
 import com.mylive.app.ui.screen.settings.ShieldSettingsScreen
 import com.mylive.app.ui.screen.settings.FollowSettingsScreen
 import com.mylive.app.ui.screen.settings.IndexedSettingsScreen
@@ -111,6 +112,9 @@ fun AppNavGraph(navigator: Navigator, initialRoute: String? = null) {
                 }
                 entry<Route.SettingsAccountDouyinLoginWebview> {
                     DouyinWebLoginScreen(navigator = navigator)
+                }
+                entry<Route.SettingsAccountDouyuLoginWebview> {
+                    DouyuWebLoginScreen(navigator = navigator)
                 }
                 entry<Route.Sync> {
                     SyncHubScreen(navigator = navigator)

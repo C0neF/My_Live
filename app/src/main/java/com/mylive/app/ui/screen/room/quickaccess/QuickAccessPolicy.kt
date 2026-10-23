@@ -1,6 +1,7 @@
 package com.mylive.app.ui.screen.room.quickaccess
 
 import com.mylive.app.data.local.entity.FollowUserEntity
+import com.mylive.app.data.local.entity.playbackRoomId
 import com.mylive.app.data.local.entity.FollowUserTagEntity
 import com.mylive.app.data.local.entity.HistoryEntity
 import java.time.Instant
@@ -65,7 +66,7 @@ internal fun filterQuickAccessFollows(
         (filters.siteId == null || user.siteId == filters.siteId) &&
             filters.status.matches(user.liveStatus) &&
             (selectedMembers == null || user.id in selectedMembers) &&
-            matchesQuickAccessQuery(filters.query, user.userName, user.roomId,
+            matchesQuickAccessQuery(filters.query, user.userName, user.roomId, user.playbackRoomId,
                 quickAccessSiteName(user.siteId), quickAccessRemark(remarks, user.siteId, user.userName))
     }.distinctBy { it.siteId to it.roomId }
         .sortedWith(compareByDescending<FollowUserEntity> { it.isSpecialFollow }

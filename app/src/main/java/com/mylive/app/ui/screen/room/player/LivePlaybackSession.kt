@@ -1,8 +1,10 @@
 package com.mylive.app.ui.screen.room.player
 
 import android.content.Context
+import com.mylive.app.core.model.LivePlayUrl
 import com.mylive.app.service.PlaybackForegroundService
 import kotlinx.coroutines.flow.StateFlow
+import timber.log.Timber
 
 /**
  * Owns one live-room playback session: ExoPlayer controller lifetime, ViewModel bind,
@@ -21,7 +23,10 @@ class LivePlaybackSession private constructor(
         val urls: List<String>,
         val headers: Map<String, String>?,
         val startIndex: Int,
-        val origin: PlaybackRequestOrigin
+        val origin: PlaybackRequestOrigin,
+        val videoFrameRateHint: Float? = null,
+        val startPlayback: Boolean = false,
+        val pauseGeneration: Long = 0L
     )
 
     private data class PausedHostPolicy(
@@ -53,7 +58,15 @@ class LivePlaybackSession private constructor(
     override val state: StateFlow<PlayerState>
         get() = controller.state
 
+    override val playbackPauseGeneration: Long
+        get() = controller.playbackPauseGeneration
+
+    override fun beginRoomLoad(startedAtMillis: Long) {
+        if (!released) controller.beginRoomLoad(startedAtMillis)
+    }
+
     private var resumePlaybackOnForeground: Boolean = false
+    private var foregroundResumePauseGeneration = 0L
     private var attachedBinding: LivePlaybackSessionBinding? = null
     private var pausedHostPolicy: PausedHostPolicy? = null
     private var deferredPlayRequest: PlaybackRequest? = null
@@ -73,10 +86,33 @@ class LivePlaybackSession private constructor(
         startIndex: Int,
         origin: PlaybackRequestOrigin
     ) {
+        submitPlaybackRequest(PlaybackRequest(urls, headers, startIndex, origin))
+    }
+
+    override fun play(source: LivePlayUrl, origin: PlaybackRequestOrigin) {
+        submitPlaybackRequest(PlaybackRequest(source.urls, source.headers, 0, origin, source.videoFrameRateHint))
+    }
+
+    override fun play(source: LivePlayUrl, origin: PlaybackRequestOrigin, pauseGeneration: Long?) {
+        submitPlaybackRequest(
+            PlaybackRequest(source.urls, source.headers, 0, origin, source.videoFrameRateHint),
+            pauseGeneration
+        )
+    }
+
+    private fun submitPlaybackRequest(request: PlaybackRequest, requestedPauseGeneration: Long? = null) {
         if (released) return
         // A delivered request means source acquisition completed, even if host policy defers play.
         sourceRecoveryGate.finishRecovery()
-        val request = PlaybackRequest(urls, headers, startIndex, origin)
+        val currentPauseGeneration = controller.playbackPauseGeneration
+        val hasCurrentUserSelection = request.origin == PlaybackRequestOrigin.UserSelection &&
+            (requestedPauseGeneration == null || requestedPauseGeneration == currentPauseGeneration)
+        val pendingRequest = request.copy(
+            startPlayback = hasCurrentUserSelection ||
+                controller.player?.playWhenReady == true || shouldResumeOnForeground(),
+            // Once accepted, a later pause must still invalidate a deferred FGS/host start.
+            pauseGeneration = currentPauseGeneration
+        )
         val policy = pausedHostPolicy
         when (
             resolveLivePlaybackStartAction(
@@ -85,20 +121,24 @@ class LivePlaybackSession private constructor(
                 playerAutoPause = policy?.playerAutoPause ?: true
             )
         ) {
-            LivePlaybackStartAction.StartNow -> playNow(request)
+            LivePlaybackStartAction.StartNow -> {
+                deferredPlayRequest = null
+                rememberForegroundResume(false)
+                playNow(pendingRequest)
+            }
             LivePlaybackStartAction.DeferUntilResume -> {
-                deferredPlayRequest = request
-                resumePlaybackOnForeground = true
+                deferredPlayRequest = pendingRequest
+                rememberForegroundResume(pendingRequest.startPlayback)
             }
             LivePlaybackStartAction.StartWithForegroundService -> {
-                deferredPlayRequest = request
-                resumePlaybackOnForeground = true
+                deferredPlayRequest = pendingRequest
+                rememberForegroundResume(pendingRequest.startPlayback)
                 if (policy != null) {
                     startForegroundService(policy) {
-                        if (deferredPlayRequest === request) {
+                        if (deferredPlayRequest === pendingRequest) {
                             deferredPlayRequest = null
-                            resumePlaybackOnForeground = false
-                            playNow(request)
+                            rememberForegroundResume(false)
+                            playNow(pendingRequest)
                         }
                     }
                 }
@@ -111,9 +151,20 @@ class LivePlaybackSession private constructor(
             urls = request.urls,
             headers = request.headers,
             startIndex = request.startIndex,
-            origin = request.origin
+            origin = request.origin,
+            videoFrameRateHint = request.videoFrameRateHint,
+            startPlayback = (request.startPlayback && request.pauseGeneration == controller.playbackPauseGeneration) ||
+                controller.player?.playWhenReady == true
         )
     }
+
+    private fun rememberForegroundResume(resume: Boolean) {
+        resumePlaybackOnForeground = resume
+        foregroundResumePauseGeneration = controller.playbackPauseGeneration
+    }
+
+    private fun shouldResumeOnForeground(): Boolean =
+        resumePlaybackOnForeground && foregroundResumePauseGeneration == controller.playbackPauseGeneration
 
     private fun requestFreshPlaybackSource(): Boolean {
         if (released) return false
@@ -133,6 +184,14 @@ class LivePlaybackSession private constructor(
         controller.stop()
     }
 
+    override fun stopForSourceRecovery() {
+        if (released) return
+        deferredPlayRequest = null
+        // A refresh is still the same playback request. Keep lifecycle resume intent and
+        // its pause generation so a newer manual/system pause can invalidate it.
+        controller.stop()
+    }
+
     override fun showError(message: String) {
         if (released) return
         sourceRecoveryGate.finishRecovery()
@@ -143,6 +202,7 @@ class LivePlaybackSession private constructor(
 
     fun pause() {
         if (released) return
+        rememberForegroundResume(false)
         controller.pause()
     }
 
@@ -195,12 +255,21 @@ class LivePlaybackSession private constructor(
             playerAutoPause = playerAutoPause,
             hasPlaybackIntent = hasPlaybackIntent
         )
-        resumePlaybackOnForeground = shouldResumeLivePlaybackOnForeground(
+        val actionName = when (action) {
+            LivePlaybackHostPauseAction.Pause -> "pause"
+            LivePlaybackHostPauseAction.StartForegroundService -> "foreground_service"
+            LivePlaybackHostPauseAction.NoOp -> "none"
+        }
+        Timber.tag("LivePlayback").i(
+            "Host paused: action=%s, playWhenReady=%s, background=%s, autoPause=%s",
+            actionName, hasPlaybackIntent, allowBackgroundPlayback, playerAutoPause
+        )
+        rememberForegroundResume(shouldResumeLivePlaybackOnForeground(
             lifecyclePausedPlayback = action is LivePlaybackHostPauseAction.Pause,
             wasPlayingBeforePause = hasPlaybackIntent
-        )
+        ))
         when (action) {
-            LivePlaybackHostPauseAction.Pause -> controller.pause()
+            LivePlaybackHostPauseAction.Pause -> controller.pauseForHost()
             LivePlaybackHostPauseAction.StartForegroundService -> startForegroundService(policy)
             LivePlaybackHostPauseAction.NoOp -> Unit
         }
@@ -216,20 +285,25 @@ class LivePlaybackSession private constructor(
     private fun startForegroundService(policy: PausedHostPolicy, onReady: (() -> Unit)? = null): Boolean {
         val player = controller.player ?: return false
         val hadPlaybackIntent = player.playWhenReady
+        val pauseGeneration = controller.playbackPauseGeneration
         val started = PlaybackForegroundService.start(
             appContext,
             player,
             policy.roomTitle,
             policy.anchorName,
-            policy.platform
+            policy.platform,
+            onPause = ::pause
         ) {
             if (!released && hostPaused) {
-                if (onReady != null) onReady() else if (hadPlaybackIntent) controller.resume()
+                if (onReady != null) onReady()
+                else if (hadPlaybackIntent && controller.player?.playWhenReady == true &&
+                    pauseGeneration == controller.playbackPauseGeneration
+                ) controller.resume()
             }
         }
         if (!started) {
-            resumePlaybackOnForeground = controller.player?.playWhenReady == true
-            controller.pause()
+            rememberForegroundResume(shouldResumeOnForeground() || controller.player?.playWhenReady == true)
+            controller.pauseForHost()
         }
         return started
     }
@@ -240,12 +314,14 @@ class LivePlaybackSession private constructor(
      */
     fun onHostResume() {
         if (released) return
+        if (hostPaused) Timber.tag("LivePlayback").i("Host resumed: resumePlayback=%s", resumePlaybackOnForeground)
         controller.setVideoOutputExpected(true)
         hostPaused = false
         pausedHostPolicy = null
-        PlaybackForegroundService.stop(appContext)
+        stopForegroundService()
         val deferred = deferredPlayRequest
         deferredPlayRequest = null
+        resumePlaybackOnForeground = shouldResumeOnForeground()
         if (deferred != null) {
             playNow(deferred)
         } else if (resumePlaybackOnForeground) {
@@ -255,7 +331,7 @@ class LivePlaybackSession private constructor(
     }
 
     fun stopForegroundService() {
-        PlaybackForegroundService.stop(appContext)
+        controller.player?.let { PlaybackForegroundService.stop(appContext, it) }
     }
 
     /**
@@ -264,11 +340,12 @@ class LivePlaybackSession private constructor(
      */
     fun release() {
         if (released) return
+        Timber.tag("LivePlayback").d("Playback session released; unbinding engine")
         released = true
         deferredPlayRequest = null
         hostPaused = false
         pausedHostPolicy = null
-        PlaybackForegroundService.stop(appContext)
+        stopForegroundService()
         val binding = attachedBinding
         attachedBinding = null
         binding?.unbindPlaybackEngine(engine)

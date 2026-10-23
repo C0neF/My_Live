@@ -230,6 +230,16 @@ class WebSocketUtils(
                     onError(t)
                 }
 
+                override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                    if (webSocket !== this@WebSocketUtils.webSocket) return
+                    heartBeatTimer?.cancel()
+                    heartBeatTimer = null
+                    status = SocketStatus.CLOSED
+                    // OkHttp waits for our Close frame before delivering onClosed. A peer
+                    // may send an empty Close (reported as 1005), which cannot be echoed.
+                    webSocket.close(if (code == 1005) 1000 else code, reason)
+                }
+
                 override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                     if (webSocket !== this@WebSocketUtils.webSocket) return
                     onDone()

@@ -56,6 +56,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import com.mylive.app.ui.screen.settings.SettingsViewModel
+import kotlin.math.ceil
 
 data class BottomNavItem(
     val key: String,
@@ -128,7 +129,11 @@ fun IndexScreen(
     } else {
         null
     }
-    val contentBottomPadding = indexTopLevelContentBottomPaddingDp(useSideNavigation).dp
+    val dockContentPadding = indexNavigationDockContentPadding()
+    val contentBottomPadding = indexTopLevelContentBottomPaddingDp(
+        useSideNavigation = useSideNavigation,
+        dockContentPaddingDp = ceil(dockContentPadding.value).toInt()
+    ).dp
     val homeLiveRoomGridColumns = appLayout.liveRoomColumns
     val followCardColumns = appLayout.followColumns
     val topRoute = navigator.backStack.lastOrNull()
@@ -158,7 +163,7 @@ fun IndexScreen(
     }
 
     // Scroll-to-hide bottom bar state
-    val maxOffsetPx = with(LocalDensity.current) { 100.dp.toPx() }
+    val maxOffsetPx = with(LocalDensity.current) { dockContentPadding.toPx() }
     var bottomBarOffsetPx by remember { mutableFloatStateOf(0f) }
     LaunchedEffect(useSideNavigation) { bottomBarOffsetPx = 0f }
 
@@ -200,38 +205,14 @@ fun IndexScreen(
         modifier = if (useSideNavigation) Modifier else Modifier.nestedScroll(nestedScrollConnection),
         bottomBar = {
             if (!useSideNavigation) {
-                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                Surface(
+                IndexNavigationDock(
+                    items = bottomNavItems,
+                    selectedIndex = selectedIndex,
+                    activeColor = bottomNavActiveColor,
+                    onItemClick = { handleMainTabClick(it) },
                     modifier = Modifier
-                        .widthIn(max = appLayout.pageMaxWidthDp.dp)
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 10.dp)
-                        .offset { IntOffset(x = 0, y = bottomBarOffsetPx.toInt()) },
-                    shape = RoundedCornerShape(20.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 8.dp, vertical = 8.dp),
-                        horizontalArrangement = Arrangement.SpaceAround,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        bottomNavItems.forEachIndexed { index, item ->
-                            IndexNavigationItem(
-                                item = item,
-                                selected = selectedIndex == index,
-                                activeColor = bottomNavActiveColor,
-                                onClick = { handleMainTabClick(item) },
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .padding(vertical = 2.dp)
-                            )
-                        }
-                    }
-                }
-                }
+                        .offset { IntOffset(x = 0, y = bottomBarOffsetPx.toInt()) }
+                )
             }
         }
     ) { paddingValues ->
@@ -338,8 +319,11 @@ internal fun indexBottomBarOffsetAfterRevealRequest(currentOffsetPx: Float): Flo
     return 0f
 }
 
-internal fun indexTopLevelContentBottomPaddingDp(useSideNavigation: Boolean): Int {
-    return if (useSideNavigation) 24 else 96
+internal fun indexTopLevelContentBottomPaddingDp(
+    useSideNavigation: Boolean,
+    dockContentPaddingDp: Int = 96
+): Int {
+    return if (useSideNavigation) 24 else maxOf(96, dockContentPaddingDp)
 }
 
 @Composable

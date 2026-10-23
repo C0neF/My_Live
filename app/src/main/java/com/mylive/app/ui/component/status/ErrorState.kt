@@ -19,9 +19,9 @@ import com.mylive.app.ui.theme.Icons
 
 @Composable
 fun ErrorState(
+    modifier: Modifier = Modifier,
     message: String = "加载失败",
-    onRetry: (() -> Unit)? = null,
-    modifier: Modifier = Modifier
+    onRetry: (() -> Unit)? = null
 ) {
     Box(
         modifier = modifier.fillMaxSize(),

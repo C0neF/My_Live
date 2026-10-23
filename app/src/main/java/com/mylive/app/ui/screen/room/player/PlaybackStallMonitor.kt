@@ -2,12 +2,6 @@ package com.mylive.app.ui.screen.room.player
 
 internal enum class PlaybackProgressState { Idle, Ready, Buffering, Ended }
 internal enum class PlaybackStallAction { None, Recover }
-internal enum class PlaybackStallRecoveryAction { SwitchToNextUrl, RequestFreshSource }
-
-internal fun playbackStallRecoveryAction(currentUrlIndex: Int, urlCount: Int): PlaybackStallRecoveryAction =
-    if (currentUrlIndex in 0 until (urlCount - 1)) PlaybackStallRecoveryAction.SwitchToNextUrl
-    else PlaybackStallRecoveryAction.RequestFreshSource
-
 /** Detects stalled clocks. Retry ownership deliberately lives in PlaybackRecoveryBudget. */
 internal class PlaybackStallMonitor(
     private val readyTimeoutMillis: Long = 15_000L,

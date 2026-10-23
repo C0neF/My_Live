@@ -17,6 +17,16 @@ internal fun selectLiveRoomPreferredQualityLevel(
     isCellularNetwork: Boolean
 ): Int = if (isCellularNetwork) cellularQualityLevel else defaultQualityLevel
 
+internal fun selectHardwareSupportedQualityIndex(
+    qualities: List<LivePlayQuality>,
+    preferredIndex: Int,
+    isSupported: (LivePlayQuality) -> Boolean
+): Int {
+    if (qualities.getOrNull(preferredIndex)?.let(isSupported) != false) return preferredIndex
+    return ((preferredIndex + 1)..qualities.lastIndex).firstOrNull { isSupported(qualities[it]) }
+        ?: preferredIndex
+}
+
 internal fun updatedQualityIndexForResolvedPlayback(
     qualities: List<LivePlayQuality>,
     currentIndex: Int,

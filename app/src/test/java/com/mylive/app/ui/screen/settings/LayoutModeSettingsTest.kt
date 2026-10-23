@@ -46,14 +46,20 @@ class LayoutModeSettingsTest {
                 }
             }
         }
+        compose.onNodeWithTag("layout_mode_auto").assertDoesNotExist()
+        compose.onNodeWithTag("layout_mode_picker").performClick()
         compose.onNodeWithTag("layout_mode_auto").assertIsSelected()
-        compose.onNodeWithTag("tablet_rotation_followsystem").assertIsSelected()
         compose.onNodeWithTag("layout_mode_phone").performClick()
-        compose.onNodeWithTag("layout_mode_phone").assertIsSelected()
-        compose.onNodeWithTag("tablet_rotation_landscape").assertDoesNotExist()
+        compose.onNodeWithTag("layout_mode_phone").assertDoesNotExist()
+        compose.onNodeWithTag("tablet_rotation_picker").assertDoesNotExist()
         compose.runOnIdle { assertEquals(AppLayoutMode.Phone, mode.value) }
+        compose.onNodeWithTag("layout_mode_picker").performClick()
+        compose.onNodeWithTag("layout_mode_phone").assertIsSelected()
         compose.onNodeWithTag("layout_mode_tablet").performClick()
+        compose.onNodeWithTag("tablet_rotation_picker").performClick()
+        compose.onNodeWithTag("tablet_rotation_followsystem").assertIsSelected()
         compose.onNodeWithTag("tablet_rotation_landscape").performScrollTo().performClick()
+        compose.onNodeWithTag("tablet_rotation_picker").performClick()
         compose.onNodeWithTag("tablet_rotation_landscape").assertIsSelected()
         compose.runOnIdle { assertEquals(TabletOrientationMode.Landscape, orientation.value) }
     }
@@ -71,8 +77,12 @@ class LayoutModeSettingsTest {
                 }
             }
         }
+        compose.onNodeWithTag("layout_mode_picker").performScrollTo().performClick()
         compose.onNodeWithTag("layout_mode_phone").performScrollTo().assertIsDisplayed().performClick()
+        compose.onNodeWithTag("layout_mode_picker").performScrollTo().performClick()
         compose.onNodeWithTag("layout_mode_phone").assertIsSelected()
+        compose.onNodeWithTag("layout_mode_tablet").performScrollTo().performClick()
+        compose.onNodeWithTag("tablet_rotation_picker").performScrollTo().performClick()
         compose.onNodeWithTag("tablet_rotation_followsystem").performScrollTo().assertIsDisplayed()
     }
 }

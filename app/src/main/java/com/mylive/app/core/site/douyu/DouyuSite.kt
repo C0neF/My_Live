@@ -1,6 +1,7 @@
 package com.mylive.app.core.site.douyu
 
 import com.mylive.app.core.common.CoreLog
+import com.mylive.app.core.common.CoreError
 import com.mylive.app.core.common.HttpClient
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
@@ -22,7 +23,6 @@ import com.mylive.app.core.model.LiveSubCategory
 import com.mylive.app.core.model.LiveSuperChatMessage
 import com.mylive.app.core.model.PlayQualityData
 import com.mylive.app.core.common.WebSocketUtils
-import com.mylive.app.core.script.JsEngine
 import com.mylive.app.core.site.firstSiteImageUrl
 import com.mylive.app.core.site.FollowPresence
 import com.mylive.app.core.site.normalizeSiteImageUrl
@@ -31,10 +31,10 @@ import com.mylive.app.core.site.LiveSite
 import com.mylive.app.core.site.optNullableStringValue
 import com.mylive.app.core.site.optStringValue
 import okhttp3.OkHttpClient
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import org.json.JSONObject
 import java.security.SecureRandom
 import javax.inject.Inject
-import javax.inject.Provider
 import javax.inject.Singleton
 
 private val DOUYU_AVATAR_KEYS = listOf(
@@ -58,23 +58,8 @@ private val DOUYU_COVER_KEYS = listOf(
     "cover"
 )
 
-internal const val DOUYU_SIGN_ARGS_TTL_MS = 60_000L
 private const val DOUYU_SEARCH_PAGE_SIZE = 20
 private const val DOUYU_PLAY_URL_MAX_CONCURRENCY = 5
-
-internal data class DouyuSignArgsCacheEntry(
-    val value: String,
-    val createdAtMillis: Long
-)
-
-internal fun shouldRefreshDouyuSignArgs(
-    cached: DouyuSignArgsCacheEntry?,
-    nowMillis: Long
-): Boolean {
-    if (cached == null) return true
-    if (nowMillis < cached.createdAtMillis) return true
-    return nowMillis - cached.createdAtMillis >= DOUYU_SIGN_ARGS_TTL_MS
-}
 
 internal fun resolveDouyuRoomFaceUrl(item: JSONObject): String {
     return firstJsonImageUrlByKeys(item, DOUYU_AVATAR_KEYS).orEmpty()
@@ -91,8 +76,7 @@ internal fun resolveDouyuRoomCoverUrl(item: JSONObject): String {
  * depend on each other, but they used to run in a sequential loop, so a room with five CDNs put
  * five round trips in front of the first video frame rather than one.
  *
- * The burst is explicitly capped at five requests here. [HttpClient] uses synchronous OkHttp
- * calls, so OkHttp's asynchronous dispatcher limit does not protect this path.
+ * The burst is explicitly capped at five requests here, independently of OkHttp's dispatcher.
  *
  * Two behaviours are preserved on purpose:
  * - **Order.** The result doubles as the CDN preference order — [getPlayQualites] sorts `scdn`
@@ -100,29 +84,37 @@ internal fun resolveDouyuRoomCoverUrl(item: JSONObject): String {
  * - **Partial failure.** A CDN that throws is skipped rather than failing the room, so one dead
  *   line cannot cost the others.
  */
-internal suspend fun resolveDouyuPlayUrls(
+internal suspend fun <T : Any> resolveDouyuCdnResults(
     cdns: List<String>,
-    fetchUrl: suspend (cdn: String) -> String
-): List<String> = coroutineScope {
+    fetchResult: suspend (cdn: String) -> T?
+): List<T> = coroutineScope {
     val permits = Semaphore(DOUYU_PLAY_URL_MAX_CONCURRENCY)
-    cdns
+    val results = cdns
         .map { cdn ->
             async {
                 permits.withPermit {
                     try {
-                        fetchUrl(cdn)
+                        Result.success(fetchResult(cdn))
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {
                         CoreLog.e("Failed to get play URL for CDN $cdn", e)
-                        ""
+                        Result.failure<T?>(e)
                     }
                 }
             }
         }
         .awaitAll()
-        .filter { it.isNotEmpty() }
+    val sources = results.mapNotNull { it.getOrNull() }
+    // Renew once for the entire failed batch, never independently for each parallel CDN.
+    if (sources.isEmpty()) {
+        results.firstNotNullOfOrNull { it.exceptionOrNull()?.takeIf { error -> error.isDouyuAuthRejection() } }
+            ?.let { throw it }
+    }
+    sources
 }
+
+private fun Throwable.isDouyuAuthRejection(): Boolean = this is CoreError && statusCode in listOf(401, 403)
 
 private fun douyuSearchHasMore(itemCount: Int): Boolean {
     return itemCount >= DOUYU_SEARCH_PAGE_SIZE
@@ -140,20 +132,13 @@ private fun firstJsonImageUrlByKeys(item: JSONObject, keys: List<String>): Strin
 @Singleton
 class DouyuSite @Inject constructor(
     private val httpClient: HttpClient,
-    private val jsEngineProvider: Provider<JsEngine>,
-    private val okHttpClient: OkHttpClient
+    private val okHttpClient: OkHttpClient,
+    private val accountSession: DouyuAccountSession,
+    private val playbackSigner: DouyuPlaybackSigner
 ) : LiveSite {
 
     override val id: String = "douyu"
     override val name: String = "斗鱼直播"
-
-    /**
-     * Cache of signing parameters keyed by roomId.
-     * Populated by [getRoomDetail], consumed by [getPlayQualites] and [getPlayUrls].
-     * The value is a query-string-style result from DouyuSign, e.g.
-     * "ver=23061205&rid=1234&did=xxx&time=xxx&sign=xxx"
-     */
-    private val signArgsCache = mutableMapOf<String, DouyuSignArgsCacheEntry>()
 
     companion object {
         private const val DEFAULT_USER_AGENT =
@@ -291,9 +276,13 @@ class DouyuSite @Inject constructor(
     override suspend fun getRoomDetail(roomId: String): LiveRoomDetail {
         val roomInfo = getRoomInfo(roomId)
 
-        val showTime = getRoomShowTime(roomId)
-
-        getFreshSignArgs(roomId, forceRefresh = true)
+        val showTime = try {
+            getRoomShowTime(roomId)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            null
+        }
 
         val bizAll = roomInfo.optJSONObject("room_biz_all")
         val hot = bizAll?.optStringValue("hot")?.toIntOrNull() ?: 0
@@ -307,7 +296,7 @@ class DouyuSite @Inject constructor(
             userAvatar = roomInfo.optString("owner_avatar", ""),
             introduction = roomInfo.optString("show_details", ""),
             notice = "",
-            status = roomInfo.optInt("show_status") == 1 && roomInfo.optInt("videoLoop") != 1,
+            status = isRoomLive(roomInfo),
             url = "https://www.douyu.com/$roomId",
             isRecord = roomInfo.optInt("videoLoop") == 1,
             showTime = showTime,
@@ -341,29 +330,7 @@ class DouyuSite @Inject constructor(
     // ── Play qualities ──────────────────────────────────────────────────
 
     override suspend fun getPlayQualites(detail: LiveRoomDetail): List<LivePlayQuality> {
-        val signArgs = getFreshSignArgs(detail.roomId)
-
-        // Build POST data: signing args + SDK params
-        val params = parseQueryString(signArgs).toMutableMap()
-        params["cdn"] = ""
-        params["rate"] = "-1"
-        params["ver"] = "Douyu_223061205"
-        params["iar"] = "1"
-        params["ive"] = "1"
-        params["hevc"] = "0"
-        params["fa"] = "0"
-
-        val result = httpClient.postJson(
-            "https://www.douyu.com/lapi/live/getH5Play/${detail.roomId}",
-            data = params,
-            header = mapOf(
-                "referer" to "https://www.douyu.com/${detail.roomId}",
-                "user-agent" to DEFAULT_USER_AGENT
-            ),
-            formUrlEncoded = true
-        ) as JSONObject
-
-        val data = result.getJSONObject("data")
+        val data = withPlaybackSession { session -> requestPlayData(detail.roomId, session, -1, "") }
 
         // Collect available CDNs
         val cdnsWithName = data.getJSONArray("cdnsWithName")
@@ -400,81 +367,89 @@ class DouyuSite @Inject constructor(
         return qualities
     }
 
+    private suspend fun requestPlayData(
+        roomId: String, session: DouyuRequestSession, rate: Int, cdn: String
+    ): JSONObject {
+        val params = playbackSigner.sign(roomId, rate, cdn, session)
+
+        val result = httpClient.postJson(
+            "https://www.douyu.com/lapi/live/getH5PlayV1/$roomId",
+            data = params,
+            header = session.headers(roomId),
+            formUrlEncoded = true
+        ) as JSONObject
+
+        return douyuResponseData(result)
+    }
+
     // ── Play URLs ───────────────────────────────────────────────────────
 
     override suspend fun getPlayUrls(
         detail: LiveRoomDetail,
         quality: LivePlayQuality
-    ): LivePlayUrl {
-        val signArgs = getFreshSignArgs(detail.roomId)
+    ): LivePlayUrl = withPlaybackSession { session ->
         val playData = quality.data as PlayQualityData.Douyu
 
-        return LivePlayUrl(
-            urls = resolveDouyuPlayUrls(playData.cdns) { cdn ->
-                getPlayUrl(detail.roomId, signArgs, playData.rate, cdn)
-            }
-        )
+        val sources = resolveDouyuCdnResults(playData.cdns) { cdn ->
+            getPlaybackSource(detail.roomId, session, playData.rate, cdn)
+        }
+        val result = selectDouyuPlaybackSources(quality, sources)
+        val actualRate = (result.actualQuality?.data as? PlayQualityData.Douyu)?.rate
+        CoreLog.i("斗鱼取流画质: 请求 rate=${playData.rate}, 实际 rate=$actualRate, 匹配线路=${result.urls.size}/${sources.size}")
+        result.copy(headers = session.mediaHeaders(detail.roomId))
     }
 
     /**
-     * Fetch a single play URL for the given CDN and rate.
+     * Keep the returned rate: a successful response may silently downgrade the requested quality.
      */
-    private suspend fun getPlayUrl(
+    private suspend fun getPlaybackSource(
         roomId: String,
-        signArgs: String,
+        session: DouyuRequestSession,
         rate: Int,
         cdn: String
-    ): String {
-        val params = parseQueryString(signArgs).toMutableMap()
-        params["cdn"] = cdn
-        params["rate"] = rate.toString()
-
-        val result = httpClient.postJson(
-            "https://www.douyu.com/lapi/live/getH5Play/$roomId",
-            data = params,
-            header = mapOf(
-                "referer" to "https://www.douyu.com/$roomId",
-                "user-agent" to DEFAULT_USER_AGENT
-            ),
-            formUrlEncoded = true
-        ) as JSONObject
-
-        val data = result.getJSONObject("data")
+    ): DouyuPlaybackSource {
+        val data = requestPlayData(roomId, session, rate, cdn)
         val rtmpUrl = data.optString("rtmp_url", "")
         val rtmpLive = htmlUnescape(data.optString("rtmp_live", ""))
-        return "$rtmpUrl/$rtmpLive"
-    }
-
-    private suspend fun getFreshSignArgs(
-        roomId: String,
-        forceRefresh: Boolean = false
-    ): String {
-        val nowMillis = System.currentTimeMillis()
-        val cached = signArgsCache[roomId]
-        if (cached != null && !forceRefresh && !shouldRefreshDouyuSignArgs(cached, nowMillis)) {
-            return cached.value
+        check(rtmpUrl.isNotBlank() && rtmpLive.isNotBlank()) { "斗鱼未返回播放地址" }
+        val url = "$rtmpUrl/$rtmpLive"
+        check(url.toHttpUrlOrNull() != null) { "斗鱼播放地址无效" }
+        val actualRate = data.optNullableStringValue("rate")?.toIntOrNull()?.takeIf { it >= 0 }
+        val multirates = data.optJSONArray("multirates")
+        val qualityIndex = (0 until (multirates?.length() ?: 0)).firstOrNull { index ->
+            actualRate != null && multirates?.optJSONObject(index)?.optInt("rate", -1) == actualRate
         }
-
-        // Remote code: the signer JS is evaluated by QuickJS, so keep the origin explicit and
-        // hand it to DouyuSign for HTTPS/size screening instead of trusting it implicitly.
-        val signScriptUrl = "https://www.douyu.com/swf_api/homeH5Enc?rids=$roomId"
-        val jsEncResult = httpClient.getText(
-            signScriptUrl,
-            queryParameters = emptyMap(),
-            header = mapOf(
-                "referer" to "https://www.douyu.com/$roomId",
-                "user-agent" to DEFAULT_USER_AGENT
-            )
+        return DouyuPlaybackSource(
+            url = url,
+            rate = actualRate,
+            qualityName = qualityIndex?.let { multirates?.optJSONObject(it)?.optNullableStringValue("name") },
+            qualityIndex = qualityIndex ?: Int.MAX_VALUE
         )
-        val jsEncJson = JSONObject(jsEncResult)
-        val crptext = jsEncJson.getJSONObject("data").optStringValue("room$roomId")
-        val signArgs = DouyuSign.getSign(crptext, roomId, jsEngineProvider.get(), signScriptUrl)
-        signArgsCache[roomId] = DouyuSignArgsCacheEntry(
-            value = signArgs,
-            createdAtMillis = nowMillis
-        )
-        return signArgs
     }
+
+    private suspend fun <T> withPlaybackSession(request: suspend (DouyuRequestSession) -> T): T {
+        val session = accountSession.forRequest()
+        val rejection = try {
+            return request(session)
+        } catch (error: CoreError) {
+            if (!error.isDouyuAuthRejection() || !session.authenticated) throw error
+            error
+        }
+        CoreLog.w("斗鱼取流鉴权被拒绝（${rejection.statusCode}），尝试更新登录态")
+        val renewed = accountSession.renewAfterRejection(session)
+            ?: throw playbackRejection(rejection)
+        CoreLog.i("斗鱼取流已更新登录态，重试一次")
+        try {
+            return request(renewed)
+        } catch (error: CoreError) {
+            if (error.isDouyuAuthRejection()) throw playbackRejection(error)
+            throw error
+        }
+    }
+
+    private fun playbackRejection(error: CoreError): IllegalStateException = IllegalStateException(
+        "斗鱼取流请求被拒绝（${error.statusCode}），请续期或重新登录", error
+    )
 
     // ── Search rooms ────────────────────────────────────────────────────
 
@@ -569,12 +544,12 @@ class DouyuSite @Inject constructor(
 
     override suspend fun getLiveStatus(roomId: String): Boolean {
         val roomInfo = getRoomInfo(roomId)
-        return roomInfo.optInt("show_status") == 1 && roomInfo.optInt("videoLoop") != 1
+        return isRoomLive(roomInfo)
     }
 
     override suspend fun getFollowPresence(roomId: String): FollowPresence {
         val roomInfo = getRoomInfo(roomId)
-        val isLive = roomInfo.optInt("show_status") == 1 && roomInfo.optInt("videoLoop") != 1
+        val isLive = isRoomLive(roomInfo)
         val showTime = if (isLive) {
             try {
                 getRoomShowTime(roomId)
@@ -587,6 +562,12 @@ class DouyuSite @Inject constructor(
             null
         }
         return FollowPresence(isLive = isLive, showTime = showTime)
+    }
+
+    private fun isRoomLive(roomInfo: JSONObject): Boolean {
+        val status = roomInfo.opt("show_status")?.toString()?.toIntOrNull()
+            ?: throw CoreError("斗鱼直播状态响应异常：无法确认开播状态")
+        return status == 1 && roomInfo.optInt("videoLoop") != 1
     }
 
     // ── Super chat ──────────────────────────────────────────────────────
@@ -645,7 +626,8 @@ class DouyuSite @Inject constructor(
                     roomObj.put("room_name", data.optString("room_name"))
                     roomObj.put("owner_name", data.optString("owner_name"))
                     roomObj.put("owner_avatar", data.optString("avatar"))
-                    roomObj.put("show_status", data.optInt("room_status"))
+                    // Keep malformed/missing status visible to the same validation as betard.
+                    roomObj.put("show_status", data.opt("room_status"))
                     roomObj.put("videoLoop", 0)
                     roomObj.put("cate_id", data.optString("cate_id"))
                     roomObj.put("game_name", data.optString("cate_name"))
@@ -691,20 +673,6 @@ class DouyuSite @Inject constructor(
         } catch (e: Exception) {
             0
         }
-    }
-
-    /**
-     * Parse a query string (e.g. "key1=val1&key2=val2") into a Map.
-     */
-    private fun parseQueryString(query: String): Map<String, String> {
-        val params = mutableMapOf<String, String>()
-        for (pair in query.split("&")) {
-            val eqIdx = pair.indexOf('=')
-            if (eqIdx > 0) {
-                params[pair.substring(0, eqIdx)] = pair.substring(eqIdx + 1)
-            }
-        }
-        return params
     }
 
     /**

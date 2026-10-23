@@ -26,6 +26,7 @@ import com.mylive.app.data.local.secure.SensitiveCredentialStore
 import com.mylive.app.data.repository.ProfileBackupManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -196,7 +197,11 @@ class WebDavViewModel @Inject constructor(
                 _message.emit(WebDavMessage.RestoreOk)
             } catch (e: IllegalArgumentException) {
                 _uiState.value = _uiState.value.copy(isLoading = false)
-                _message.emit(WebDavMessage.RestoreFailed("无效的备份文件"))
+                _message.emit(WebDavMessage.RestoreFailed(if (e.message == "unsupported_profile_version")
+                    "不支持此备份版本，请更新应用后重试" else "备份内容无效，未导入任何数据"))
+            } catch (cancelled: CancellationException) {
+                _uiState.value = _uiState.value.copy(isLoading = false)
+                throw cancelled
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(isLoading = false)
                 _message.emit(WebDavMessage.RestoreFailed(e.message ?: ""))
@@ -281,6 +286,9 @@ fun WebDavSyncScreen(
                 onValueChange = { viewModel.updateServerUrl(it) },
                 label = { Text(stringResource(R.string.webdav_server_url)) },
                 placeholder = { Text(stringResource(R.string.webdav_server_url_hint)) },
+                supportingText = if (isNutstoreWebDavServer(uiState.serverUrl)) {
+                    { Text(stringResource(R.string.webdav_nutstore_directory_hint)) }
+                } else null,
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 enabled = !uiState.isLoading
@@ -301,6 +309,9 @@ fun WebDavSyncScreen(
                 value = uiState.password,
                 onValueChange = { viewModel.updatePassword(it) },
                 label = { Text(stringResource(R.string.webdav_password)) },
+                supportingText = if (isNutstoreWebDavServer(uiState.serverUrl)) {
+                    { Text(stringResource(R.string.webdav_nutstore_password_hint)) }
+                } else null,
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 enabled = !uiState.isLoading,

@@ -7,6 +7,8 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.test.core.app.ApplicationProvider
 import io.mockk.mockk
+import io.mockk.every
+import io.mockk.verify
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -23,6 +25,80 @@ class PlaybackRecoveryIntegrationTest {
         controller.player?.release()
         PlayerController::class.java.getDeclaredField("player").apply { isAccessible = true }
             .set(controller, mockk<ExoPlayer>(relaxed = true))
+    }
+
+    @Test fun errorsEndedAndStallsShareOneActionOrderAndRetryBudget() {
+        var refreshes = 0
+        lateinit var controller: PlayerController
+        controller = PlayerController(ApplicationProvider.getApplicationContext(), onPlaybackSourceExhausted = {
+            refreshes++
+            controller.play(listOf("https://example.invalid/fresh.flv"), origin = PlaybackRequestOrigin.SourceRecovery)
+            true
+        })
+        replacePlayer(controller)
+        val player = checkNotNull(controller.player)
+        every { player.playWhenReady } returns true
+        every { player.playbackState } returns Player.STATE_ENDED
+        every { player.playbackSuppressionReason } returns Player.PLAYBACK_SUPPRESSION_REASON_NONE
+        try {
+            controller.play(listOf("https://example.invalid/a.flv", "https://example.invalid/b.flv"))
+            val listener = PlayerController::class.java.getDeclaredField("playerListener")
+                .apply { isAccessible = true }.get(controller) as Player.Listener
+            val failure = PlaybackException("network", IOException(), PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED)
+            listener.onPlayerError(failure)
+            assertEquals(1, controller.getCurrentUrlIndex())
+            assertEquals(0, refreshes)
+            listener.onPlaybackStateChanged(Player.STATE_ENDED)
+            shadowOf(Looper.getMainLooper()).idle()
+            assertEquals(1, refreshes)
+            PlayerController::class.java.getDeclaredMethod("recoverPlaybackStall")
+                .apply { isAccessible = true }.invoke(controller)
+            assertEquals(2, refreshes)
+            listener.onPlayerError(failure)
+            assertEquals(2, refreshes)
+            assertTrue(controller.state.value.error.orEmpty().contains("自动恢复已达上限"))
+        } finally { controller.release(); shadowOf(Looper.getMainLooper()).idle() }
+    }
+
+    @Test fun endedSourceRecoveryKeepsTheRoomEngineBound() {
+        val urls = listOf("https://example.invalid/live.flv")
+        var refreshes = 0
+        lateinit var session: LivePlaybackSession
+        session = LivePlaybackSession.create(
+            context = ApplicationProvider.getApplicationContext(),
+            hardwareDecodeEnabled = true,
+            forceHttps = false,
+            onPlaybackSourceExhausted = {
+                refreshes++
+                session.stop()
+                session.play(urls, null, 0, PlaybackRequestOrigin.SourceRecovery)
+                true
+            }
+        )
+        val controller = session.playerController
+        replacePlayer(controller)
+        val player = checkNotNull(controller.player)
+        every { player.playWhenReady } returns true
+        every { player.playbackState } returns Player.STATE_ENDED
+        every { player.playbackSuppressionReason } returns Player.PLAYBACK_SUPPRESSION_REASON_NONE
+        val binding = mockk<LivePlaybackSessionBinding>(relaxed = true)
+        try {
+            session.attach(binding)
+            session.play(urls, null, 0, PlaybackRequestOrigin.UserSelection)
+            val listener = PlayerController::class.java.getDeclaredField("playerListener")
+                .apply { isAccessible = true }.get(controller) as Player.Listener
+            listener.onPlaybackStateChanged(Player.STATE_ENDED)
+            shadowOf(Looper.getMainLooper()).idle()
+            assertEquals(1, refreshes)
+            assertSame(player, controller.player)
+            verify(exactly = 1) { binding.bindPlaybackEngine(session.engine) }
+            verify(exactly = 0) { binding.unbindPlaybackEngine(any()) }
+            assertNull(controller.state.value.error)
+        } finally {
+            session.release()
+            shadowOf(Looper.getMainLooper()).idle()
+        }
+        verify(exactly = 1) { binding.unbindPlaybackEngine(session.engine) }
     }
 
     @Test fun freshSourcesThatFailBeforeReadyCanRetryUntilTheSharedBudgetIsExhausted() {

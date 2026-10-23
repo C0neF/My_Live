@@ -134,12 +134,12 @@ class PlaybackStallMonitorTest {
     @Test
     fun stallRecoveryUsesTheNextCandidateBeforeRequestingFreshUrls() {
         assertEquals(
-            PlaybackStallRecoveryAction.SwitchToNextUrl,
-            playbackStallRecoveryAction(currentUrlIndex = 0, urlCount = 2)
+            PlaybackSourceRecoveryAction.SwitchToNextUrl,
+            playbackSourceRecoveryAction(currentUrlIndex = 0, urlCount = 2)
         )
         assertEquals(
-            PlaybackStallRecoveryAction.RequestFreshSource,
-            playbackStallRecoveryAction(currentUrlIndex = 1, urlCount = 2)
+            PlaybackSourceRecoveryAction.RequestFreshSource,
+            playbackSourceRecoveryAction(currentUrlIndex = 1, urlCount = 2)
         )
     }
 }

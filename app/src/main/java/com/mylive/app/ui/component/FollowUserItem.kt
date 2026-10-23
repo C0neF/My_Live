@@ -51,7 +51,8 @@ fun FollowUserItem(
     horizontalGap: Dp = 16.dp,
     liveBadgeSize: Dp = 12.dp,
     playIconSize: Dp = 24.dp,
-    cornerRadius: Dp = 12.dp
+    cornerRadius: Dp = 12.dp,
+    refreshHint: String? = null
 ) {
     val containerColor = MaterialTheme.colorScheme.surfaceVariant
         .copy(alpha = 0.25f)
@@ -172,6 +173,11 @@ fun FollowUserItem(
                             else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                     fontWeight = if (liveStatus == 1) FontWeight.SemiBold else FontWeight.Normal
                 )
+                refreshHint?.let {
+                    Text(it, style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
             }
             
             if (liveStatus == 1) {

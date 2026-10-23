@@ -8,6 +8,7 @@ import android.os.SystemClock
 import android.provider.Settings
 import androidx.annotation.OptIn
 import androidx.media3.common.MediaItem
+import androidx.media3.common.Timeline
 import androidx.media3.common.Format
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
@@ -20,6 +21,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.DecoderReuseEvaluation
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.analytics.PlaybackStatsListener
+import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -31,6 +33,8 @@ import androidx.media3.exoplayer.video.VideoFrameMetadataListener
 
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
+import androidx.media3.exoplayer.mediacodec.MediaCodecAdapter
+import com.mylive.app.core.common.CoreLog
 
 data class PlayerState(
     val isPlaying: Boolean = false,
@@ -40,7 +44,12 @@ data class PlayerState(
     val volume: Float = 1f,
     val brightness: Float = 0.5f,
     val isFullscreen: Boolean = false,
-    val playerGeneration: Long = 0L
+    val playerGeneration: Long = 0L,
+    val firstFrameRendered: Boolean = false,
+    val playWhenReady: Boolean = false,
+    val playbackState: Int = Player.STATE_IDLE,
+    val currentLineIndex: Int = 0,
+    val urls: List<String> = emptyList()
 )
 
 @OptIn(UnstableApi::class)
@@ -73,8 +82,7 @@ class PlayerController(
     private var playbackStatsListener = PlaybackStatsListener(false, null)
     private var previousPlayerPlayMillis = 0L
     private var previousPlayerRebufferMillis = 0L
-    private var sourceStartedAtMillis = 0L
-    private var firstFrameMillis: Long? = null
+    private val startupTiming = PlaybackStartupTiming()
     private var frameRateSampleAtMillis: Long? = null
     private var frameRateSampleCount = 0L
     private var outputFrameRate: Float? = null
@@ -82,8 +90,17 @@ class PlayerController(
     private val stallHandler = Handler(Looper.getMainLooper())
     private var stallWatchdogRunning = false
     private var mediaToken = 0L
+    private var hasActiveSource = false
+    /** User/system pauses invalidate delayed playback; a host pause is restored separately. */
+    internal var playbackPauseGeneration = 0L
+        private set
+    private var pendingEndedRecovery: Runnable? = null
+    private var recoveredEndedMediaToken: Long? = null
     private var currentVideoFormat: Format? = null
+    @Volatile private var sourceVideoFrameRateHint: Float? = null
+    @Volatile private var decoderConfiguredFrameRate: Float? = null
     private var currentVideoDecoderName: String? = null
+    private var audioDiagnostics = PlaybackAudioDiagnostics()
     private var droppedVideoFrames: Long = 0L
     private var bufferingCount: Int = 0
     private var stallRecoveryCount: Int = 0
@@ -106,12 +123,22 @@ class PlayerController(
 
     private val playerListener = object : Player.Listener {
         override fun onPlaybackStateChanged(playbackState: Int) {
+            Timber.tag("LivePlayback").d(
+                "State=%s, playWhenReady=%s, media=%d, line=%d/%d",
+                playbackStateName(playbackState), player?.playWhenReady,
+                mediaToken, currentUrlIndex + 1, urls.size
+            )
             if (playbackState == Player.STATE_BUFFERING && lastPlaybackState != Player.STATE_BUFFERING) {
                 bufferingCount += 1
             }
             lastPlaybackState = playbackState
+            _state.value = _state.value.copy(
+                playbackState = playbackState,
+                playWhenReady = player?.playWhenReady == true
+            )
             when (playbackState) {
                 Player.STATE_IDLE -> {
+                    cancelEndedRecovery()
                     stopStallWatchdog(resetMonitor = true)
                     _state.value = _state.value.copy(isLoading = false, isPlaying = false)
                 }
@@ -126,9 +153,42 @@ class PlayerController(
                 }
                 Player.STATE_ENDED -> {
                     stopStallWatchdog(resetMonitor = true)
-                    _state.value = _state.value.copy(isPlaying = false)
+                    _state.value = _state.value.copy(isPlaying = false, isLoading = false)
+                    scheduleEndedRecovery()
                 }
             }
+        }
+
+        override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+            val reasonName = when (reason) {
+                Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST -> "user_or_app_request"
+                Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS -> "audio_focus_loss"
+                Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_BECOMING_NOISY -> "audio_becoming_noisy"
+                else -> reason.toString()
+            }
+            Timber.tag("LivePlayback").i(
+                "Play intent=%s, reason=%s, state=%s",
+                playWhenReady, reasonName, playbackStateName(player?.playbackState)
+            )
+            _state.value = _state.value.copy(playWhenReady = playWhenReady)
+            if (!playWhenReady) {
+                if (reason == Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS ||
+                    reason == Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_BECOMING_NOISY
+                ) playbackPauseGeneration += 1L
+                cancelEndedRecovery()
+                stopStallWatchdog(resetMonitor = true)
+            } else when (player?.playbackState ?: Player.STATE_IDLE) {
+                Player.STATE_ENDED -> scheduleEndedRecovery()
+                Player.STATE_READY, Player.STATE_BUFFERING -> startStallWatchdog()
+                Player.STATE_IDLE -> Unit
+            }
+        }
+
+        override fun onPlaybackSuppressionReasonChanged(playbackSuppressionReason: Int) {
+            Timber.tag("LivePlayback").i("Playback suppression=%d", playbackSuppressionReason)
+            if (playbackSuppressionReason == Player.PLAYBACK_SUPPRESSION_REASON_NONE &&
+                player?.playbackState == Player.STATE_ENDED
+            ) scheduleEndedRecovery()
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -136,33 +196,103 @@ class PlayerController(
         }
 
         override fun onPlayerError(error: PlaybackException) {
+            if (!hasActiveSource) return
             Timber.e(error, "Player error")
             val errorText = playbackExceptionText(error)
-            // A decoder failure is independent of CDN reachability; try its fallback first.
-            when {
-                shouldRetryWithSoftwareDecoder(errorText) -> runRecovery("解码回退") {
-                    retryCurrentUrlWithSoftwareDecoder()
-                    true
-                }
-                currentUrlIndex < urls.size - 1 -> runRecovery("播放错误换线") {
-                    currentUrlIndex++
-                    softwareDecoderFallbackAttempted = false
-                    playCurrentUrl()
-                    true
-                }
-                else -> {
-                    if (!runRecovery("重新获取播放源") { onPlaybackSourceExhausted?.invoke() == true } &&
-                        _state.value.error == null
-                    ) showError(userVisiblePlaybackError(errorText))
-                }
-            }
+            if (!recoverPlayback(RecoveryTrigger.Error, errorText) && _state.value.error == null)
+                showError(userVisiblePlaybackError(errorText))
         }
     }
 
     private val analyticsListener = object : AnalyticsListener {
+        override fun onAudioInputFormatChanged(
+            eventTime: AnalyticsListener.EventTime,
+            format: Format,
+            decoderReuseEvaluation: DecoderReuseEvaluation?
+        ) {
+            if (!isCurrentSourceEvent(eventTime)) return
+            audioDiagnostics = audioDiagnostics.copy(
+                sampleMimeType = format.sampleMimeType,
+                codecs = format.codecs,
+                sampleRate = format.sampleRate.takeIf { it > 0 },
+                channelCount = format.channelCount.takeIf { it > 0 }
+            )
+        }
+
+        override fun onAudioDecoderInitialized(
+            eventTime: AnalyticsListener.EventTime,
+            decoderName: String,
+            initializedTimestampMs: Long,
+            initializationDurationMs: Long
+        ) {
+            if (isCurrentSourceEvent(eventTime)) {
+                audioDiagnostics = audioDiagnostics.copy(decoderName = decoderName)
+            }
+        }
+
+        override fun onAudioDecoderReleased(eventTime: AnalyticsListener.EventTime, decoderName: String) {
+            if (audioDiagnostics.decoderName == decoderName) {
+                audioDiagnostics = audioDiagnostics.copy(decoderName = null, outputSampleRate = null)
+            }
+        }
+
+        override fun onAudioTrackInitialized(
+            eventTime: AnalyticsListener.EventTime,
+            audioTrackConfig: AudioSink.AudioTrackConfig
+        ) {
+            if (isCurrentSourceEvent(eventTime)) {
+                audioDiagnostics = audioDiagnostics.copy(outputSampleRate = audioTrackConfig.sampleRate)
+            }
+        }
+
+        override fun onAudioUnderrun(
+            eventTime: AnalyticsListener.EventTime,
+            bufferSize: Int,
+            bufferSizeMs: Long,
+            elapsedSinceLastFeedMs: Long
+        ) {
+            if (!isCurrentSourceEvent(eventTime)) return
+            audioDiagnostics = audioDiagnostics.copy(underrunCount = audioDiagnostics.underrunCount + 1)
+            val count = audioDiagnostics.underrunCount
+            if ((count and (count - 1)) == 0L) {
+                CoreLog.w("音频缓冲欠载: source=$mediaToken count=$count " +
+                    "bufferMs=$bufferSizeMs elapsedSinceFeedMs=$elapsedSinceLastFeedMs " +
+                    "sampleRate=${audioDiagnostics.sampleRate} channels=${audioDiagnostics.channelCount}")
+            }
+        }
+
+        override fun onAudioSinkError(eventTime: AnalyticsListener.EventTime, audioSinkError: Exception) {
+            if (!isCurrentSourceEvent(eventTime)) return
+            val discontinuity = audioSinkError as? AudioSink.UnexpectedDiscontinuityException
+            audioDiagnostics = audioDiagnostics.copy(
+                sinkErrorCount = audioDiagnostics.sinkErrorCount + 1,
+                timestampDiscontinuityCount = audioDiagnostics.timestampDiscontinuityCount +
+                    if (discontinuity != null) 1 else 0,
+                lastTimestampDeltaUs = discontinuity?.let {
+                    it.actualPresentationTimeUs - it.expectedPresentationTimeUs
+                } ?: audioDiagnostics.lastTimestampDeltaUs
+            )
+            // Recoverable sink events are evidence, not a request to restart a live connection.
+            // Bound repeated logging and exclude exception messages, source URLs and credentials.
+            val count = audioDiagnostics.sinkErrorCount
+            if ((count and (count - 1)) == 0L) {
+                CoreLog.w("音频输出诊断: source=$mediaToken errors=$count " +
+                    "timestampJumps=${audioDiagnostics.timestampDiscontinuityCount} " +
+                    "deltaUs=${audioDiagnostics.lastTimestampDeltaUs} " +
+                    "sampleRate=${audioDiagnostics.sampleRate} channels=${audioDiagnostics.channelCount} " +
+                    "underruns=${audioDiagnostics.underrunCount}")
+            }
+        }
+
         override fun onRenderedFirstFrame(eventTime: AnalyticsListener.EventTime, output: Any, renderTimeMs: Long) {
-            if (firstFrameMillis == null) {
-                firstFrameMillis = (SystemClock.elapsedRealtime() - sourceStartedAtMillis).coerceAtLeast(0L)
+            val eventToken = runCatching {
+                eventTime.timeline.getWindow(eventTime.windowIndex, Timeline.Window())
+                    .mediaItem.localConfiguration?.tag as? Long
+            }.getOrNull() ?: return
+            if (startupTiming.onRenderedFirstFrame(renderTimeMs, eventToken)) {
+                _state.value = _state.value.copy(firstFrameRendered = true)
+                Timber.tag("LivePlayback").i("First frame: room=%s ms, source=%s ms, media=%d",
+                    startupTiming.roomFirstFrameMillis, startupTiming.sourceFirstFrameMillis, eventToken)
             }
         }
         override fun onVideoDecoderInitialized(
@@ -195,14 +325,31 @@ class PlayerController(
         initialize()
     }
 
+    private fun isCurrentSourceEvent(eventTime: AnalyticsListener.EventTime): Boolean = hasActiveSource &&
+        runCatching {
+            eventTime.timeline.getWindow(eventTime.windowIndex, Timeline.Window())
+                .mediaItem.localConfiguration?.tag as? Long
+        }.getOrNull() == mediaToken
+
     private fun initialize(softwareDecoderOnly: Boolean = !hardwareDecodeEnabled) {
         usingSoftwareDecoderOnly = softwareDecoderOnly
+        decoderConfiguredFrameRate = null
+        audioDiagnostics = PlaybackAudioDiagnostics()
 
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(1000, 3000, 500, 1000)
             .build()
 
-        val renderersFactory = DefaultRenderersFactory(context)
+        val renderersFactory = object : DefaultRenderersFactory(context) {
+            private val liveCodecAdapterFactory by lazy {
+                LiveVideoCodecAdapterFactory(
+                    super.getCodecAdapterFactory(),
+                    onVideoConfigured = { decoderConfiguredFrameRate = it }
+                ) { sourceVideoFrameRateHint }
+            }
+
+            override fun getCodecAdapterFactory(): MediaCodecAdapter.Factory = liveCodecAdapterFactory
+        }
         renderersFactory.setEnableDecoderFallback(true)
         if (softwareDecoderOnly) {
             val softwareCodecSelector = MediaCodecSelector { mimeType, requiresSecureDecoder, requiresTunnelingDecoder ->
@@ -238,27 +385,49 @@ class PlayerController(
         }
         _state.value = _state.value.copy(
             volume = initialVolume,
-            playerGeneration = _state.value.playerGeneration + 1L
+            playerGeneration = _state.value.playerGeneration + 1L,
+            playWhenReady = player?.playWhenReady == true,
+            playbackState = player?.playbackState ?: Player.STATE_IDLE
         )
+    }
+
+    fun beginRoomLoad(startedAtMillis: Long) {
+        startupTiming.beginRoomLoad(startedAtMillis)
+        _state.value = _state.value.copy(firstFrameRendered = false)
     }
 
     fun play(
         urls: List<String>,
         headers: Map<String, String>? = null,
         startIndex: Int = 0,
-        origin: PlaybackRequestOrigin = PlaybackRequestOrigin.UserSelection
+        origin: PlaybackRequestOrigin = PlaybackRequestOrigin.UserSelection,
+        videoFrameRateHint: Float? = null,
+        startPlayback: Boolean = origin == PlaybackRequestOrigin.UserSelection || player?.playWhenReady == true
     ) {
         if (origin == PlaybackRequestOrigin.UserSelection) recoveryBudget.resetForUserSelection()
         val processedUrls = buildPlaybackUrlCandidates(urls, forceHttps)
+        val frameRateHint = videoFrameRateHint?.takeIf { it.isFinite() && it in 1f..240f }
+        if (this.urls.isNotEmpty() && sourceVideoFrameRateHint != frameRateHint) {
+            // FLV formats can look identical at 60 and 120 fps. Reset the retained decoder so
+            // a new source cannot inherit the previous source's optional operating rate.
+            decoderConfiguredFrameRate = null
+            player?.stop()
+        }
         this.urls = processedUrls
         this.headers = headers
         this.currentUrlIndex = startIndex
         this.softwareDecoderFallbackAttempted = false
-        playCurrentUrl()
+        sourceVideoFrameRateHint = frameRateHint
+        playCurrentUrl(startPlayback)
     }
 
-    private fun playCurrentUrl() {
+    private fun playCurrentUrl(startPlayback: Boolean = player?.playWhenReady == true) {
+        cancelEndedRecovery()
+        hasActiveSource = false
         val p = player ?: return
+        // Line identity can change while the URL stays equal, including duplicate CDNs and
+        // a refreshed candidate list. Publish both so an already-open menu also observes it.
+        _state.value = _state.value.copy(currentLineIndex = currentUrlIndex, urls = urls)
         missingPlaybackUrlError(urls, currentUrlIndex)?.let { message ->
             _state.value = _state.value.copy(
                 isLoading = false,
@@ -278,7 +447,16 @@ class PlayerController(
             return
         }
 
-        _state.value = _state.value.copy(isLoading = true, currentUrl = url)
+        _state.value = _state.value.copy(isLoading = true, currentUrl = url, firstFrameRendered = false)
+        mediaToken += 1L
+        // Format/decoder may be reused, but incident counts belong only to this connection.
+        audioDiagnostics = audioDiagnostics.copy(
+            underrunCount = 0,
+            sinkErrorCount = 0,
+            timestampDiscontinuityCount = 0,
+            lastTimestampDeltaUs = null
+        )
+        val mediaItem = MediaItem.Builder().setUri(url).setTag(mediaToken).build()
 
         val requestHeaders = headers
         val dataSourceFactory = if (requestHeaders != null) {
@@ -290,28 +468,28 @@ class PlayerController(
         val mediaSource = when {
             url.contains(".m3u8") || url.contains(".m3u") -> {
                 HlsMediaSource.Factory(dataSourceFactory)
-                    .createMediaSource(MediaItem.fromUri(url))
+                    .createMediaSource(mediaItem)
             }
             else -> {
-                val extractorsFactory = androidx.media3.extractor.DefaultExtractorsFactory()
-                    .setConstantBitrateSeekingEnabled(true)
+                val extractorsFactory = LiveExtractorsFactory()
                 ProgressiveMediaSource.Factory(dataSourceFactory, extractorsFactory)
-                    .createMediaSource(MediaItem.fromUri(url))
+                    .createMediaSource(mediaItem)
             }
         }
 
-        sourceStartedAtMillis = SystemClock.elapsedRealtime()
-        firstFrameMillis = null
+        val sourceStartedAtMillis = SystemClock.elapsedRealtime()
+        startupTiming.beginSource(sourceStartedAtMillis, mediaToken)
         frameRateSampleAtMillis = sourceStartedAtMillis
         frameRateSampleCount = videoFrameCount.get()
         outputFrameRate = null
-        p.setMediaSource(mediaSource)
         currentVideoFormat = null
         currentVideoDecoderName = null
-        mediaToken += 1L
+        hasActiveSource = true
+        p.playWhenReady = startPlayback
+        p.setMediaSource(mediaSource)
         p.prepare()
-        p.playWhenReady = true
-        startStallWatchdog()
+        if (p.playWhenReady) startStallWatchdog()
+        else stopStallWatchdog(resetMonitor = true)
     }
 
     private fun shouldRetryWithSoftwareDecoder(errorText: String): Boolean {
@@ -323,6 +501,7 @@ class PlayerController(
 
     private fun retryCurrentUrlWithSoftwareDecoder() {
         val previousPlayer = player ?: return
+        val startPlayback = previousPlayer.playWhenReady
         val oldStats = playbackStatsListener.combinedPlaybackStats
         previousPlayerPlayMillis += oldStats?.totalPlayTimeMs ?: 0L
         previousPlayerRebufferMillis += oldStats?.totalRebufferTimeMs ?: 0L
@@ -337,16 +516,20 @@ class PlayerController(
         initialize(softwareDecoderOnly = true)
         onPlayerReplaced?.invoke(previousPlayer, checkNotNull(player))
         _state.value = _state.value.copy(isLoading = true, error = null)
-        playCurrentUrl()
+        playCurrentUrl(startPlayback)
     }
 
     fun showError(message: String) {
+        hasActiveSource = false
+        startupTiming.invalidateSource()
+        cancelEndedRecovery()
         stopStallWatchdog(resetMonitor = true)
         player?.stop()
         _state.value = _state.value.copy(
             isPlaying = false,
             isLoading = false,
             error = message.ifBlank { "播放失败" },
+            firstFrameRendered = false,
             currentUrl = null
         )
     }
@@ -357,18 +540,32 @@ class PlayerController(
 
     fun togglePlayPause() {
         val p = player ?: return
-        p.playWhenReady = !p.playWhenReady
-        if (p.playWhenReady) startStallWatchdog() else stopStallWatchdog(resetMonitor = true)
+        if (p.playbackState == Player.STATE_ENDED) {
+            // At EOF the UI shows Play although Media3 may still have playWhenReady=true.
+            onUserPlaybackSelection?.invoke()
+            recoveryBudget.resetForUserSelection()
+            recoveredEndedMediaToken = null
+            resume()
+            return
+        }
+        if (p.playWhenReady) pause() else resume()
     }
 
     fun pause() {
+        playbackPauseGeneration += 1L
+        pauseForHost()
+    }
+
+    internal fun pauseForHost() {
+        cancelEndedRecovery()
         player?.playWhenReady = false
         stopStallWatchdog(resetMonitor = true)
     }
 
     fun resume() {
         player?.playWhenReady = true
-        startStallWatchdog()
+        if (player?.playbackState == Player.STATE_ENDED) scheduleEndedRecovery()
+        else startStallWatchdog()
     }
 
     fun setVolume(delta: Float) {
@@ -446,12 +643,22 @@ class PlayerController(
      * Call this before navigating away to prevent the last frame from lingering.
      */
     fun stop() {
+        hasActiveSource = false
+        startupTiming.invalidateSource()
+        decoderConfiguredFrameRate = null
+        _state.value = _state.value.copy(firstFrameRendered = false)
+        cancelEndedRecovery()
         stopStallWatchdog(resetMonitor = true)
         player?.stop()
         _state.value = _state.value.copy(isPlaying = false, isLoading = false)
     }
 
     fun release() {
+        hasActiveSource = false
+        startupTiming.invalidateSource()
+        decoderConfiguredFrameRate = null
+        _state.value = _state.value.copy(firstFrameRendered = false)
+        cancelEndedRecovery()
         stopStallWatchdog(resetMonitor = true)
         player?.removeListener(playerListener)
         player?.removeAnalyticsListener(analyticsListener)
@@ -465,7 +672,7 @@ class PlayerController(
     fun changeLine(index: Int) {
         if (index in urls.indices) {
             onUserPlaybackSelection?.invoke()
-            play(urls, headers, index)
+            play(urls, headers, index, videoFrameRateHint = sourceVideoFrameRateHint)
         }
     }
 
@@ -496,12 +703,15 @@ class PlayerController(
                 stallRecoveryCount = stallRecoveryCount,
                 bufferedMillis = player?.totalBufferedDuration?.coerceAtLeast(0L),
                 liveOffsetMillis = player?.currentLiveOffset?.takeIf { it >= 0L },
-                firstFrameMillis = firstFrameMillis,
+                firstFrameMillis = startupTiming.sourceFirstFrameMillis,
+                roomFirstFrameMillis = startupTiming.roomFirstFrameMillis,
                 outputFrameRate = outputFrameRate.takeIf { player?.isPlaying == true && videoOutputExpected },
                 playMillis = previousPlayerPlayMillis + (stats?.totalPlayTimeMs ?: 0L),
                 rebufferMillis = previousPlayerRebufferMillis + (stats?.totalRebufferTimeMs ?: 0L),
                 recoveryAttempts = recoveryBudget.attempts,
-                lastRecoveryReason = lastRecoveryReason
+                lastRecoveryReason = lastRecoveryReason,
+                decoderConfiguredFrameRate = decoderConfiguredFrameRate,
+                audio = audioDiagnostics
             )
         )
     }
@@ -562,9 +772,13 @@ class PlayerController(
 
     private fun runRecovery(reason: String, recover: () -> Boolean): Boolean {
         if (!recoveryBudget.tryAcquire()) {
+            Timber.tag("LivePlayback").w("Recovery budget exhausted: %s", reason)
             showError("自动恢复已达上限，请手动刷新或切换画质")
             return false
         }
+        Timber.tag("LivePlayback").w(
+            "Recovery: %s, attempt=%d/%d", reason, recoveryBudget.attempts, MAX_PLAYBACK_RECOVERY_ATTEMPTS
+        )
         lastRecoveryReason = reason
         _state.value = _state.value.copy(isLoading = true, error = null)
         val started = recover()
@@ -574,18 +788,60 @@ class PlayerController(
         return started
     }
 
-    private fun recoverPlaybackStall() {
-        Timber.w("Live playback stalled; attempting bounded source recovery")
-        val started = when (playbackStallRecoveryAction(currentUrlIndex, urls.size)) {
-            PlaybackStallRecoveryAction.SwitchToNextUrl -> runRecovery("播放停滞换线") {
+    private enum class RecoveryTrigger(val switchReason: String, val refreshReason: String) {
+        Error("播放错误换线", "重新获取播放源"),
+        Ended("直播流结束换线", "直播流结束重新取流"),
+        Stall("播放停滞换线", "播放停滞重新取流")
+    }
+
+    /** One action order and execution path for errors, EOF and stalled playback. */
+    private fun recoverPlayback(trigger: RecoveryTrigger, errorText: String? = null): Boolean {
+        if (player == null || urls.isEmpty()) return false
+        if (trigger == RecoveryTrigger.Error && errorText != null && shouldRetryWithSoftwareDecoder(errorText)) {
+            return runRecovery("解码回退") { retryCurrentUrlWithSoftwareDecoder(); true }
+        }
+        return when (playbackSourceRecoveryAction(currentUrlIndex, urls.size)) {
+            PlaybackSourceRecoveryAction.SwitchToNextUrl -> runRecovery(trigger.switchReason) {
                 currentUrlIndex++
                 softwareDecoderFallbackAttempted = false
                 playCurrentUrl()
                 true
             }
-            PlaybackStallRecoveryAction.RequestFreshSource ->
-                runRecovery("播放停滞重新取流") { onPlaybackSourceExhausted?.invoke() == true }
+            PlaybackSourceRecoveryAction.RequestFreshSource ->
+                runRecovery(trigger.refreshReason) { onPlaybackSourceExhausted?.invoke() == true }
         }
+    }
+
+    private fun cancelEndedRecovery() {
+        pendingEndedRecovery?.let(stallHandler::removeCallbacks)
+        pendingEndedRecovery = null
+    }
+
+    /** A live HTTP/FLV connection can reach EOF without an onPlayerError callback. */
+    private fun scheduleEndedRecovery() {
+        if (pendingEndedRecovery != null || recoveredEndedMediaToken == mediaToken) return
+        val endedPlayer = player ?: return
+        val endedMediaToken = mediaToken
+        val recovery = Runnable {
+            pendingEndedRecovery = null
+            // Finish the Media3 event batch first; discard work superseded by pause, navigation,
+            // another source, or decoder replacement.
+            if (player !== endedPlayer || mediaToken != endedMediaToken ||
+                endedPlayer.playbackState != Player.STATE_ENDED || !endedPlayer.playWhenReady ||
+                endedPlayer.playbackSuppressionReason != Player.PLAYBACK_SUPPRESSION_REASON_NONE ||
+                urls.getOrNull(currentUrlIndex) == null || _state.value.currentUrl == null
+            ) return@Runnable
+            recoveredEndedMediaToken = endedMediaToken
+            val started = recoverPlayback(RecoveryTrigger.Ended)
+            if (!started && _state.value.error == null) showError("直播流已结束，请刷新重试")
+        }
+        pendingEndedRecovery = recovery
+        stallHandler.post(recovery)
+    }
+
+    private fun recoverPlaybackStall() {
+        Timber.w("Live playback stalled; attempting bounded source recovery")
+        val started = recoverPlayback(RecoveryTrigger.Stall)
         if (started) stallRecoveryCount++
         else if (_state.value.error == null) showError("直播流长时间无进度，请刷新重试")
     }

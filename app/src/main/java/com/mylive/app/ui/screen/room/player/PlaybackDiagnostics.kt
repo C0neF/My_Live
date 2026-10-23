@@ -3,6 +3,19 @@ package com.mylive.app.ui.screen.room.player
 import java.net.URI
 import java.util.Locale
 
+internal data class PlaybackAudioDiagnostics(
+    val sampleMimeType: String? = null,
+    val codecs: String? = null,
+    val sampleRate: Int? = null,
+    val channelCount: Int? = null,
+    val decoderName: String? = null,
+    val outputSampleRate: Int? = null,
+    val underrunCount: Long = 0,
+    val sinkErrorCount: Long = 0,
+    val timestampDiscontinuityCount: Long = 0,
+    val lastTimestampDeltaUs: Long? = null
+)
+
 internal data class PlaybackDiagnosticInput(
     val qualityName: String,
     val currentUrl: String?,
@@ -26,7 +39,10 @@ internal data class PlaybackDiagnosticInput(
     val playMillis: Long = 0L,
     val rebufferMillis: Long = 0L,
     val recoveryAttempts: Int = 0,
-    val lastRecoveryReason: String? = null
+    val lastRecoveryReason: String? = null,
+    val roomFirstFrameMillis: Long? = null,
+    val decoderConfiguredFrameRate: Float? = null,
+    val audio: PlaybackAudioDiagnostics = PlaybackAudioDiagnostics()
 )
 
 internal data class PlaybackDiagnosticEntry(
@@ -79,12 +95,27 @@ internal fun buildPlaybackDiagnosticSnapshot(
             PlaybackDiagnosticEntry("视频编码", input.codecs.orEmpty().ifBlank { "未知" }),
             PlaybackDiagnosticEntry("源分辨率", resolution),
             PlaybackDiagnosticEntry("源帧率", frameRate),
+            PlaybackDiagnosticEntry("解码帧率配置", input.decoderConfiguredFrameRate
+                ?.takeIf { it.isFinite() && it > 0f }
+                ?.let { String.format(Locale.US, "%.1f fps", it) } ?: "未指定"),
             PlaybackDiagnosticEntry("声明码率", bitrate),
             PlaybackDiagnosticEntry("实际解码器", input.decoderName.orEmpty().ifBlank { "未知" }),
+            PlaybackDiagnosticEntry("音频 MIME", input.audio.sampleMimeType.orEmpty().ifBlank { "未知" }),
+            PlaybackDiagnosticEntry("音频编码", input.audio.codecs.orEmpty().ifBlank { "未知" }),
+            PlaybackDiagnosticEntry("音频采样率", input.audio.sampleRate?.takeIf { it > 0 }?.let { "$it Hz" } ?: "未知"),
+            PlaybackDiagnosticEntry("音频声道", input.audio.channelCount?.takeIf { it > 0 }?.toString() ?: "未知"),
+            PlaybackDiagnosticEntry("音频解码器", input.audio.decoderName.orEmpty().ifBlank { "未知" }),
+            PlaybackDiagnosticEntry("音频输出采样率", input.audio.outputSampleRate?.takeIf { it > 0 }?.let { "$it Hz" } ?: "未知"),
+            PlaybackDiagnosticEntry("音频缓冲欠载次数", input.audio.underrunCount.toString()),
+            PlaybackDiagnosticEntry("音频输出异常次数", input.audio.sinkErrorCount.toString()),
+            PlaybackDiagnosticEntry("音频时间戳跳变次数", input.audio.timestampDiscontinuityCount.toString()),
+            PlaybackDiagnosticEntry("最近音频时间戳偏差", input.audio.lastTimestampDeltaUs
+                ?.let { String.format(Locale.US, "%.2f ms", it / 1000.0) } ?: "无"),
             PlaybackDiagnosticEntry("丢帧", input.droppedFrames.toString()),
             PlaybackDiagnosticEntry("缓冲次数", input.bufferingCount.toString()),
             PlaybackDiagnosticEntry("停滞恢复次数", input.stallRecoveryCount.toString()),
             PlaybackDiagnosticEntry("播放器首帧", input.firstFrameMillis?.let { "$it ms" } ?: "等待首帧"),
+            PlaybackDiagnosticEntry("进房首帧（含请求）", input.roomFirstFrameMillis?.let { "$it ms" } ?: "等待首帧"),
             PlaybackDiagnosticEntry("视频输出帧率（近段）", input.outputFrameRate?.let { String.format(Locale.US, "%.1f fps", it) } ?: "未采样"),
             PlaybackDiagnosticEntry("已缓冲", input.bufferedMillis?.let { "$it ms" } ?: "未知"),
             PlaybackDiagnosticEntry("直播延迟", input.liveOffsetMillis?.let { "$it ms" } ?: "当前流不提供"),

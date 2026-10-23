@@ -49,6 +49,7 @@ class HomeViewModel @Inject constructor(
 
     private var currentSiteIndex = 0
     private var loadJob: Job? = null
+    private var failedPage: Int? = null
     private val loadRequestGate = LatestCatalogRequestGate()
     private var previousSiteIds = sites.sortedByDefaultOrder().map { it.id }
 
@@ -79,6 +80,11 @@ class HomeViewModel @Inject constructor(
         loadRecommendRooms(isRefresh = true, pageToLoad = 1)
     }
 
+    fun retry() {
+        if (_uiState.value.isLoading || _uiState.value.isRefreshing) return
+        loadRecommendRooms(pageToLoad = failedPage ?: 1)
+    }
+
     private fun loadRecommendRooms(
         isRefresh: Boolean = false,
         pageToLoad: Int = _uiState.value.currentPage
@@ -90,6 +96,7 @@ class HomeViewModel @Inject constructor(
         }
         val requestToken = loadRequestGate.begin()
         loadJob?.cancel()
+        failedPage = null
         loadJob = viewModelScope.launch {
             _uiState.value = _uiState.value.copy(
                 siteId = site.id,
@@ -118,6 +125,7 @@ class HomeViewModel @Inject constructor(
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
                 if (!loadRequestGate.isCurrent(requestToken)) return@launch
+                failedPage = pageToLoad
                 _uiState.value = _uiState.value.copy(
                     siteId = site.id,
                     isLoading = false,

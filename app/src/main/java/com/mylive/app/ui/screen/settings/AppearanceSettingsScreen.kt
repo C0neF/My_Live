@@ -41,7 +41,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.foundation.layout.Row
 import androidx.compose.ui.text.font.FontWeight
 import com.mylive.app.ui.component.settings.SettingsMenu
-import com.mylive.app.ui.component.settings.SettingsSwitch
 import com.mylive.app.ui.navigation.Navigator
 import com.mylive.app.ui.layout.AdaptivePageFrame
 import com.mylive.app.ui.layout.LocalAppLayout
@@ -71,6 +70,8 @@ fun AppearanceSettingsScreen(
 ) {
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
     val styleColor by viewModel.styleColor.collectAsStateWithLifecycle()
+    val layoutMode by viewModel.appLayoutMode.collectAsStateWithLifecycle()
+    val tabletOrientation by viewModel.tabletOrientationMode.collectAsStateWithLifecycle()
 
     val themeModeOptions = stringArrayResource(R.array.theme_mode_options)
     val themeModeDefault = stringResource(R.string.theme_mode_default)
@@ -108,6 +109,14 @@ fun AppearanceSettingsScreen(
                 onClick = { showThemeDialog = true }
             )
             HorizontalDivider()
+
+            LayoutModeSettings(
+                mode = layoutMode,
+                orientation = tabletOrientation,
+                tabletActive = LocalAppLayout.current.tablet,
+                onModeChange = viewModel::setAppLayoutMode,
+                onOrientationChange = viewModel::setTabletOrientationMode
+            )
 
             // Custom theme color picker
             Column(

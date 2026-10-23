@@ -30,7 +30,7 @@ class DouyuPlayUrlConcurrencyTest {
         val releaseFirstWave = CompletableDeferred<Unit>()
 
         val result = async {
-            resolveDouyuPlayUrls(cdns) { cdn ->
+            resolveDouyuCdnResults(cdns) { cdn ->
                 val startedCount = started.incrementAndGet()
                 val now = inFlight.incrementAndGet()
                 peak.updateAndGet { maxOf(it, now) }
@@ -61,7 +61,7 @@ class DouyuPlayUrlConcurrencyTest {
         // The list doubles as the preference order (scdn sorted last) and the player treats
         // earlier entries as better lines, so completion order must not leak into it.
         val cdns = listOf("fast", "slow", "slowest")
-        val urls = resolveDouyuPlayUrls(cdns) { cdn ->
+        val urls = resolveDouyuCdnResults(cdns) { cdn ->
             when (cdn) {
                 "slowest" -> delay(60)
                 "slow" -> delay(30)
@@ -77,7 +77,7 @@ class DouyuPlayUrlConcurrencyTest {
 
     @Test
     fun oneFailingCdnDoesNotCostTheOthers() = runBlocking {
-        val urls = resolveDouyuPlayUrls(listOf("good-1", "broken", "good-2")) { cdn ->
+        val urls = resolveDouyuCdnResults(listOf("good-1", "broken", "good-2")) { cdn ->
             if (cdn == "broken") throw IllegalStateException("cdn is down")
             "https://$cdn/live.flv"
         }
@@ -87,8 +87,8 @@ class DouyuPlayUrlConcurrencyTest {
 
     @Test
     fun aCdnThatAnswersWithNothingIsDropped() = runBlocking {
-        val urls = resolveDouyuPlayUrls(listOf("empty", "good")) { cdn ->
-            if (cdn == "empty") "" else "https://$cdn/live.flv"
+        val urls = resolveDouyuCdnResults(listOf("empty", "good")) { cdn ->
+            if (cdn == "empty") null else "https://$cdn/live.flv"
         }
 
         assertEquals(listOf("https://good/live.flv"), urls)
@@ -96,7 +96,7 @@ class DouyuPlayUrlConcurrencyTest {
 
     @Test
     fun everyCdnFailingYieldsNoUrlsRatherThanAnError() = runBlocking {
-        val urls = resolveDouyuPlayUrls(listOf("a", "b")) { throw IllegalStateException("down") }
+        val urls = resolveDouyuCdnResults<String>(listOf("a", "b")) { throw IllegalStateException("down") }
 
         assertTrue(urls.isEmpty())
     }
@@ -104,7 +104,7 @@ class DouyuPlayUrlConcurrencyTest {
     @Test
     fun noCdnsMeansNoRequests() = runBlocking {
         val calls = AtomicInteger(0)
-        val urls = resolveDouyuPlayUrls(emptyList()) { calls.incrementAndGet(); "x" }
+        val urls = resolveDouyuCdnResults(emptyList()) { calls.incrementAndGet(); "x" }
 
         assertTrue(urls.isEmpty())
         assertEquals(0, calls.get())
@@ -115,7 +115,7 @@ class DouyuPlayUrlConcurrencyTest {
         val seen = mutableListOf<String>()
         val cdns = listOf("a", "b", "c")
 
-        resolveDouyuPlayUrls(cdns) { cdn ->
+        resolveDouyuCdnResults(cdns) { cdn ->
             synchronized(seen) { seen.add(cdn) }
             "https://$cdn/live.flv"
         }

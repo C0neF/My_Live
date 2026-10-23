@@ -119,7 +119,10 @@ internal fun decodeFollowsForLanSync(array: JSONArray): List<FollowUserEntity> =
                     ?.toLongOrNull(),
                 showTime = item.opt("showTime")
                     ?.takeUnless { it == JSONObject.NULL }
-                    ?.toString()
+                    ?.toString(),
+                canonicalRoomId = item.opt("canonicalRoomId")
+                    ?.takeUnless { it == JSONObject.NULL }
+                    ?.toString()?.takeIf { it.isNotBlank() }
             )
         )
     }
@@ -167,6 +170,7 @@ class LanSyncService : Service() {
         const val UDP_PORT = 23235
         const val HTTP_PORT = 23234
         private const val MAX_SYNC_BODY_BYTES = 5 * 1024 * 1024
+        private val MAX_SYNC_WIRE_BYTES = LanSyncCrypto.maxEnvelopeBytes(MAX_SYNC_BODY_BYTES)
         private const val MAX_SYNC_FOLLOW_ITEMS = 2_000
         private const val MAX_SYNC_TAG_ITEMS = 1_000
         private const val MAX_SYNC_HISTORY_ITEMS = 5_000
@@ -480,7 +484,8 @@ class LanSyncService : Service() {
                         deviceId = syncDeviceId,
                         name = Build.MODEL,
                         appVersion = BuildConfig.VERSION_NAME,
-                        address = ipAddress
+                        address = ipAddress,
+                        supportsFollowBundle = true
                     )
                     newFixedLengthResponse(Response.Status.OK, "application/json", body)
                 } else if (
@@ -503,7 +508,7 @@ class LanSyncService : Service() {
                     val files = mutableMapOf<String, String>()
                     session.parseBody(files)
                     val rawBody = files["postData"] ?: ""
-                    if (rawBody.toByteArray(Charsets.UTF_8).size > MAX_SYNC_BODY_BYTES) {
+                    if (rawBody.toByteArray(Charsets.UTF_8).size > MAX_SYNC_WIRE_BYTES) {
                         return newJsonResponse(false, "payload too large", Response.Status.PAYLOAD_TOO_LARGE)
                     }
 
@@ -531,10 +536,20 @@ class LanSyncService : Service() {
                     val importType = LanSyncImportType.fromPath(uri)
                     when (importType) {
                         LanSyncImportType.FOLLOW -> {
-                            val arr = requireJsonArrayWithinLimit(body, MAX_SYNC_FOLLOW_ITEMS, "follow")
-                            val follows = decodeFollowsForLanSync(arr)
-                            enqueueSyncImport(importType.wireName) {
-                                followRepository.importFollows(follows, overlay)
+                            if (body.trimStart().startsWith("[")) {
+                                // Keep the legacy, separately sent collection available to older peers.
+                                val arr = requireJsonArrayWithinLimit(body, MAX_SYNC_FOLLOW_ITEMS, "follow")
+                                val follows = decodeFollowsForLanSync(arr)
+                                enqueueSyncImport(importType.wireName) {
+                                    followRepository.importFollows(follows, overlay)
+                                }
+                            } else {
+                                val bundle = JSONObject(body)
+                                bundle.getJSONArray("follows").requireLengthAtMost(MAX_SYNC_FOLLOW_ITEMS, "follow")
+                                bundle.getJSONArray("tags").requireLengthAtMost(MAX_SYNC_TAG_ITEMS, "tag")
+                                enqueueSyncImport(importType.wireName) {
+                                    followRepository.importFromJson(body, overlay)
+                                }
                             }
                         }
                         LanSyncImportType.TAG -> {
@@ -661,7 +676,8 @@ class LanSyncService : Service() {
 
         /**
          * NanoHTTPD buffers the whole request body while parsing it, so the size has to be settled
-         * before [IHTTPSession.parseBody] is ever reached.
+         * before [IHTTPSession.parseBody] is ever reached. This bounds the encrypted envelope;
+         * the decoded plaintext is checked separately against MAX_SYNC_BODY_BYTES.
          *
          * A request that declares no length, or streams a chunked body, has nothing to check here:
          * that is precisely how an unauthenticated peer would push an unbounded upload into memory
@@ -683,7 +699,7 @@ class LanSyncService : Service() {
                     "content-length required",
                     Response.Status.LENGTH_REQUIRED
                 )
-            if (contentLength <= MAX_SYNC_BODY_BYTES) return null
+            if (contentLength <= MAX_SYNC_WIRE_BYTES) return null
 
             return newJsonResponse(false, "payload too large", Response.Status.PAYLOAD_TOO_LARGE)
         }

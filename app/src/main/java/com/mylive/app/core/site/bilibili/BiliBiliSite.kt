@@ -493,7 +493,18 @@ class BiliBiliSite @Inject constructor(
             queryParameters = mapOf("room_id" to roomId),
             header = getHeader()
         ) as JSONObject
-        return (result.optJSONObject("data")?.optStringValue("live_status")?.toIntOrNull() ?: 0) == 1
+        val code = result.optStringValue("code").toIntOrNull()
+            ?: throw CoreError("B站直播状态响应异常：缺少有效业务状态码")
+        if (code != 0) {
+            throw CoreError("B站直播状态查询失败（错误码 $code），请稍后重试")
+        }
+        val data = result.optJSONObject("data")
+            ?: throw CoreError("B站直播状态响应异常：缺少房间数据")
+        return when (data.optStringValue("live_status").toIntOrNull()) {
+            1 -> true
+            0, 2 -> false
+            else -> throw CoreError("B站直播状态响应异常：无法确认开播状态")
+        }
     }
 
     override suspend fun getSuperChatMessage(

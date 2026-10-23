@@ -85,6 +85,8 @@ class QuickAccessViewModel @Inject constructor(
     fun clearActionError() { _actionError.value = null }
     private var followRefreshJob: Job? = null
     val updatingFollowStatus = followStatusRefreshCoordinator.isRefreshing
+    val followRefreshEntries = followStatusRefreshCoordinator.entries
+    val followRefreshProgress = followStatusRefreshCoordinator.progress
 
     fun updateFollowStatus() {
         if (followRefreshJob?.isActive == true || updatingFollowStatus.value) return

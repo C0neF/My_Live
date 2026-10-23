@@ -75,6 +75,19 @@ object LanSyncCrypto {
     fun isEncryptedEnvelope(body: String): Boolean = body.trimStart().startsWith(ENVELOPE_PREFIX)
 
     /**
+     * Maximum wire bytes produced by [encrypt] for at most [maxPlaintextBytes] UTF-8 bytes.
+     * The ASCII envelope contains the prefix, an unpadded base64 IV, a separator, and unpadded
+     * base64 ciphertext plus the GCM tag. Keep this bound with the format that determines it.
+     */
+    fun maxEnvelopeBytes(maxPlaintextBytes: Int): Long {
+        require(maxPlaintextBytes >= 0) { "plaintext byte limit must not be negative" }
+        fun base64Bytes(bytes: Long): Long = (bytes * 4 + 2) / 3
+        return ENVELOPE_PREFIX.toByteArray(Charsets.UTF_8).size.toLong() +
+            base64Bytes(IV_BYTES.toLong()) + 1 +
+            base64Bytes(maxPlaintextBytes.toLong() + TAG_BITS / 8)
+    }
+
+    /**
      * Stretches [token] into the encryption and authentication keys.
      *
      * Exposed for [LanSyncAuth] and tests; payload callers should prefer [encrypt] / [decrypt].

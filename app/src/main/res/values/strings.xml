@@ -39,7 +39,7 @@
     <string name="settings_play">播放设置</string>
     <string name="settings_play_subtitle">画质、比例与解码方式</string>
     <string name="settings_appearance">外观设置</string>
-    <string name="settings_appearance_subtitle">主题模式与颜色</string>
+    <string name="settings_appearance_subtitle">主题、配色与界面布局</string>
     <string name="settings_follow">关注设置</string>
     <string name="settings_follow_subtitle">自动刷新与更新策略</string>
     <string name="settings_indexed">主页设置</string>
@@ -60,10 +60,10 @@
 
     <!-- Account -->
     <string name="account_title">账号管理</string>
-    <string name="account_clear_bilibili_cookie">清除B站Cookie</string>
-    <string name="account_clear_douyin_cookie">清除抖音 Cookie</string>
-    <string name="account_bilibili_cookie_input_title">输入 B站Cookie</string>
-    <string name="account_douyin_cookie_input_title">输入 抖音 Cookie</string>
+    <string name="account_clear_cookie_subtitle">仅清除此设备保存的登录信息</string>
+    <string name="account_bilibili_cookie_input_title">导入哔哩哔哩 Cookie</string>
+    <string name="account_douyin_cookie_input_title">导入抖音 Cookie</string>
+    <string name="account_douyu_cookie_input_title">导入斗鱼 Cookie</string>
     <string name="account_cookie_placeholder">粘贴 Cookie 到此处</string>
     <string name="account_status_logged_in">已登录</string>
     <string name="account_status_logged_out">未登录</string>
@@ -128,6 +128,8 @@
     <string name="webdav_title">WebDAV 同步</string>
     <string name="webdav_server_url">服务器地址</string>
     <string name="webdav_server_url_hint">https://dav.example.com/dav/</string>
+    <string name="webdav_nutstore_directory_hint">填写坚果云根地址时，备份和恢复会使用 MyLive 文件夹。</string>
+    <string name="webdav_nutstore_password_hint">请填写坚果云生成的第三方应用密码。</string>
     <string name="webdav_username">用户名</string>
     <string name="webdav_password">密码</string>
     <string name="webdav_show">显示</string>
@@ -153,7 +155,8 @@
     <string name="profile_import_failed">导入失败: %1$s</string>
     <string name="profile_intro">可以将应用配置导出为 JSON 文件，或从文件导入配置。</string>
     <string name="profile_warning">注意：账号 Cookie、WebDAV 密码等敏感数据不会被导出。</string>
-    <string name="profile_invalid_json">无效的配置文件</string>
+    <string name="profile_invalid_json">备份内容无效，未导入任何数据</string>
+    <string name="profile_unsupported_version">不支持此备份版本，请更新应用后重试</string>
 
     <!-- Content descriptions (accessibility) -->
     <string name="cd_back">返回</string>
@@ -162,56 +165,22 @@
 
     <!-- Account screen extras -->
     <string name="account_status_label">登录状态</string>
-    <string name="account_logout">退出登录</string>
-    <string name="account_clear_cookie_action">清除 Cookie</string>
-    <string name="account_webview_login">WebView 登录</string>
-    <string name="account_webview_login_subtitle">通过内置浏览器登录B站</string>
-    <string name="account_cookie_login">Cookie 登录</string>
-    <string name="account_cookie_login_bilibili_subtitle">手动粘贴 Cookie</string>
-    <string name="account_cookie_login_douyin_subtitle">粘贴抖音 Cookie</string>
-    <string name="account_bilibili_section">B站 (哔哩哔哩)</string>
+    <string name="account_clear_cookie_action">清除本机登录状态</string>
+    <string name="account_web_login">网页登录</string>
+    <string name="account_web_login_title">%1$s网页登录</string>
+    <string name="account_web_login_subtitle">在官方网页完成登录，登录状态保存到本机</string>
+    <string name="account_cookie_login">导入 Cookie</string>
+    <string name="account_cookie_login_subtitle">手动粘贴 Cookie，登录状态保存到本机</string>
+    <string name="account_bilibili_section">哔哩哔哩</string>
     <string name="account_douyin_section">抖音</string>
+    <string name="account_douyu_section">斗鱼</string>
     <string name="account_cookie_label">Cookie</string>
     <string name="account_bilibili_cookie_saved">B站 Cookie 已保存</string>
     <string name="account_douyin_cookie_saved">抖音 Cookie 已保存</string>
-    <string name="account_bilibili_logged_out">B站 已退出登录</string>
-    <string name="account_douyin_logged_out">抖音 Cookie 已清除</string>
+    <string name="account_bilibili_logged_out">哔哩哔哩本机登录状态已清除</string>
+    <string name="account_douyin_logged_out">抖音本机登录状态已清除</string>
 
-    <!-- Danmu option label arrays (displayed in SettingsMenu.value) -->
-    <string-array name="danmu_font_size_options">
-        <item>0.8x</item>
-        <item>0.9x</item>
-        <item>1.0x</item>
-        <item>1.1x</item>
-        <item>1.2x</item>
-        <item>1.3x</item>
-        <item>1.5x</item>
-    </string-array>
-    <string name="danmu_font_size_default">1.0x</string>
-    <string-array name="danmu_speed_options">
-        <item>慢</item>
-        <item>较慢</item>
-        <item>正常</item>
-        <item>较快</item>
-        <item>快</item>
-    </string-array>
-    <string name="danmu_speed_default">正常</string>
-    <string-array name="danmu_area_options">
-        <item>1/4屏</item>
-        <item>1/3屏</item>
-        <item>1/2屏</item>
-        <item>2/3屏</item>
-        <item>全屏</item>
-    </string-array>
-    <string name="danmu_area_default">1/2屏</string>
-    <string-array name="danmu_opacity_options">
-        <item>20%</item>
-        <item>40%</item>
-        <item>60%</item>
-        <item>80%</item>
-        <item>100%</item>
-    </string-array>
-    <string name="danmu_opacity_default">100%</string>
+    <!-- Numeric danmaku labels come from DanmakuSettingsPolicy. -->
     <string-array name="danmu_font_weight_options">
         <item>细体</item>
         <item>常规</item>
@@ -219,13 +188,6 @@
         <item>粗体</item>
     </string-array>
     <string name="danmu_font_weight_default">常规</string>
-    <string-array name="danmu_stroke_options">
-        <item>无描边</item>
-        <item>细描边</item>
-        <item>中描边</item>
-        <item>粗描边</item>
-    </string-array>
-    <string name="danmu_stroke_default">中描边</string>
     <string name="danmu_opacity_title">弹幕透明度</string>
     <string name="danmu_switch_title">弹幕开关</string>
 
@@ -361,13 +323,15 @@ https://webcast.amemv.com/webcast/reflow/xxxxx</string>
     <string name="shield_preset_import_failed">导入失败，请检查 JSON 内容</string>
     <string name="shield_preset_import_title">从剪贴板导入预设</string>
     <string name="shield_preset_import_hint">请在此处粘贴导出的预设 JSON</string>
-    <string name="layout_mode_title">平板模式</string>
-    <string name="layout_mode_auto">自动</string>
-    <string name="layout_mode_phone">手机</string>
-    <string name="layout_mode_tablet">平板</string>
+    <string name="layout_mode_title">界面布局</string>
+    <string name="layout_mode_auto">自动适配</string>
+    <string name="layout_mode_phone">手机布局</string>
+    <string name="layout_mode_tablet">平板布局</string>
     <string name="layout_active_tablet">当前：平板布局</string>
     <string name="layout_active_phone">当前：手机布局</string>
-    <string name="layout_mode_description">自动根据设备和窗口大小调整。选择手机后，大屏也保持手机布局；选择平板后，会按可用空间显示侧栏和分栏。</string>
+    <string name="layout_mode_auto_description">根据设备和窗口大小自动调整</string>
+    <string name="layout_mode_phone_description">大屏设备也使用手机布局</string>
+    <string name="layout_mode_tablet_description">按可用空间显示侧栏和分栏</string>
     <string name="tablet_rotation_title">平板屏幕方向</string>
     <string name="tablet_rotation_system">跟随系统</string>
     <string name="tablet_rotation_portrait">竖屏</string>

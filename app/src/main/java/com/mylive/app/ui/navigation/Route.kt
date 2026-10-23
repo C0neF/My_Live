@@ -62,6 +62,9 @@ sealed interface Route : NavKey {
     data object SettingsAccountDouyinLoginWebview : Route
 
     @Serializable
+    data object SettingsAccountDouyuLoginWebview : Route
+
+    @Serializable
     data object SettingsFollow : Route
 
     @Serializable

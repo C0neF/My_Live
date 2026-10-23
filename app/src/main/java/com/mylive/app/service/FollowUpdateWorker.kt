@@ -13,6 +13,7 @@ import androidx.work.WorkerParameters
 import com.mylive.app.MainActivity
 import com.mylive.app.R
 import com.mylive.app.data.local.entity.FollowUserEntity
+import com.mylive.app.data.local.entity.playbackRoomId
 import com.mylive.app.ui.navigation.Route
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
@@ -51,7 +52,7 @@ class FollowUpdateWorker @AssistedInject constructor(
         )
         manager.createNotificationChannel(channel)
 
-        val route = "/room/detail/${follow.roomId}?siteId=${follow.siteId}"
+        val route = "/room/detail/${follow.playbackRoomId}?siteId=${follow.siteId}"
         val intent = Intent(applicationContext, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
             putExtra(MainActivity.EXTRA_INITIAL_ROUTE, route)

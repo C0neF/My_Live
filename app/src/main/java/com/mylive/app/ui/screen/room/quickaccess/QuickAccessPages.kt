@@ -21,7 +21,11 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mylive.app.core.model.LiveRoomItem
 import com.mylive.app.data.local.entity.HistoryEntity
+import com.mylive.app.data.local.entity.playbackRoomId
 import com.mylive.app.ui.component.NetImage
+import com.mylive.app.ui.component.FollowRefreshProgressLine
+import com.mylive.app.ui.component.followRefreshHint
+import com.mylive.app.ui.component.rememberFollowRefreshEntry
 import com.mylive.app.ui.theme.Icons
 import kotlinx.coroutines.flow.distinctUntilChanged
 
@@ -31,6 +35,7 @@ internal fun FollowQuickPanel(viewModel: QuickAccessViewModel, library: QuickAcc
     onNavigateToRoom: (siteId: String, roomId: String, initialIsFollowing: Boolean?) -> Unit) {
     val filters by viewModel.followFilters.collectAsStateWithLifecycle()
     val isRefreshing by viewModel.updatingFollowStatus.collectAsStateWithLifecycle()
+    val refreshProgress by viewModel.followRefreshProgress.collectAsStateWithLifecycle()
     val filteredFollows = remember(library.follows, library.tags, library.remarks, filters) {
         filterQuickAccessFollows(library.follows, library.tags, library.remarks, filters)
     }
@@ -55,6 +60,7 @@ internal fun FollowQuickPanel(viewModel: QuickAccessViewModel, library: QuickAcc
             }
         }
         QuickAccessFilterSummary("${filteredFollows.size} 位主播", filters, library.tags) { viewModel.setFollowFilters(QuickAccessFilters()) }
+        FollowRefreshProgressLine(refreshProgress)
         when {
             library.loading -> QuickAccessLoadingRows()
             filteredFollows.isEmpty() -> QuickAccessEmpty(Icons.Default.FavoriteBorder,
@@ -69,11 +75,16 @@ internal fun FollowQuickPanel(viewModel: QuickAccessViewModel, library: QuickAcc
                     val remark = quickAccessRemark(library.remarks, user.siteId, user.userName)
                     QuickAccessRoomRow(
                         name = remark ?: user.userName, face = user.face,
-                        subtitle = "${quickAccessSiteName(user.siteId)} · ${if (remark != null) user.userName else "房间 ${user.roomId}"}",
+                        subtitle = when {
+                            remark != null -> "${quickAccessSiteName(user.siteId)} · ${user.userName}"
+                            user.siteId == "douyin" -> quickAccessSiteName(user.siteId)
+                            else -> "${quickAccessSiteName(user.siteId)} · 房间 ${user.roomId}"
+                        },
                         status = when (user.liveStatus) { 1 -> "直播中"; 2 -> "未开播"; else -> "待更新" },
                         live = user.liveStatus == 1, special = user.isSpecialFollow,
-                        current = isCurrent(user.siteId, user.roomId),
-                        onClick = { onNavigateToRoom(user.siteId, user.roomId, true) }
+                        refreshHint = followRefreshHint(rememberFollowRefreshEntry(viewModel.followRefreshEntries, user.id)),
+                        current = isCurrent(user.siteId, user.playbackRoomId) || isCurrent(user.siteId, user.roomId),
+                        onClick = { onNavigateToRoom(user.siteId, user.playbackRoomId, true) }
                     )
                 }
             }
@@ -89,7 +100,9 @@ internal fun HistoryQuickPanel(viewModel: QuickAccessViewModel, library: QuickAc
     val filters by viewModel.historyFilters.collectAsStateWithLifecycle()
     val history = remember(library.history, library.remarks, filters) { filterQuickAccessHistory(library.history, library.remarks, filters) }
     val groups = remember(history) { history.groupBy { quickAccessHistoryDay(it.updateTime) } }
-    val followed = remember(library.follows) { library.follows.mapTo(hashSetOf()) { it.siteId to it.roomId } }
+    val followed = remember(library.follows) {
+        library.follows.flatMap { listOf(it.siteId to it.roomId, it.siteId to it.playbackRoomId) }.toHashSet()
+    }
     var deleteItem by remember { mutableStateOf<HistoryEntity?>(null) }
     val listState = rememberQuickAccessListState(viewModel, "history")
     ResetQuickAccessScrollOnFilterChange(listState, filters)

@@ -17,6 +17,14 @@ class AccountRepository @Inject constructor(
     override suspend fun cookieFor(account: LiveSiteAccount): String = when (account) {
         LiveSiteAccount.BILIBILI -> bilibiliCookie.first()
         LiveSiteAccount.DOUYIN -> douyinCookie.first()
+        LiveSiteAccount.DOUYU -> douyuCookie.first()
+    }
+
+    override suspend fun replaceCookieIfUnchanged(
+        account: LiveSiteAccount, expected: String, replacement: String
+    ): Boolean = when (account) {
+        LiveSiteAccount.DOUYU -> sensitiveCredentialStore.replaceDouyuCookieIfUnchanged(expected, replacement)
+        else -> false
     }
     // BiliBili
     val bilibiliCookie: Flow<String> = sensitiveCredentialStore.bilibiliCookie
@@ -28,6 +36,10 @@ class AccountRepository @Inject constructor(
     suspend fun setDouyinCookie(cookie: String) = sensitiveCredentialStore.setDouyinCookie(cookie)
     val isLoggedInDouyin: Flow<Boolean> = douyinCookie.map { it.isNotEmpty() }
 
+    val douyuCookie: Flow<String> = sensitiveCredentialStore.douyuCookie
+    suspend fun setDouyuCookie(cookie: String) = sensitiveCredentialStore.setDouyuCookie(cookie)
+    suspend fun logoutDouyu() = setDouyuCookie("")
+
     /**
      * Every stored account credential, keyed by the capability a site declares it consumes.
      *
@@ -37,12 +49,14 @@ class AccountRepository @Inject constructor(
      */
     val liveSiteAccountCookies: Flow<Map<LiveSiteAccount, String>> = combine(
         bilibiliCookie,
-        douyinCookie
-    ) { bilibili, douyin ->
+        douyinCookie,
+        douyuCookie
+    ) { bilibili, douyin, douyu ->
         LiveSiteAccount.entries.associateWith { account ->
             when (account) {
                 LiveSiteAccount.BILIBILI -> bilibili
                 LiveSiteAccount.DOUYIN -> douyin
+                LiveSiteAccount.DOUYU -> douyu
             }
         }
     }

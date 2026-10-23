@@ -1,9 +1,12 @@
 package com.mylive.app.ui.screen.sync
 
 import okhttp3.Credentials
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.Dispatcher
+import okhttp3.mockwebserver.RecordedRequest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
@@ -12,6 +15,50 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 class WebDavBackupUploadTest {
+
+    @Test
+    fun nutstoreRootBackupCreatesTheApplicationFolderBeforeRetryingUpload() {
+        val server = MockWebServer()
+        var folderCreated = false
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                val code = when (request.method to request.path) {
+                    "PUT" to "/dav/mylive_profile_backup.json" -> 403
+                    "MKCOL" to "/dav/" -> 405
+                    "PUT" to "/dav/MyLive/mylive_profile_backup.json" -> if (folderCreated) 201 else 403
+                    "MKCOL" to "/dav/MyLive/" -> {
+                        folderCreated = true
+                        201
+                    }
+                    else -> 404
+                }
+                return MockResponse().setResponseCode(code)
+            }
+        }
+        server.start()
+        try {
+            val resolvedPath = buildWebDavBackupUrl("https://dav.jianguoyun.com/dav/")
+                .toHttpUrl().encodedPath
+            uploadWebDavBackup(
+                OkHttpClient(), server.url(resolvedPath).toString(), "alice", "app-password", "{}"
+            )
+
+            val firstPut = server.takeRequest(1, TimeUnit.SECONDS)!!
+            val create = server.takeRequest(1, TimeUnit.SECONDS)!!
+            val retry = server.takeRequest(1, TimeUnit.SECONDS)!!
+            assertEquals("/dav/MyLive/mylive_profile_backup.json", firstPut.path)
+            assertEquals("MKCOL", create.method)
+            assertEquals("/dav/MyLive/", create.path)
+            assertEquals("PUT", retry.method)
+            assertEquals(firstPut.path, retry.path)
+            listOf(firstPut, create, retry).forEach {
+                assertEquals(Credentials.basic("alice", "app-password"), it.getHeader("Authorization"))
+            }
+            assertNull(server.takeRequest(100, TimeUnit.MILLISECONDS))
+        } finally {
+            server.shutdown()
+        }
+    }
 
     @Test
     fun uploadSendsSinglePutWhenServerAcceptsBackup() {

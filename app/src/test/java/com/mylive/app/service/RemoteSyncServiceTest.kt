@@ -5,6 +5,8 @@ import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.Dispatcher
+import okhttp3.mockwebserver.RecordedRequest
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -15,6 +17,7 @@ import org.robolectric.annotation.Config
 import org.robolectric.RobolectricTestRunner
 import java.io.File
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.CopyOnWriteArrayList
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -42,34 +45,40 @@ class RemoteSyncServiceTest {
     }
 
     @Test
-    fun probeUsesProtocolPingPongWithoutTakingOverTheRoomConnection() = runBlocking {
+    fun probeChecksTheDefaultBusinessRouteWithPingOnly() = runBlocking {
         val server = MockWebServer()
-        server.enqueue(
-            MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
-                override fun onMessage(webSocket: WebSocket, text: String) {
-                    val request = JSONObject(text)
-                    if (request.optString("type") == "ping") {
-                        webSocket.send(
-                            JSONObject().apply {
-                                put("type", "pong")
-                                put("requestId", request.optString("requestId"))
-                            }.toString()
-                        )
+        val messageTypes = CopyOnWriteArrayList<String>()
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                if (request.path != "/sync/create") return MockResponse().setResponseCode(404)
+                return MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
+                    override fun onMessage(webSocket: WebSocket, text: String) {
+                        val request = JSONObject(text)
+                        messageTypes += request.optString("type")
+                        if (request.optString("type") == "ping") {
+                            webSocket.send(
+                                JSONObject().apply {
+                                    put("type", "pong")
+                                    put("requestId", request.optString("requestId"))
+                                }.toString()
+                            )
+                        }
                     }
-                }
 
-                override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
-                    webSocket.close(code, reason)
-                }
-            })
-        )
+                    override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                        webSocket.close(code, reason)
+                    }
+                })
+            }
+        }
         server.start()
         val service = RemoteSyncService()
 
         try {
             val baseUrl = server.url("/").toString().trimEnd('/').replace("http://", "ws://")
+            service.defaultSyncServerUrl = baseUrl
             val result = service.probeServer(
-                configuredUrl = baseUrl,
+                configuredUrl = "",
                 configuredProxyUrl = RemoteSyncService.K_DIRECT_PROXY_VALUE,
                 timeoutMillis = 2_000L
             )
@@ -77,7 +86,75 @@ class RemoteSyncServiceTest {
             assertTrue(result.isReachable)
             assertTrue((result.latencyMillis ?: -1L) >= 0L)
             assertEquals(RemoteSyncConnectionState.DISCONNECTED, service.connectionState.value)
-            assertEquals("/sync", server.takeRequest(2, TimeUnit.SECONDS)?.path)
+            assertEquals("/sync/create", server.takeRequest(2, TimeUnit.SECONDS)?.path)
+            assertEquals(listOf("ping"), messageTypes.toList())
+            assertEquals("", service.currentRoomId)
+        } finally {
+            service.disconnect()
+            server.shutdown()
+        }
+    }
+
+    @Test
+    fun probeAndRoomCreationUseTheSameCustomBasePath() = runBlocking {
+        val server = MockWebServer()
+        server.enqueue(MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
+            override fun onMessage(webSocket: WebSocket, text: String) {
+                val request = JSONObject(text)
+                webSocket.send(JSONObject().put("type", "pong").put("requestId", request.optString("requestId")).toString())
+            }
+            override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                webSocket.close(code, reason)
+            }
+        }))
+        enqueueCreateRoomWs(server, "BASE01")
+        server.start()
+        val service = RemoteSyncService()
+        try {
+            val baseUrl = "  " + server.url("/relay/").toString().replace("http://", "ws://") + "  "
+            assertTrue(service.probeServer(baseUrl, RemoteSyncService.K_DIRECT_PROXY_VALUE, 2_000L).isReachable)
+            assertTrue(service.createRoom(baseUrl, RemoteSyncService.K_DIRECT_PROXY_VALUE, JSONObject()).isSuccess)
+            assertEquals("/relay/sync/create", server.takeRequest(2, TimeUnit.SECONDS)?.path)
+            assertEquals("/relay/sync/create", server.takeRequest(2, TimeUnit.SECONDS)?.path)
+        } finally {
+            service.disconnect()
+            server.shutdown()
+        }
+    }
+
+    @Test
+    fun healthProbeKeepsAnExistingRoomConnectedAndUsable() = runBlocking {
+        val server = MockWebServer()
+        val messages = CopyOnWriteArrayList<String>()
+        fun listener() = object : WebSocketListener() {
+            override fun onMessage(webSocket: WebSocket, text: String) {
+                val request = JSONObject(text)
+                val type = request.optString("type")
+                messages += type
+                val reply = JSONObject().put("requestId", request.optString("requestId"))
+                when (type) {
+                    "createRoom" -> reply.put("type", "roomCreated").put("roomId", "KEEP01")
+                    "ping" -> reply.put("type", "pong")
+                    "sendFavorite" -> reply.put("type", "sendFavoriteResp").put("status", true)
+                }
+                webSocket.send(reply.toString())
+            }
+            override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                webSocket.close(code, reason)
+            }
+        }
+        server.enqueue(MockResponse().withWebSocketUpgrade(listener()))
+        server.enqueue(MockResponse().withWebSocketUpgrade(listener()))
+        server.start()
+        val service = RemoteSyncService()
+        try {
+            val url = server.url("/").toString().replace("http://", "ws://")
+            assertTrue(service.createRoom(url, RemoteSyncService.K_DIRECT_PROXY_VALUE, JSONObject()).isSuccess)
+            assertTrue(service.probeServer(url, RemoteSyncService.K_DIRECT_PROXY_VALUE, 2_000L).isReachable)
+            assertEquals(RemoteSyncConnectionState.CONNECTED, service.connectionState.value)
+            assertEquals("KEEP01", service.currentRoomId)
+            assertTrue(service.sendContent("SendFavorite", false, "{}").isSuccess)
+            assertEquals(listOf("createRoom", "ping", "sendFavorite"), messages.toList())
         } finally {
             service.disconnect()
             server.shutdown()

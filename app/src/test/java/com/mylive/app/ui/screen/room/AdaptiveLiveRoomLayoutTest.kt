@@ -41,7 +41,6 @@ class AdaptiveLiveRoomLayoutTest {
                         }
                         Spacer(Modifier.height(56.dp))
                     },
-                    details = {},
                     chat = { Box(it.fillMaxWidth().testTag("chat_area")) }
                 )
             }

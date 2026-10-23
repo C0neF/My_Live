@@ -3,9 +3,17 @@ package com.mylive.app.core.site.douyin
 import com.mylive.app.core.common.HttpClient
 import com.mylive.app.core.common.CoreError
 import com.mylive.app.core.script.JsEngine
+import com.mylive.app.core.site.LiveSite
+import com.mylive.app.data.local.entity.FollowUserEntity
+import com.mylive.app.data.repository.FollowRepository
+import com.mylive.app.data.repository.SettingsRepository
+import com.mylive.app.service.FollowStatusRefreshCoordinator
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
+import io.mockk.every
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
 import org.json.JSONObject
@@ -13,6 +21,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertThrows
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -142,5 +151,182 @@ class DouyinFollowPresenceTest {
 
         assertEquals(444, statusCode)
         coVerify(exactly = 1) { httpClient.getJson(any(), any(), any()) }
+    }
+
+    @Test
+    fun endedSessionLooksUpTheOwnersCurrentRoomInsteadOfDeclaringTheAnchorOffline() = runBlocking {
+        val httpClient = mockk<HttpClient>()
+        coEvery { httpClient.getJson(any(), any(), any()) } returnsMany listOf(
+            JSONObject("""{"data":{"room":{"status":4,"owner":{"web_rid":"416144012050"}}}}"""),
+            JSONObject("""{"data":{"data":[{"status":2,"id_str":"new-session"}]}}""")
+        )
+
+        val presence = createSite(httpClient).getFollowPresence("7376429659866598196")
+
+        assertTrue(presence.isLive)
+        coVerify(exactly = 2) { httpClient.getJson(any(), any(), any()) }
+        coVerify(exactly = 1) {
+            httpClient.getJson(match { it.contains("web_rid=416144012050") }, any(), any())
+        }
+        coVerify(exactly = 0) { httpClient.head(any(), any(), any()) }
+    }
+
+    @Test
+    fun endedSessionOnlyReportsOfflineAfterCheckingTheOwnersCurrentRoom() = runBlocking {
+        val httpClient = mockk<HttpClient>()
+        coEvery { httpClient.getJson(any(), any(), any()) } returnsMany listOf(
+            JSONObject("""{"data":{"room":{"status":4,"owner":{"web_rid":"416144012050"}}}}"""),
+            JSONObject("""{"data":{"data":[{"status":4}]}}""")
+        )
+
+        assertFalse(createSite(httpClient).getFollowPresence("7376429659866598196").isLive)
+        coVerify(exactly = 2) { httpClient.getJson(any(), any(), any()) }
+        coVerify(exactly = 1) {
+            httpClient.getJson(match { it.contains("web_rid=416144012050") }, any(), any())
+        }
+    }
+
+    @Test
+    fun liveSessionDoesNotRequireAnotherLookup() = runBlocking {
+        val httpClient = mockk<HttpClient>()
+        coEvery { httpClient.getJson(any(), any(), any()) } returns
+            JSONObject("""{"data":{"room":{"status":2,"owner":{"web_rid":"416144012050"}}}}""")
+
+        assertTrue(createSite(httpClient).getFollowPresence("7376429659866598196").isLive)
+        coVerify(exactly = 1) { httpClient.getJson(any(), any(), any()) }
+    }
+
+    @Test
+    fun unknownSessionStatusCanStillResolveTheOwnersCurrentRoom() = runBlocking {
+        val httpClient = mockk<HttpClient>()
+        coEvery { httpClient.getJson(any(), any(), any()) } returnsMany listOf(
+            JSONObject("""{"data":{"room":{"status":0,"owner":{"web_rid":"416144012050"}}}}"""),
+            JSONObject("""{"data":{"data":[{"status":2}]}}""")
+        )
+
+        assertTrue(createSite(httpClient).getFollowPresence("7376429659866598196").isLive)
+        coVerify(exactly = 2) { httpClient.getJson(any(), any(), any()) }
+    }
+
+    @Test
+    fun endedSessionWithNoUsableOwnerDoesNotProveTheAnchorIsOffline() {
+        val httpClient = mockk<HttpClient>()
+        coEvery { httpClient.getJson(any(), any(), any()) } returnsMany listOf(
+            JSONObject("""{"data":{"room":{"status":4}}}"""),
+            JSONObject("""{"data":{"data":[]}}""")
+        )
+
+        assertThrows(CoreError::class.java) {
+            runBlocking { createSite(httpClient).getFollowPresence("7376429659866598196") }
+        }
+        coVerify(exactly = 2) { httpClient.getJson(any(), any(), any()) }
+    }
+
+    @Test
+    fun ownersCurrentRoomRateLimitStopsAfterTwoRequests() {
+        val httpClient = mockk<HttpClient>()
+        coEvery { httpClient.getJson(any(), any(), any()) } answers {
+            if (firstArg<String>().contains("/reflow/info/")) {
+                JSONObject("""{"data":{"room":{"status":4,"owner":{"web_rid":"416144012050"}}}}""")
+            } else {
+                throw CoreError("risk control", statusCode = 444)
+            }
+        }
+
+        val error = assertThrows(CoreError::class.java) {
+            runBlocking { createSite(httpClient).getFollowPresence("7376429659866598196") }
+        }
+        assertEquals(444, error.statusCode)
+        coVerify(exactly = 2) { httpClient.getJson(any(), any(), any()) }
+    }
+
+    @Test
+    fun resolvedNewSessionUpdatesTheExistingFollowToLiveWithoutChangingItsIdentity() = runBlocking {
+        val httpClient = mockk<HttpClient>()
+        coEvery { httpClient.getJson(any(), any(), any()) } returnsMany listOf(
+            JSONObject("""{"data":{"room":{"status":4,"owner":{"web_rid":"416144012050"}}}}"""),
+            JSONObject("""{"data":{"data":[{"status":2}]}}""")
+        )
+        val follow = FollowUserEntity(
+            "douyin_7376429659866598196", "7376429659866598196", "douyin", "anchor", "", 0L,
+            tag = "favorites", isSpecialFollow = true, liveStatus = 2
+        )
+        val repository = mockk<FollowRepository>()
+        every { repository.getAllFollows() } returns flowOf(listOf(follow))
+        coEvery { repository.updateLiveStatuses(any()) } returns Unit
+        val settings = mockk<SettingsRepository>()
+        every { settings.updateFollowThreadCount } returns flowOf(1)
+
+        val transitions = FollowStatusRefreshCoordinator(
+            repository, settings, setOf<LiveSite>(createSite(httpClient))
+        ).refreshAll()
+
+        assertTrue(transitions.single().becameLive)
+        coVerify(exactly = 1) {
+            repository.updateLiveStatuses(match { users ->
+                val updated = users.single()
+                updated.id == follow.id && updated.roomId == follow.roomId &&
+                    updated.tag == follow.tag && updated.isSpecialFollow && updated.liveStatus == 1
+            })
+        }
+    }
+
+    @Test
+    fun failedCurrentRoomLookupDoesNotOverwriteALiveFollowWithTheOldSessionsOfflineStatus() = runBlocking {
+        val httpClient = mockk<HttpClient>()
+        coEvery { httpClient.getJson(any(), any(), any()) } answers {
+            if (firstArg<String>().contains("/reflow/info/")) {
+                JSONObject("""{"data":{"room":{"status":4,"owner":{"web_rid":"416144012050"}}}}""")
+            } else {
+                throw CoreError("risk control", statusCode = 444)
+            }
+        }
+        val follow = FollowUserEntity(
+            "douyin_7376429659866598196", "7376429659866598196", "douyin", "anchor", "", 0L,
+            liveStatus = 1
+        )
+        val repository = mockk<FollowRepository>()
+        every { repository.getAllFollows() } returns flowOf(listOf(follow))
+        coEvery { repository.updateLiveStatuses(any()) } returns Unit
+        val settings = mockk<SettingsRepository>()
+        every { settings.updateFollowThreadCount } returns flowOf(1)
+
+        val transitions = FollowStatusRefreshCoordinator(
+            repository, settings, setOf<LiveSite>(createSite(httpClient))
+        ).refreshAll()
+
+        assertTrue(transitions.isEmpty())
+        coVerify(exactly = 1) { repository.updateLiveStatuses(emptyList()) }
+    }
+
+    @Test
+    fun cancellationDuringTheCurrentRoomLookupDoesNotStartAnotherRequest() {
+        val httpClient = mockk<HttpClient>()
+        coEvery { httpClient.getJson(any(), any(), any()) } answers {
+            if (firstArg<String>().contains("/reflow/info/")) {
+                JSONObject("""{"data":{"room":{"status":4,"owner":{"web_rid":"416144012050"}}}}""")
+            } else {
+                throw CancellationException("cancelled")
+            }
+        }
+
+        assertThrows(CancellationException::class.java) {
+            runBlocking { createSite(httpClient).getFollowPresence("7376429659866598196") }
+        }
+        coVerify(exactly = 2) { httpClient.getJson(any(), any(), any()) }
+    }
+
+    @Test
+    fun reflowBusinessErrorCannotBeReportedAsLive() {
+        val httpClient = mockk<HttpClient>()
+        coEvery { httpClient.getJson(any(), any(), any()) } returnsMany listOf(
+            JSONObject("""{"status_code":2483,"data":{"room":{"status":2}}}"""),
+            JSONObject("""{"status_code":2483,"data":{"data":[]}}""")
+        )
+
+        assertThrows(CoreError::class.java) {
+            runBlocking { createSite(httpClient).getFollowPresence("7376429659866598196") }
+        }
+        coVerify(exactly = 2) { httpClient.getJson(any(), any(), any()) }
     }
 }

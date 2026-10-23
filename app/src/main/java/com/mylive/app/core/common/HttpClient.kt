@@ -64,6 +64,13 @@ class HttpClient @Inject constructor(
         return executeJsonRequest(request)
     }
 
+    /** Caller owns the response body; used when authentication returns Set-Cookie headers. */
+    suspend fun getResponse(
+        url: String,
+        queryParameters: Map<String, String>? = null,
+        header: Map<String, String>? = null
+    ): Response = executeRequest(buildGetRequest(url, queryParameters, header)) { it }
+
     /**
      * POST request returning the response body parsed as JSON.
      *

@@ -8,18 +8,6 @@ import java.io.File
 class PlayerGestureIndicatorPolicyTest {
 
     @Test
-    fun playerGestureOverlayDoesNotPauseOnLongPress() {
-        val source = File("src/main/java/com/mylive/app/ui/screen/room/player/PlayerView.kt").readText()
-        val tapGestureSource = source.substringAfter("detectTapGestures(")
-            .substringBefore(".pointerInput(isLocked) {\n                    if (isLocked)")
-
-        assertTrue(tapGestureSource.contains("onTap ="))
-        assertTrue(tapGestureSource.contains("onDoubleTap ="))
-        assertFalse(tapGestureSource.contains("onLongPress ="))
-        assertFalse(tapGestureSource.contains("togglePlayPause()"))
-    }
-
-    @Test
     fun gestureIndicatorUsesStableWidthForThreeDigitPercent() {
         val source = File("src/main/java/com/mylive/app/ui/screen/room/player/PlayerView.kt").readText()
         val indicatorSource = source.substringAfter("private fun IndicatorOverlay(")

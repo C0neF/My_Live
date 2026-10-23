@@ -1,5 +1,7 @@
 package com.mylive.app.ui.screen.room.player
 
+import com.mylive.app.core.model.DanmakuSettingsPolicy
+
 /**
  * Single object for surface danmaku presentation knobs.
  * Shrinks the wide PlayerView parameter surface without changing runtime behavior.
@@ -25,15 +27,25 @@ data class DanmakuConfig(
     val renderEmoji: Boolean = true
 )
 
+internal fun DanmakuConfig.normalized(): DanmakuConfig = copy(
+    size = DanmakuSettingsPolicy.sizeMultiplier(size),
+    speed = DanmakuSettingsPolicy.speedMultiplier(speed),
+    area = DanmakuSettingsPolicy.area(area),
+    opacity = DanmakuSettingsPolicy.opacity(opacity),
+    fontWeight = DanmakuSettingsPolicy.fontWeight(fontWeight),
+    strokeWidth = DanmakuSettingsPolicy.strokeWidth(strokeWidth)
+)
+
 internal fun applyDanmakuConfig(controller: DanmakuController, config: DanmakuConfig) = controller.updateConfiguration {
-    controller.danmuSize = config.size.toFloat()
-    controller.danmuSpeed = config.speed.toFloat()
-    controller.danmuArea = config.area.toFloat()
+    val settings = config.normalized()
+    controller.danmuSize = (settings.size * DanmakuSettingsPolicy.BASE_FONT_SIZE).toFloat()
+    controller.danmuSpeed = settings.speed.toFloat()
+    controller.danmuArea = settings.area.toFloat()
     controller.danmuLineCount = config.lineCount
     controller.danmuDelayMs = config.delayMs
-    controller.danmuOpacity = config.opacity.toFloat()
-    controller.danmuFontWeight = config.fontWeight
-    controller.danmuStrokeWidth = config.strokeWidth.toFloat()
+    controller.danmuOpacity = settings.opacity.toFloat()
+    controller.danmuFontWeight = settings.fontWeight
+    controller.danmuStrokeWidth = settings.strokeWidth.toFloat()
     controller.danmuTopMargin = config.topMargin.toFloat()
     controller.danmuBottomMargin = config.bottomMargin.toFloat()
     controller.danmuHideScroll = config.hideScroll

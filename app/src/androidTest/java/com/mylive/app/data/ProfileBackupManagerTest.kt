@@ -52,7 +52,8 @@ class ProfileBackupManagerTest {
             settingsDataStore = settingsDataStore,
             followRepository = followRepository,
             historyRepository = historyRepository,
-            shieldRepository = shieldRepository
+            shieldRepository = shieldRepository,
+            database = db
         )
     }
 

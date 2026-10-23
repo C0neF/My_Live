@@ -28,11 +28,14 @@ class PlaybackForegroundService : Service() {
         private var activePlayerRef: java.lang.ref.WeakReference<Player>? = null
         private var instance: PlaybackForegroundService? = null
         private var pendingStart: (() -> Unit)? = null
+        private var notificationPause: (() -> Unit)? = null
 
         /** Rebind only the session currently handed off to this service. */
         fun replacePlayer(previous: Player, replacement: Player) {
             if (activePlayer !== previous) return
+            val pause = notificationPause
             activePlayer = replacement
+            notificationPause = pause
             instance?.let { service ->
                 service.bindPlayer(replacement)
                 service.updateNotification()
@@ -42,6 +45,7 @@ class PlaybackForegroundService : Service() {
         var activePlayer: Player?
             get() = activePlayerRef?.get()
             set(value) {
+                if (activePlayer !== value) notificationPause = null
                 activePlayerRef = value?.let { java.lang.ref.WeakReference(it) }
             }
         var roomTitle: String = ""
@@ -66,12 +70,24 @@ class PlaybackForegroundService : Service() {
             anchor: String,
             platform: String,
             onReady: (() -> Unit)? = null
+        ): Boolean = start(context, player, title, anchor, platform, onPause = null, onReady = onReady)
+
+        /** Session-owned handoff; the original overload remains available to raw Player callers. */
+        fun start(
+            context: Context,
+            player: Player,
+            title: String,
+            anchor: String,
+            platform: String,
+            onPause: (() -> Unit)?,
+            onReady: (() -> Unit)?
         ): Boolean {
             activePlayer = player
             roomTitle = title
             anchorName = anchor
             platformName = platform
             pendingStart = onReady
+            notificationPause = onPause
             val intent = Intent(context, PlaybackForegroundService::class.java)
             return try {
                 context.startForegroundService(intent)
@@ -88,8 +104,15 @@ class PlaybackForegroundService : Service() {
 
         fun stop(context: Context) {
             pendingStart = null
+            notificationPause = null
             val intent = Intent(context, PlaybackForegroundService::class.java)
             context.stopService(intent)
+        }
+
+        /** Outgoing room cleanup may arrive after another room has taken over the service. */
+        fun stop(context: Context, player: Player) {
+            if (activePlayer !== player) return
+            stop(context)
         }
     }
 
@@ -124,13 +147,11 @@ class PlaybackForegroundService : Service() {
         bindPlayer(activePlayer)
         when (intent?.action) {
             ACTION_PAUSE -> {
-                pendingStart = null
-                activePlayer?.pause()
+                pauseFromNotification()
             }
             ACTION_STOP -> {
                 stopping = true
-                pendingStart = null
-                activePlayer?.pause()
+                pauseFromNotification()
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
                 // Return before updateNotification(): falling through re-promoted the service to
@@ -148,6 +169,14 @@ class PlaybackForegroundService : Service() {
             ready?.invoke()
         }
         return START_NOT_STICKY
+    }
+
+    private fun pauseFromNotification() {
+        pendingStart = null
+        // Session.pause also invalidates older deferred starts, including a request whose
+        // player is already paused. Keep direct Player support for callers without a Session.
+        val pause = notificationPause
+        if (pause != null) pause() else activePlayer?.pause()
     }
 
     private fun updateNotification() {

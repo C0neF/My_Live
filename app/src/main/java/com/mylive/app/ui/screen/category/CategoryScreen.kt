@@ -312,7 +312,7 @@ private fun CategoryList(
     contentBottomPadding: Dp = 96.dp,
     onSubCategoryClick: (LiveSubCategory) -> Unit
 ) {
-    var selectedParentIndex by remember(categories) { mutableIntStateOf(0) }
+    var selectedParentIndex by rememberSaveable(categories) { mutableIntStateOf(0) }
 
     Row(modifier = Modifier.fillMaxSize()) {
         // Left: parent category tabs

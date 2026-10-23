@@ -131,7 +131,9 @@ internal fun rememberLivePlaybackHost(
         }
     }
 
-    var playbackSession by remember(binding) { mutableStateOf<LivePlaybackSession?>(null) }
+    var currentSession by remember(binding) { mutableStateOf<LivePlaybackSession?>(null) }
+    // Each effect must keep the Session from its own composition through callback and disposal.
+    val playbackSession = currentSession
     val playerController = playbackSession?.playerController
 
     LaunchedEffect(binding, settingsRepository) {
@@ -148,10 +150,11 @@ internal fun rememberLivePlaybackHost(
             session.pauseForHost(
                 content = currentContent.value,
                 preferences = startupPreferences,
-                inPictureInPicture = componentActivity?.isInPictureInPictureMode == true
+                inPictureInPicture = lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) &&
+                    componentActivity?.isInPictureInPictureMode == true
             )
         }
-        playbackSession = session
+        currentSession = session
         session.attach(binding)
     }
 
@@ -181,12 +184,27 @@ internal fun rememberLivePlaybackHost(
     ) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
+                Lifecycle.Event.ON_START -> {
+                    // Unlocking a still-visible PiP window need not resume its Activity.
+                    if (componentActivity?.isInPictureInPictureMode == true) {
+                        playbackSession?.onHostResume()
+                    }
+                }
                 Lifecycle.Event.ON_PAUSE -> {
                     playbackSession?.pauseForHost(
                         content = currentContent.value,
                         preferences = currentPreferences.value,
                         inPictureInPicture =
                             componentActivity?.isInPictureInPictureMode == true
+                    )
+                }
+                Lifecycle.Event.ON_STOP -> {
+                    // PiP entry already delivered ON_PAUSE. Once stopped, its video is no
+                    // longer visible even if Android still reports PiP mode (e.g. screen off).
+                    playbackSession?.pauseForHost(
+                        content = currentContent.value,
+                        preferences = currentPreferences.value,
+                        inPictureInPicture = false
                     )
                 }
                 Lifecycle.Event.ON_RESUME -> {
@@ -204,7 +222,8 @@ internal fun rememberLivePlaybackHost(
             playbackSession?.pauseForHost(
                 content = currentContent.value,
                 preferences = currentPreferences.value,
-                inPictureInPicture = componentActivity?.isInPictureInPictureMode == true
+                inPictureInPicture = lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) &&
+                    componentActivity?.isInPictureInPictureMode == true
             )
         }
         onDispose {
@@ -214,8 +233,8 @@ internal fun rememberLivePlaybackHost(
     }
 
     // Some OEMs deliver ON_PAUSE before the PiP mode flag changes.
-    LaunchedEffect(isInPictureInPicture, playbackSession) {
-        if (isInPictureInPicture) {
+    LaunchedEffect(isInPictureInPicture, playbackSession, lifecycleOwner) {
+        if (isInPictureInPicture && lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
             playbackSession?.onHostResume()
         }
     }

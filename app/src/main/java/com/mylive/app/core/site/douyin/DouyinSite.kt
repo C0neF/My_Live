@@ -24,6 +24,7 @@ import com.mylive.app.core.site.firstSiteImageUrl
 import com.mylive.app.core.site.LiveDanmakuSession
 import com.mylive.app.core.site.LiveSiteAccount
 import com.mylive.app.core.site.FollowPresence
+import com.mylive.app.core.site.optNullableStringValue
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeout
@@ -1201,13 +1202,27 @@ class DouyinSite @Inject constructor(
         if (targetId.isEmpty()) throw CoreError("抖音房间号不能为空")
 
         var lastError: Throwable? = null
+        var currentWebRid = targetId
         for (route in douyinStatusLookupOrder(targetId)) {
             try {
-                val isLive = when (route) {
-                    DouyinStatusLookupRoute.WebRid -> getLiveStatusByWebRid(targetId)
-                    DouyinStatusLookupRoute.RoomId -> getLiveStatusByRoomId(targetId)
+                val presence = when (route) {
+                    DouyinStatusLookupRoute.WebRid -> getFollowPresenceByWebRid(currentWebRid)
+                    DouyinStatusLookupRoute.RoomId -> {
+                        val room = getFollowStatusRoomByRoomId(targetId)
+                        val ownerWebRid = room.optJSONObject("owner")
+                            ?.optNullableStringValue("web_rid")?.trim()
+                            ?.takeIf { it.isNotEmpty() && it != "0" && it != "null" }
+                        if (parseDouyinLiveStatus(room) != true) {
+                            // A saved session ID can end while the same anchor starts another
+                            // stream. Only the owner's current web room can confirm offline.
+                            currentWebRid = ownerWebRid ?: targetId
+                            lastError = CoreError("抖音旧直播场次无法确认主播当前状态")
+                            continue
+                        }
+                        FollowPresence(isLive = true, canonicalRoomId = ownerWebRid)
+                    }
                 }
-                return FollowPresence(isLive = isLive)
+                return presence
             } catch (error: CancellationException) {
                 throw error
             } catch (error: CoreError) {
@@ -1220,29 +1235,33 @@ class DouyinSite @Inject constructor(
         throw lastError ?: CoreError("抖音直播状态未知，请稍后重试")
     }
 
-    private suspend fun getLiveStatusByWebRid(webRid: String): Boolean {
+    private suspend fun getFollowPresenceByWebRid(webRid: String): FollowPresence {
         throttleRoomDetailRequest()
         val data = getRoomDataByApi(webRid, allowEmptyRoomList = true)
         val rooms = data.optJSONArray("data")
             ?: throw CoreError("抖音直播状态数据为空")
         if (rooms.length() == 0) {
-            if (data.optJSONObject("user") != null) return false
+            if (data.optJSONObject("user") != null) return FollowPresence(false, canonicalRoomId = webRid)
             throw CoreError("抖音直播状态为空且缺少主播信息")
         }
         val room = rooms.optJSONObject(0)
             ?: throw CoreError("抖音直播状态数据为空")
-        return parseDouyinLiveStatus(room)
+        val isLive = parseDouyinLiveStatus(room)
             ?: throw CoreError("抖音直播状态字段缺失")
+        return FollowPresence(isLive, canonicalRoomId = webRid)
     }
 
-    private suspend fun getLiveStatusByRoomId(roomId: String): Boolean {
+    private suspend fun getFollowStatusRoomByRoomId(roomId: String): JSONObject {
         throttleRoomDetailRequest()
-        val room = getRoomDataByRoomId(roomId)
+        val result = getRoomDataByRoomId(roomId)
+        val apiStatusCode = result.optInt("status_code", 0)
+        if (apiStatusCode != 0) {
+            throw CoreError("抖音接口返回错误（status_code=$apiStatusCode）")
+        }
+        return result
             .optJSONObject("data")
             ?.optJSONObject("room")
             ?: throw CoreError("抖音直播状态数据为空")
-        return parseDouyinLiveStatus(room)
-            ?: throw CoreError("抖音直播状态字段缺失")
     }
 
     // ── Super chat (not supported on Douyin) ────────────────────────────────

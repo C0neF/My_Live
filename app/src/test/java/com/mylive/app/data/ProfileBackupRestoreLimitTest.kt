@@ -43,8 +43,8 @@ import org.robolectric.annotation.Config
 
 /**
  * Uses the production Manager, ViewModels, DataStore and Room, including the restore input reader.
- * One legal long history name keeps the fixture small in row count. Normal use reaches the same
- * aggregate limit by accumulating many history rows; neither path has a history retention limit.
+ * Accumulate individually readable rows to exercise the aggregate backup limit rather than
+ * SQLite CursorWindow's per-row limit, under both native and shadow SQLite.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -79,7 +79,9 @@ class ProfileBackupRestoreLimitTest : ReviewRoomFixture() {
     @Test
     fun oversizedBackupNeverPutsOrReplacesThePreviousWebDavBackup() = runBlocking {
         val previousBackup = manager.exportProfileJson()
-        history.addHistory(historyRow(oversizedUtf8Name()))
+        val originals = historyRows(oversizedUtf8Name())
+        history.addHistories(originals)
+        assertEquals(originals.toSet(), history.getAllHistory().first().toSet())
         val remoteBackup = AtomicReference(previousBackup)
         withBackupServer(remoteBackup) { server, client ->
             store.setValue(SettingsDataStore.kWebDAVLastUploadTime, "previous-upload")
@@ -90,6 +92,7 @@ class ProfileBackupRestoreLimitTest : ReviewRoomFixture() {
             assertEquals("An export that the restore reader rejects must not reach HTTP PUT", 0, server.requestCount)
             assertEquals(previousBackup, remoteBackup.get())
             assertTrue("The UI must report a failed backup", message is WebDavMessage.BackupFailed)
+            assertTrue((message as WebDavMessage.BackupFailed).reason.contains("导出内容超过可恢复的"))
             assertEquals("previous-upload", store.getFlow(SettingsDataStore.kWebDAVLastUploadTime, "").first())
             assertFalse(viewModel.uiState.value.isLoading)
         }
@@ -98,8 +101,9 @@ class ProfileBackupRestoreLimitTest : ReviewRoomFixture() {
     @Test
     fun restorableUtf8BackupReachesBothOutputsAndRoundTripsThroughTheBoundedReader() = runBlocking {
         // Exercise the successful side close to the byte limit, leaving room for JSON metadata.
-        val original = historyRow("界".repeat((MAX_IMPORTED_JSON_BYTES - 64 * 1024) / 3))
-        history.addHistory(original)
+        val originals = historyRows("界".repeat((MAX_IMPORTED_JSON_BYTES - 256 * 1024) / 3))
+        history.addHistories(originals)
+        assertEquals(originals.toSet(), history.getAllHistory().first().toSet())
         val localViewModel = own(ProfileBackupViewModel(manager))
         var localBackup: String? = null
 
@@ -108,10 +112,11 @@ class ProfileBackupRestoreLimitTest : ReviewRoomFixture() {
         assertEquals(ProfileMessage.ExportOk, localViewModel.uiState.value.message)
         val fromFile = requireNotNull(localBackup)
         assertTrue(fromFile.toByteArray(Charsets.UTF_8).size <= MAX_IMPORTED_JSON_BYTES)
+        assertTrue(fromFile.toByteArray(Charsets.UTF_8).size >= MAX_IMPORTED_JSON_BYTES - 512 * 1024)
         assertEquals(fromFile, fromFile.byteInputStream(Charsets.UTF_8).readUtf8TextWithinLimit())
         history.clearAllHistory()
         manager.importProfileJson(fromFile.byteInputStream(Charsets.UTF_8).readUtf8TextWithinLimit())
-        assertEquals(original, history.getAllHistory().first().single())
+        assertEquals(originals.toSet(), history.getAllHistory().first().toSet())
 
         val remoteBackup = AtomicReference("old")
         withBackupServer(remoteBackup) { server, client ->
@@ -126,13 +131,15 @@ class ProfileBackupRestoreLimitTest : ReviewRoomFixture() {
             val fromWebDav = remoteBackup.get().byteInputStream(Charsets.UTF_8).readUtf8TextWithinLimit()
             history.clearAllHistory()
             manager.importProfileJson(fromWebDav)
-            assertEquals(original, history.getAllHistory().first().single())
+            assertEquals(originals.toSet(), history.getAllHistory().first().toSet())
         }
     }
 
     private suspend fun assertRejectedBeforeFileCallback(historyName: String) {
         val previousBackup = manager.exportProfileJson()
-        history.addHistory(historyRow(historyName))
+        val originals = historyRows(historyName)
+        history.addHistories(originals)
+        assertEquals(originals.toSet(), history.getAllHistory().first().toSet())
         val viewModel = own(ProfileBackupViewModel(manager))
         var callbackCount = 0
         var savedFile = previousBackup
@@ -144,8 +151,10 @@ class ProfileBackupRestoreLimitTest : ReviewRoomFixture() {
         assertEquals("Unrestorable output must be rejected before a file can be overwritten", 0, callbackCount)
         assertEquals(previousBackup, savedFile)
         assertTrue(viewModel.uiState.value.message is ProfileMessage.ExportFailed)
+        assertTrue((viewModel.uiState.value.message as ProfileMessage.ExportFailed).reason
+            .contains("导出内容超过可恢复的"))
         assertFalse(viewModel.uiState.value.isExporting)
-        assertEquals(historyName, history.getAllHistory().first().single().userName)
+        assertEquals(originals.toSet(), history.getAllHistory().first().toSet())
     }
 
     private suspend fun newWebDavViewModel(client: OkHttpClient): WebDavViewModel {
@@ -201,7 +210,11 @@ class ProfileBackupRestoreLimitTest : ReviewRoomFixture() {
 
     private fun oversizedUtf8Name() = "界".repeat(MAX_IMPORTED_JSON_BYTES / 3 + 1)
 
-    private fun historyRow(name: String) = HistoryEntity(
-        id = "huya_history", roomId = "history", siteId = "huya", userName = name, face = "", updateTime = 123L
-    )
+    private fun historyRows(name: String): List<HistoryEntity> = name.chunked(4096).mapIndexed { index, part ->
+        HistoryEntity(id = "huya_history_$index", roomId = "history_$index", siteId = "huya",
+            userName = part, face = "", updateTime = 123L + index)
+    }.also { rows ->
+        assertTrue(rows.size > 1)
+        assertTrue(rows.all { it.userName.toByteArray(Charsets.UTF_8).size <= 12 * 1024 })
+    }
 }

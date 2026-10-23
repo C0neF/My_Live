@@ -12,12 +12,12 @@ import io.mockk.mockk
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.yield
 import kotlinx.coroutines.flow.flowOf
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -43,10 +43,12 @@ class FollowStatusRefreshCoordinatorTest {
 
         val first = async(Dispatchers.Default) { refresh() }
         entered.await()
-        val second = async(Dispatchers.Default) { refresh() }
-        yield()
+        // Register the waiter before releasing the owner. Yielding this runBlocking thread
+        // does not guarantee that an async task on Dispatchers.Default has even started.
+        val second = async(Dispatchers.Default, start = CoroutineStart.UNDISPATCHED) { refresh() }
 
         assertEquals(1, executions.get())
+        assertFalse(second.isCompleted)
         release.complete(Unit)
         assertEquals("updated", first.await())
         assertEquals("updated", second.await())

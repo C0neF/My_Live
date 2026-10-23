@@ -129,6 +129,10 @@ kotlin {
 
 // Jacoco code coverage configuration
 tasks.withType<Test>().configureEach {
+    testLogging {
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+    }
+
     providers.environmentVariable("MYLIVE_TEST_ENV_DIR").orNull
         ?.takeIf { it.isNotBlank() }
         ?.let { rootPath ->

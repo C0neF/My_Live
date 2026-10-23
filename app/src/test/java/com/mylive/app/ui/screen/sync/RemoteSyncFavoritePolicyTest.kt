@@ -46,11 +46,12 @@ class RemoteSyncFavoritePolicyTest {
         val shieldBlock = source.substringAfter("remoteSyncService.onShieldWordReceived")
             .substringBefore("remoteSyncService.onBiliAccountReceived")
 
-        assertTrue(historyBlock.contains("val existingHistoriesById = historyRepository.getAllHistory().first().associateBy { it.id }"))
-        assertTrue(historyBlock.contains("historyRepository.addHistories(histories)"))
+        assertTrue(historyBlock.contains("historyRepository.importFromJson(content, overlay)"))
+        assertFalse(historyBlock.contains("clearAllHistory()"))
         assertFalse(historyBlock.contains("historyRepository.getHistoryById("))
         assertFalse(historyBlock.contains("historyRepository.addHistory("))
-        assertTrue(shieldBlock.contains("shieldRepository.addShields(shields)"))
+        assertTrue(shieldBlock.contains("shieldRepository.importKeywords(keywords, overlay)"))
+        assertFalse(shieldBlock.contains("clearAllKeywords()"))
         assertFalse(shieldBlock.contains("shieldRepository.addShield("))
     }
 

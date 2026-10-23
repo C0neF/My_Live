@@ -7,20 +7,18 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.mylive.app.core.model.*
-import com.mylive.app.core.site.AccountAwareLiveSite
 import com.mylive.app.core.site.LiveDanmakuSession
 import com.mylive.app.core.site.LiveSite
-import com.mylive.app.core.site.LiveSiteAccount
-import com.mylive.app.data.repository.AccountRepository
 import com.mylive.app.data.repository.FollowRepository
 import com.mylive.app.data.repository.HistoryRepository
 import com.mylive.app.data.repository.SettingsRepository
 import com.mylive.app.data.repository.ShieldRepository
 import com.mylive.app.data.local.entity.FollowUserEntity
 import com.mylive.app.data.local.entity.HistoryEntity
-import com.mylive.app.ui.motion.AppMotion
 import com.mylive.app.ui.screen.room.player.LivePlaybackEngine
+import com.mylive.app.ui.screen.room.player.PlaybackRequestOrigin
 import com.mylive.app.ui.screen.room.player.LivePlaybackSessionBinding
+import com.mylive.app.ui.screen.room.player.isLiveQualitySupportedByHardware
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
@@ -31,14 +29,15 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import timber.log.Timber
 import javax.inject.Inject
 
@@ -47,6 +46,7 @@ import javax.inject.Inject
  * affected, so this is deliberately a panel-local notice rather than a room-level error.
  */
 internal const val DANMAKU_UNAVAILABLE_NOTICE = "弹幕连接失败，不影响观看，可尝试刷新"
+private const val CHAT_SNAPSHOT_PUBLICATION_INTERVAL_MILLIS = 16L
 
 data class LiveRoomUiState(
     val isLoading: Boolean = true,
@@ -118,7 +118,6 @@ class LiveRoomViewModel @Inject constructor(
     private val sites: Set<@JvmSuppressWildcards LiveSite>,
     private val followRepository: FollowRepository,
     private val historyRepository: HistoryRepository,
-    private val accountRepository: AccountRepository,
     private val shieldRepository: ShieldRepository,
     val settingsRepository: SettingsRepository,
     @param:ApplicationContext private val appContext: Context
@@ -178,11 +177,29 @@ class LiveRoomViewModel @Inject constructor(
      * single consumer in [init] applies them, eliminating the read-modify-write
      * race that would otherwise drop messages under high message rates.
      */
-    private val _messages = MutableSharedFlow<LiveMessage>(
+    private data class QueuedLiveMessage(
+        val route: Pair<String, String>,
+        val message: LiveMessage
+    )
+
+    private val _messages = MutableSharedFlow<QueuedLiveMessage>(
         extraBufferCapacity = 64,
         onBufferOverflow = BufferOverflow.DROP_OLDEST
     )
-    val newDanmakuMessages: SharedFlow<LiveMessage> = _messages.asSharedFlow()
+
+    // Validate in each consumer, after its queue is drained. Filtering only before emission
+    // still lets a suspended overlay collector deliver the previous connection after refresh.
+    @OptIn(kotlinx.coroutines.ExperimentalForInheritanceCoroutinesApi::class)
+    val newDanmakuMessages: SharedFlow<LiveMessage> = object : SharedFlow<LiveMessage> {
+        override val replayCache: List<LiveMessage>
+            get() = _messages.replayCache.filter { isActiveRoute(it.route) }.map { it.message }
+
+        override suspend fun collect(collector: FlowCollector<LiveMessage>): Nothing {
+            _messages.collect { queued ->
+                if (isActiveRoute(queued.route)) collector.emit(queued.message)
+            }
+        }
+    }
 
     /**
      * Non-fatal danmaku notice, shown inside the chat panel.
@@ -204,24 +221,38 @@ class LiveRoomViewModel @Inject constructor(
     private val cleanupScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val liveMessageShieldConfig = MutableStateFlow(LiveMessageShieldConfig())
 
-    private var currentSite: LiveSite? = null
+    @Volatile private var currentSite: LiveSite? = null
     private var currentDanmaku: LiveDanmakuSession? = null
-    private val accountAwareSites = sites
-        .filterIsInstance<AccountAwareLiveSite>()
-        .associateBy { it.accountKey }
-    private var activeRoute: Pair<String, String>? = null
+    @Volatile private var activeRoute: Pair<String, String>? = null
     private var loadRoomJob: Job? = null
     private var followStatusJob: Job? = null
+    private var danmakuStartJob: Job? = null
+    private var chatSnapshotPublishJob: Job? = null
+    private var playbackRequestJob: Job? = null
+    private val playbackRequestGate = LatestPlaybackRequestGate()
     /**
      * Playback port owned by [com.mylive.app.ui.screen.room.player.LivePlaybackSession].
      * ViewModel must not release the engine.
      */
     private var playbackEngine: LivePlaybackEngine? = null
+    private var roomOpenedAtMillis: Long? = null
 
-    // Track if playback was requested but player wasn't ready yet
-    private var pendingPlayRequest = false
+    private var pendingPlaybackOrigin = PlaybackRequestOrigin.UserSelection
+    private var pendingPlaybackPauseGeneration: Long? = null
+    private var playbackSetupError: String? = null
+
+    private fun showPlaybackError(message: String) {
+        playbackSetupError = message
+        playbackEngine?.showError(message)
+    }
 
     override fun bindPlaybackEngine(engine: LivePlaybackEngine) {
+        if (playbackEngine !== engine) {
+            roomOpenedAtMillis?.let(engine::beginRoomLoad)
+            // A route may start before its Session exists. Bind its pause boundary now,
+            // before detail/quality/URL acquisition or engine-ready callbacks can finish.
+            pendingPlaybackPauseGeneration = engine.playbackPauseGeneration
+        }
         playbackEngine = engine
         Timber.d("Playback engine bound")
     }
@@ -238,17 +269,16 @@ class LiveRoomViewModel @Inject constructor(
      * If qualities were already loaded but player wasn't ready, triggers playback now.
      */
     override fun onPlaybackEngineReady() {
+        playbackSetupError?.let { message ->
+            playbackEngine?.showError(message)
+            return
+        }
         val detail = _uiState.value.detail ?: return
         val qualities = _uiState.value.playQualities
         val route = activeRoute ?: return
         if (qualities.isNotEmpty() && playbackEngine != null) {
             Timber.d("Player ready, starting playback with ${qualities.size} qualities")
-            pendingPlayRequest = false
-            viewModelScope.launch {
-                playWithQuality(detail, qualities[_uiState.value.currentQualityIndex], route)
-            }
-        } else if (qualities.isNotEmpty()) {
-            pendingPlayRequest = true
+            requestPlayback(detail, qualities[_uiState.value.currentQualityIndex], route, pendingPlaybackOrigin)
         }
     }
 
@@ -259,32 +289,75 @@ class LiveRoomViewModel @Inject constructor(
         }
     }
 
-    fun openRoute(roomId: String, siteId: String, initialIsFollowing: Boolean? = null) {
+    fun openRoute(
+        roomId: String,
+        siteId: String,
+        initialIsFollowing: Boolean? = null,
+        preferredQuality: LivePlayQuality? = null,
+        origin: PlaybackRequestOrigin = PlaybackRequestOrigin.UserSelection
+    ) {
         val nextRoomId = roomId.trim()
         val nextSiteId = siteId.trim()
+        playbackSetupError = null
+        pendingPlaybackOrigin = origin
+        // Capture before any room-detail or quality suspension, including manual refresh.
+        pendingPlaybackPauseGeneration = playbackEngine?.playbackPauseGeneration
         if (nextRoomId.isEmpty()) {
+            activeRoute = null
+            loadRoomJob?.cancel()
             followStatusJob?.cancel()
+            cancelPlaybackRequest()
+            stopCurrentDanmaku()
             this.roomId = ""
             this.siteId = nextSiteId
+            currentSite = null
             playbackEngine?.stop()
             _uiState.value = LiveRoomUiState(isLoading = false, error = "直播间参数缺失")
-            playbackEngine?.showError("直播间参数缺失")
+            showPlaybackError("直播间参数缺失")
             return
         }
 
         val nextRoute = nextSiteId to nextRoomId
+        if (origin == PlaybackRequestOrigin.UserSelection || roomOpenedAtMillis == null) {
+            roomOpenedAtMillis = android.os.SystemClock.elapsedRealtime()
+            playbackEngine?.beginRoomLoad(checkNotNull(roomOpenedAtMillis))
+        }
         activeRoute = nextRoute
         this.roomId = nextRoomId
         this.siteId = nextSiteId
         _uiState.value = loadingLiveRoomUiState(initialIsFollowing)
-        pendingPlayRequest = false
         currentSite = null
-        playbackEngine?.stop()
-        _danmakuMessages.value = liveMessageBuffer.clear()
+        if (origin == PlaybackRequestOrigin.SourceRecovery) {
+            playbackEngine?.stopForSourceRecovery()
+        } else {
+            playbackEngine?.stop()
+        }
+        clearChatMessages()
         _danmakuNotice.value = null
         _superChats.value = emptyList()
         _onlineCount.value = 0
 
+        cancelPlaybackRequest()
+        stopCurrentDanmaku()
+
+        loadRoomJob?.cancel()
+        followStatusJob?.cancel()
+        if (nextSiteId.isNotEmpty()) {
+            observeCurrentRoomFollowStatus(nextSiteId, nextRoomId, nextRoute)
+        }
+        loadRoomJob = viewModelScope.launch {
+            loadRoomDetail(nextRoute, preferredQuality, origin)
+        }
+    }
+
+    private fun isActiveRoute(route: Pair<String, String>): Boolean {
+        // Each open/refresh owns a new token, including two attempts for the same room.
+        return activeRoute === route
+    }
+
+    private fun stopCurrentDanmaku() {
+        danmakuStartJob?.cancel()
+        danmakuStartJob = null
         currentDanmaku?.let { danmaku ->
             cleanupScope.launch {
                 try {
@@ -295,22 +368,6 @@ class LiveRoomViewModel @Inject constructor(
             }
         }
         currentDanmaku = null
-
-        loadRoomJob?.cancel()
-        followStatusJob?.cancel()
-        if (nextSiteId.isNotEmpty()) {
-            observeCurrentRoomFollowStatus(nextSiteId, nextRoomId, nextRoute)
-        }
-        loadRoomJob = viewModelScope.launch {
-            // Stagger API and database loading so the first route frames stay light.
-            kotlinx.coroutines.delay(AppMotion.LiveRoomDataStartupDelayMillis.toLong())
-            if (!isActiveRoute(nextRoute)) return@launch
-            loadRoomDetail(nextRoute)
-        }
-    }
-
-    private fun isActiveRoute(route: Pair<String, String>): Boolean {
-        return activeRoute == route
     }
 
     private fun startRuntimeCollectors() {
@@ -333,7 +390,9 @@ class LiveRoomViewModel @Inject constructor(
         }
 
         viewModelScope.launch {
-            _messages.collect { message ->
+            _messages.collect { queued ->
+                if (!isActiveRoute(queued.route)) return@collect
+                val message = queued.message
                 if (message.type == LiveMessageType.ONLINE) {
                     _onlineCount.value = message.onlineCount ?: 0
                 } else {
@@ -342,7 +401,8 @@ class LiveRoomViewModel @Inject constructor(
                             appendSuperChats(listOf(sc))
                         }
                     }
-                    _danmakuMessages.value = liveMessageBuffer.add(message)
+                    liveMessageBuffer.append(message)
+                    scheduleChatSnapshotPublication()
                 }
             }
         }
@@ -354,16 +414,30 @@ class LiveRoomViewModel @Inject constructor(
             }
         }
 
-        viewModelScope.launch {
-            accountRepository.liveSiteAccountCookies.collect(::applyAccountCookies)
+    }
+
+    private fun scheduleChatSnapshotPublication() {
+        if (chatSnapshotPublishJob?.isActive == true) return
+        chatSnapshotPublishJob = viewModelScope.launch {
+            kotlinx.coroutines.delay(CHAT_SNAPSHOT_PUBLICATION_INTERVAL_MILLIS)
+            _danmakuMessages.value = liveMessageBuffer.snapshot()
         }
     }
 
-    private suspend fun loadRoomDetail(route: Pair<String, String>) {
+    private fun clearChatMessages() {
+        chatSnapshotPublishJob?.cancel()
+        chatSnapshotPublishJob = null
+        _danmakuMessages.value = liveMessageBuffer.clear()
+    }
+
+    private suspend fun loadRoomDetail(
+        route: Pair<String, String>,
+        preferredQuality: LivePlayQuality?,
+        origin: PlaybackRequestOrigin
+    ) {
         if (!isActiveRoute(route)) return
         val routeSiteId = route.first
         val routeRoomId = route.second
-        applyAccountCookies()
         if (!isActiveRoute(route)) return
         _uiState.update { it.asLoadingStatePreservingFollow() }
         try {
@@ -411,12 +485,21 @@ class LiveRoomViewModel @Inject constructor(
                     isLoading = false,
                     error = "未找到直播间"
                 )
-                playbackEngine?.showError("未找到直播间")
+                showPlaybackError("未找到直播间")
                 return
             }
 
             currentSite = site
             val isFollowing = followRepository.isFollowing(site.id, routeRoomId)
+            if (isFollowing && site.id == "douyin") {
+                try {
+                    followRepository.rememberCanonicalRoomId(site.id, routeRoomId, detail.roomId)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    Timber.w(error, "Failed to remember canonical follow room")
+                }
+            }
 
             // Add to history
             try {
@@ -447,7 +530,7 @@ class LiveRoomViewModel @Inject constructor(
             refreshSuperChats(detail, route)
 
             // Load play qualities
-            loadPlayQualities(detail, route)
+            loadPlayQualities(detail, route, preferredQuality, origin)
 
             if (!isActiveRoute(route)) return
 
@@ -457,12 +540,12 @@ class LiveRoomViewModel @Inject constructor(
             // Notify chat when the room is playing a recorded loop
             if (detail.isRecord) {
                 _messages.tryEmit(
-                    LiveMessage(
+                    QueuedLiveMessage(route, LiveMessage(
                         type = LiveMessageType.CHAT,
                         userName = "LiveSysMessage",
                         message = "当前为轮播录像",
                         color = LiveMessageColor.WHITE
-                    )
+                    ))
                 )
             }
 
@@ -475,7 +558,7 @@ class LiveRoomViewModel @Inject constructor(
                 isLoading = false,
                 error = message
             )
-            playbackEngine?.showError(message)
+            showPlaybackError(message)
         }
     }
 
@@ -521,17 +604,12 @@ class LiveRoomViewModel @Inject constructor(
         }
     }
 
-    private suspend fun applyAccountCookies() {
-        applyAccountCookies(accountRepository.liveSiteAccountCookies.first())
-    }
-
-    private fun applyAccountCookies(cookiesByAccount: Map<LiveSiteAccount, String>) {
-        cookiesByAccount.forEach { (account, cookie) ->
-            accountAwareSites[account]?.updateAccountCookie(cookie)
-        }
-    }
-
-    private suspend fun loadPlayQualities(detail: LiveRoomDetail, route: Pair<String, String>) {
+    private suspend fun loadPlayQualities(
+        detail: LiveRoomDetail,
+        route: Pair<String, String>,
+        preferredQuality: LivePlayQuality?,
+        origin: PlaybackRequestOrigin
+    ) {
         if (!isActiveRoute(route)) return
         val site = currentSite ?: return
         try {
@@ -542,7 +620,20 @@ class LiveRoomViewModel @Inject constructor(
                 cellularQualityLevel = settingsRepository.qualityLevelCellular.first(),
                 isCellularNetwork = isCellularNetworkActive()
             )
-            val matchIndex = selectPreferredQualityIndex(qualities, preferredLevel)
+            val matchIndex = qualities.indexOfFirst {
+                preferredQuality != null &&
+                    (it.data == preferredQuality.data || it.quality == preferredQuality.quality)
+            }.takeIf { it >= 0 } ?: run {
+                val preferredIndex = selectPreferredQualityIndex(qualities, preferredLevel)
+                val preferredQualityData = qualities.getOrNull(preferredIndex)?.data
+                if (preferredQualityData is PlayQualityData.Douyu && settingsRepository.hardwareDecode.first()) {
+                    withContext(Dispatchers.Default) {
+                        selectHardwareSupportedQualityIndex(qualities, preferredIndex, ::isLiveQualitySupportedByHardware)
+                    }
+                } else {
+                    preferredIndex
+                }
+            }
             if (!isActiveRoute(route)) return
 
             _uiState.value = _uiState.value.copy(
@@ -550,22 +641,21 @@ class LiveRoomViewModel @Inject constructor(
                 currentQualityIndex = matchIndex
             )
             if (qualities.isEmpty()) {
-                playbackEngine?.showError("暂无可播放画质")
+                showPlaybackError("暂无可播放画质")
                 return
             }
             if (playbackEngine != null) {
                 // Player is ready, play immediately
-                playWithQuality(detail, qualities[matchIndex], route)
+                requestPlayback(detail, qualities[matchIndex], route, origin)
             } else {
                 // Player not ready yet, mark as pending
-                pendingPlayRequest = true
                 Timber.d("Qualities loaded but player not ready, marking as pending")
             }
         } catch (e: Throwable) {
             if (e is CancellationException) throw e
             if (!isActiveRoute(route)) return
             Timber.e(e, "Failed to load play qualities")
-            playbackEngine?.showError(e.message ?: "加载播放画质失败")
+            showPlaybackError(e.message ?: "加载播放画质失败")
         }
     }
 
@@ -573,13 +663,15 @@ class LiveRoomViewModel @Inject constructor(
         detail: LiveRoomDetail,
         quality: LivePlayQuality,
         route: Pair<String, String>,
-        resetSourceRefreshAttempt: Boolean = true
+        requestGeneration: Long,
+        pauseGeneration: Long?,
+        origin: PlaybackRequestOrigin = PlaybackRequestOrigin.UserSelection
     ) {
-        if (!isActiveRoute(route)) return
+        if (!isCurrentPlaybackRequest(route, requestGeneration)) return
         val site = currentSite ?: return
         try {
             val playUrl = site.getPlayUrls(detail, quality)
-            if (!isActiveRoute(route)) return
+            if (!isCurrentPlaybackRequest(route, requestGeneration)) return
             _uiState.update { state ->
                 val actualIndex = updatedQualityIndexForResolvedPlayback(
                     qualities = state.playQualities,
@@ -593,17 +685,52 @@ class LiveRoomViewModel @Inject constructor(
                     state.copy(currentQualityIndex = actualIndex)
                 }
             }
+            playbackSetupError = null
             playbackEngine?.play(
-                urls = playUrl.urls,
-                headers = playUrl.headers,
-                resetSourceRefreshAttempt = resetSourceRefreshAttempt
+                source = playUrl,
+                origin = origin,
+                pauseGeneration = pauseGeneration
             )
         } catch (e: Throwable) {
             if (e is CancellationException) throw e
-            if (!isActiveRoute(route)) return
+            if (!isCurrentPlaybackRequest(route, requestGeneration)) return
             Timber.e(e, "Failed to get play URLs")
-            playbackEngine?.showError(e.message ?: "获取播放地址失败")
+            showPlaybackError(e.message ?: "获取播放地址失败")
         }
+    }
+
+    private fun requestPlayback(
+        detail: LiveRoomDetail,
+        quality: LivePlayQuality,
+        route: Pair<String, String>,
+        origin: PlaybackRequestOrigin = PlaybackRequestOrigin.UserSelection
+    ) {
+        val requestGeneration = playbackRequestGate.begin()
+        val pauseGeneration = pendingPlaybackPauseGeneration
+        playbackRequestJob?.cancel()
+        playbackRequestJob = viewModelScope.launch {
+            playWithQuality(
+                detail = detail,
+                quality = quality,
+                route = route,
+                requestGeneration = requestGeneration,
+                pauseGeneration = pauseGeneration,
+                origin = origin
+            )
+        }
+    }
+
+    private fun cancelPlaybackRequest() {
+        playbackRequestGate.begin()
+        playbackRequestJob?.cancel()
+        playbackRequestJob = null
+    }
+
+    private fun isCurrentPlaybackRequest(
+        route: Pair<String, String>,
+        requestGeneration: Long
+    ): Boolean {
+        return isActiveRoute(route) && playbackRequestGate.isCurrent(requestGeneration)
     }
 
     fun switchQuality(index: Int) {
@@ -611,42 +738,32 @@ class LiveRoomViewModel @Inject constructor(
         val qualities = _uiState.value.playQualities
         if (index !in qualities.indices) return
         val route = activeRoute ?: return
+        pendingPlaybackOrigin = PlaybackRequestOrigin.UserSelection
+        pendingPlaybackPauseGeneration = playbackEngine?.playbackPauseGeneration
         _uiState.value = _uiState.value.copy(currentQualityIndex = index)
-        viewModelScope.launch {
-            playWithQuality(detail, qualities[index], route)
-        }
+        requestPlayback(detail, qualities[index], route)
     }
 
     fun refreshPlay() {
-        val detail = _uiState.value.detail ?: return
-        val qualities = _uiState.value.playQualities
-        val route = activeRoute ?: return
-        if (qualities.isNotEmpty()) {
-            val quality = qualities.getOrNull(_uiState.value.currentQualityIndex) ?: qualities[0]
-            viewModelScope.launch {
-                playWithQuality(detail, quality, route)
-            }
-        }
+        reloadPlaybackSource(PlaybackRequestOrigin.UserSelection)
     }
 
-    fun recoverPlaybackAfterSourceFailure() {
-        val detail = _uiState.value.detail
-        val qualities = _uiState.value.playQualities
-        val route = activeRoute
-        if (detail == null || route == null || qualities.isEmpty()) {
-            playbackEngine?.showError("播放失败，请刷新重试")
-            return
-        }
+    fun recoverPlaybackAfterSourceFailure(): Boolean {
+        return reloadPlaybackSource(PlaybackRequestOrigin.SourceRecovery)
+    }
 
-        val quality = qualities.getOrNull(_uiState.value.currentQualityIndex) ?: qualities[0]
-        viewModelScope.launch {
-            playWithQuality(
-                detail = detail,
-                quality = quality,
-                route = route,
-                resetSourceRefreshAttempt = false
-            )
-        }
+    /** URLs and quality objects can contain expiring platform credentials. Re-resolve both. */
+    private fun reloadPlaybackSource(origin: PlaybackRequestOrigin): Boolean {
+        val route = activeRoute ?: return false
+        val state = _uiState.value
+        openRoute(
+            roomId = route.second,
+            siteId = route.first,
+            initialIsFollowing = state.isFollowing.takeIf { state.isFollowStatusKnown },
+            preferredQuality = state.playQualities.getOrNull(state.currentQualityIndex),
+            origin = origin
+        )
+        return true
     }
 
     private fun startDanmaku(detail: LiveRoomDetail, route: Pair<String, String>) {
@@ -680,7 +797,7 @@ class LiveRoomViewModel @Inject constructor(
             if (shouldDropMessageForShield(message, route)) return@onMessage
             // Hand off to the serial consumer started in init. tryEmit never fails
             // because the flow is configured with extraBufferCapacity + DROP_OLDEST.
-            _messages.tryEmit(message)
+            _messages.tryEmit(QueuedLiveMessage(route, message))
         }
 
         danmaku.onClose = onClose@ { reason ->
@@ -698,7 +815,7 @@ class LiveRoomViewModel @Inject constructor(
             Timber.d("Danmaku connected")
         }
 
-        viewModelScope.launch {
+        danmakuStartJob = viewModelScope.launch {
             try {
                 if (!isActiveRoute(route)) return@launch
                 danmaku.start()
@@ -757,7 +874,8 @@ class LiveRoomViewModel @Inject constructor(
                             isSpecialFollow = false,
                             liveStatus = if (detail.status) 1 else 2,
                             liveStartTime = if (detail.status) System.currentTimeMillis() else null,
-                            showTime = if (detail.status) detail.showTime else null
+                            showTime = if (detail.status) detail.showTime else null,
+                            canonicalRoomId = detail.roomId.takeIf { site.id == "douyin" && it.isNotBlank() }
                         )
                     )
                 }
@@ -774,6 +892,7 @@ class LiveRoomViewModel @Inject constructor(
 
     override fun onCleared() {
         super.onCleared()
+        activeRoute = null
         // viewModelScope is already cancelled at this point; use the cleanup scope
         // so the suspend danmaku.stop() can complete.
         cleanupScope.launch {

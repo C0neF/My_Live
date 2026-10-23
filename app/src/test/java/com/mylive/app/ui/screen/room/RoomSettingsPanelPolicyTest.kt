@@ -19,24 +19,34 @@ class RoomSettingsPanelPolicyTest {
     fun roomSettingsUsesStyledSliderWrapper() {
         val source = File("src/main/java/com/mylive/app/ui/screen/room/LiveRoomScreen.kt").readText()
         val panelSource = source.substringAfter("fun RoomSettingsPanel(")
-            .substringBefore("private fun RoomSettingsSlider(")
+            .substringBefore("internal fun RoomSettingsSlider(")
 
-        assertTrue(source.contains("private fun RoomSettingsSlider("))
+        assertTrue(source.contains("internal fun RoomSettingsSlider("))
         assertTrue(panelSource.contains("RoomSettingsSlider("))
         assertFalse(panelSource.contains("\n                        Slider("))
         assertFalse(panelSource.contains("\n                            Slider("))
 
-        val sliderSource = source.substringAfter("private fun RoomSettingsSlider(")
+        val sliderSource = source.substringAfter("internal fun RoomSettingsSlider(")
         assertTrue(sliderSource.contains("Canvas("))
         assertTrue(sliderSource.contains("StrokeCap.Round"))
         assertFalse(sliderSource.contains("\n    Slider("))
     }
 
     @Test
+    fun roomSettingsSliderPersistsOnlyAfterDragFinishes() {
+        val source = File("src/main/java/com/mylive/app/ui/screen/room/LiveRoomScreen.kt").readText()
+        val sliderSource = source.substringAfter("internal fun RoomSettingsSlider(")
+
+        assertTrue(sliderSource.contains("onDragEnd = { commitPendingValue() }"))
+        assertTrue(sliderSource.contains("onDragCancel = { cancelPendingValue() }"))
+        assertFalse(sliderSource.contains("onDrag = { change, _ ->\n                        commitPosition(change.position.x)"))
+    }
+
+    @Test
     fun roomSettingsIncludesPlayerDanmakuControls() {
         val source = File("src/main/java/com/mylive/app/ui/screen/room/LiveRoomScreen.kt").readText()
         val panelSource = source.substringAfter("fun RoomSettingsPanel(")
-            .substringBefore("private fun RoomSettingsSlider(")
+            .substringBefore("internal fun RoomSettingsSlider(")
 
         assertTrue(panelSource.contains("播放器弹幕设置"))
         assertTrue(panelSource.contains("liveRoomPreferences: LiveRoomPreferences"))
@@ -62,7 +72,7 @@ class RoomSettingsPanelPolicyTest {
     fun roomSettingsIncludesShieldAndLiveBehaviorControlsWithoutPlayerSc() {
         val source = File("src/main/java/com/mylive/app/ui/screen/room/LiveRoomScreen.kt").readText()
         val panelSource = source.substringAfter("fun RoomSettingsPanel(")
-            .substringBefore("private fun RoomSettingsSlider(")
+            .substringBefore("internal fun RoomSettingsSlider(")
 
         assertTrue(panelSource.contains("val danmuShieldEnable = liveRoomPreferences.danmuShieldEnable"))
         assertTrue(panelSource.contains("val danmuKeywordShieldEnable = liveRoomPreferences.danmuKeywordShieldEnable"))
@@ -94,7 +104,7 @@ class RoomSettingsPanelPolicyTest {
     fun roomSettingsIncludesAdvancedDanmakuControlsAndShieldManagerEntry() {
         val source = File("src/main/java/com/mylive/app/ui/screen/room/LiveRoomScreen.kt").readText()
         val panelSource = source.substringAfter("fun RoomSettingsPanel(")
-            .substringBefore("private fun RoomSettingsSlider(")
+            .substringBefore("internal fun RoomSettingsSlider(")
 
         assertTrue(panelSource.contains("onOpenShieldSettings"))
         assertTrue(panelSource.contains("打开屏蔽管理"))
@@ -119,11 +129,11 @@ class RoomSettingsPanelPolicyTest {
     fun roomSettingsUsesCollapsibleSectionsToReduceSliderMisTouches() {
         val source = File("src/main/java/com/mylive/app/ui/screen/room/LiveRoomScreen.kt").readText()
         val panelSource = source.substringAfter("fun RoomSettingsPanel(")
-            .substringBefore("private fun RoomSettingsSlider(")
+            .substringBefore("internal fun RoomSettingsSlider(")
 
         assertTrue(source.contains("enum class RoomSettingsSectionKey"))
         assertTrue(source.contains("defaultExpandedRoomSettingsSections()"))
-        assertTrue(source.contains("private fun RoomSettingsCollapsibleSection("))
+        assertTrue(source.contains("private fun LazyListScope.RoomSettingsCollapsibleSection("))
         assertTrue(panelSource.contains("RoomSettingsCollapsibleSection("))
         assertTrue(panelSource.contains("RoomSettingsSectionKey.PLAYER_DANMAKU"))
         assertTrue(panelSource.contains("RoomSettingsSectionKey.LIVE_BEHAVIOR"))
@@ -142,17 +152,19 @@ class RoomSettingsPanelPolicyTest {
     }
 
     @Test
-    fun roomSettingsCollapsibleSectionsUseStateDrivenMotion() {
+    fun roomSettingsCollapsibleSectionsUseOneHeightAnimation() {
         val source = File("src/main/java/com/mylive/app/ui/screen/room/LiveRoomScreen.kt").readText()
-        val sectionSource = source.substringAfter("private fun RoomSettingsCollapsibleSection(")
+        val sectionSource = source.substringAfter("private fun LazyListScope.RoomSettingsCollapsibleSection(")
             .substringBefore("@Composable\nprivate fun RoomSettingsSwitchRow(")
 
-        assertTrue(source.contains("import androidx.compose.animation.animateContentSize"))
+        assertFalse(source.contains("import androidx.compose.animation.animateContentSize"))
         assertTrue(source.contains("import androidx.compose.animation.expandVertically"))
         assertTrue(source.contains("import androidx.compose.animation.shrinkVertically"))
-        assertTrue(sectionSource.contains(".animateContentSize("))
-        assertTrue(sectionSource.contains("enter = expandVertically("))
-        assertTrue(sectionSource.contains("exit = shrinkVertically("))
+        assertFalse(sectionSource.contains(".animateContentSize("))
+        assertTrue(sectionSource.contains("expandVertically("))
+        assertTrue(sectionSource.contains("shrinkVertically("))
+        assertTrue(sectionSource.contains("motionPolicy.reducedMotion"))
+        assertTrue(sectionSource.contains("motionPolicy.contentSpec()"))
         assertTrue(sectionSource.contains("animateFloatAsState("))
         assertTrue(sectionSource.contains("rotationZ = arrowRotation"))
     }

@@ -14,6 +14,9 @@ interface FollowUserTagDao {
     @Query("SELECT * FROM follow_user_tags")
     fun getAll(): Flow<List<FollowUserTagEntity>>
 
+    @Query("SELECT * FROM follow_user_tags WHERE id = :id")
+    suspend fun getById(id: String): FollowUserTagEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(tag: FollowUserTagEntity)
 

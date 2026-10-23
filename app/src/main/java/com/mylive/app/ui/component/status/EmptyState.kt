@@ -19,8 +19,8 @@ import com.mylive.app.ui.theme.Icons
 
 @Composable
 fun EmptyState(
-    message: String = "暂无数据",
     modifier: Modifier = Modifier,
+    message: String = "暂无数据",
     icon: ImageVector = Icons.Default.Inbox
 ) {
     Box(

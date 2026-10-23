@@ -38,7 +38,8 @@ data class LanSyncPeerInfo(
     val app: String,
     val appVersion: String?,
     val address: String?,
-    val port: Int
+    val port: Int,
+    val supportsFollowBundle: Boolean = false
 )
 
 data class LanSyncAcceptedJob(val jobUrl: String)
@@ -124,7 +125,8 @@ object LanSyncProtocol {
         deviceId: String? = null,
         name: String? = null,
         appVersion: String? = null,
-        address: String? = null
+        address: String? = null,
+        supportsFollowBundle: Boolean = false
     ): String {
         return JSONObject().apply {
             put("protocol", CURRENT_PROTOCOL)
@@ -137,6 +139,7 @@ object LanSyncProtocol {
                 put("name", name)
                 put("version", appVersion)
                 put("address", address)
+                put("follow_bundle", supportsFollowBundle)
             }
         }.toString()
     }
@@ -159,7 +162,8 @@ object LanSyncProtocol {
             app = payload.optString("app", "My Live"),
             appVersion = payload.optionalString("version"),
             address = payload.optionalString("address"),
-            port = payload.optInt("port", 0)
+            port = payload.optInt("port", 0),
+            supportsFollowBundle = paired && payload.optBoolean("follow_bundle", false)
         )
     }
 

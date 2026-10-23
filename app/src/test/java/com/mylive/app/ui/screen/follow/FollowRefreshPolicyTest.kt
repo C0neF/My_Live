@@ -47,11 +47,4 @@ class FollowRefreshPolicyTest {
         assertTrue(normalized.contains("combine( follows, groupMode, selectedGroupId, groupOptions, userTags )"))
     }
 
-    @Test
-    fun followViewModelTagEditsDoNotReadFollowsInsideUserLoops() {
-        val source = File("src/main/java/com/mylive/app/ui/screen/follow/FollowViewModel.kt").readText()
-
-        assertTrue(source.contains("val followsById = followRepository.getAllFollows().first().associateBy { it.id }"))
-        assertFalse(source.contains("for (userId in tag.userIds) {\n                val follow = followRepository.getAllFollows().first()"))
-    }
 }

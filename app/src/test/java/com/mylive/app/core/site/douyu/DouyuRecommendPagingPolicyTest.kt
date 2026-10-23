@@ -1,7 +1,6 @@
 package com.mylive.app.core.site.douyu
 
 import com.mylive.app.core.common.HttpClient
-import com.mylive.app.core.script.JsEngine
 import kotlinx.coroutines.runBlocking
 import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
@@ -14,7 +13,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import javax.inject.Provider
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -63,8 +61,9 @@ class DouyuRecommendPagingPolicyTest {
             .build()
         return DouyuSite(
             httpClient = HttpClient(okHttpClient),
-            jsEngineProvider = Provider<JsEngine> { error("not used") },
-            okHttpClient = okHttpClient
+            okHttpClient = okHttpClient,
+            accountSession = DouyuAccountSession(com.mylive.app.core.site.LiveSiteAccountStore { "" }, HttpClient(okHttpClient)),
+            playbackSigner = DouyuPlaybackSigner(HttpClient(okHttpClient))
         )
     }
 }

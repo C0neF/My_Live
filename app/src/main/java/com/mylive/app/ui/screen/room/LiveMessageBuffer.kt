@@ -10,26 +10,23 @@ data class DisplayLiveMessage(
 /**
  * Ring buffer for the chat panel.
  *
- * Snapshot lists are reused when unchanged so StateFlow subscribers can use
- * reference equality / structural equality without forcing a copy on every poll.
- * [add] still returns a fresh list when content changes (required for StateFlow).
+ * Appends stay allocation-light. [snapshot] copies only when the UI publication cadence asks for
+ * a new immutable list, so a burst does not copy the full history once per message.
  */
 internal class LiveMessageBuffer(private val capacity: Int) {
     private val messages = ArrayDeque<DisplayLiveMessage>(capacity.coerceAtLeast(0))
     private var nextId = 0L
     private var snapshot: List<DisplayLiveMessage> = emptyList()
 
-    fun add(message: LiveMessage): List<DisplayLiveMessage> {
+    fun append(message: LiveMessage) {
         if (capacity <= 0) {
             snapshot = emptyList()
-            return snapshot
+            return
         }
         messages.addLast(DisplayLiveMessage(nextId++, message))
         while (messages.size > capacity) {
             messages.removeFirst()
         }
-        snapshot = messages.toList()
-        return snapshot
     }
 
     fun clear(): List<DisplayLiveMessage> {
@@ -39,6 +36,15 @@ internal class LiveMessageBuffer(private val capacity: Int) {
         return snapshot
     }
 
-    /** Current snapshot without allocating when empty or when reusing last add/clear result. */
-    fun snapshot(): List<DisplayLiveMessage> = snapshot
+    /** Current immutable snapshot, copied only when content changed since the last publication. */
+    fun snapshot(): List<DisplayLiveMessage> {
+        if (snapshot.size == messages.size &&
+            snapshot.firstOrNull()?.id == messages.firstOrNull()?.id &&
+            snapshot.lastOrNull()?.id == messages.lastOrNull()?.id
+        ) {
+            return snapshot
+        }
+        snapshot = messages.toList()
+        return snapshot
+    }
 }

@@ -31,12 +31,14 @@ import com.mylive.app.ui.theme.Icons
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -50,16 +52,23 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mylive.app.R
 import com.mylive.app.core.common.readUtf8TextWithinLimit
 import com.mylive.app.data.local.entity.FollowUserEntity
+import com.mylive.app.data.local.entity.playbackRoomId
 import com.mylive.app.data.local.entity.FollowUserTagEntity
 import com.mylive.app.ui.component.BackToTopButton
 import com.mylive.app.ui.component.FollowUserItem
+import com.mylive.app.ui.component.FollowRefreshProgressLine
+import com.mylive.app.ui.component.followRefreshHint
+import com.mylive.app.ui.component.rememberFollowRefreshEntry
 import com.mylive.app.ui.component.backToTopButtonMetrics
 import com.mylive.app.ui.component.status.EmptyState
+import com.mylive.app.ui.motion.AppMotion
+import com.mylive.app.ui.motion.LocalAppMotionPolicy
 import com.mylive.app.ui.navigation.Navigator
 import com.mylive.app.ui.navigation.navigateToRoom
 import com.mylive.app.ui.screen.backToTopButtonVisible
 import com.mylive.app.ui.screen.isScrollableContentAtTop
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -81,6 +90,7 @@ fun FollowScreen(
     val userTags by viewModel.userTags.collectAsStateWithLifecycle()
 
     val updatingStatus by viewModel.updatingStatus.collectAsStateWithLifecycle()
+    val refreshProgress by viewModel.refreshProgress.collectAsStateWithLifecycle()
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
     val gridState = rememberLazyGridState()
@@ -88,7 +98,7 @@ fun FollowScreen(
     val inactiveListState = rememberLazyListState()
     val cardColumns = followCardColumns.coerceAtLeast(1)
     val useTabletTwoColumnLayout = followUseTabletTwoColumnLayout(cardColumns)
-    var selectedTabletPlatformId by remember { mutableStateOf<String?>(null) }
+    var selectedTabletPlatformId by rememberSaveable { mutableStateOf<String?>(null) }
     val tabletPlatformOptions = remember(allFollows) {
         followTabletPlatformOptions(allFollows)
     }
@@ -168,13 +178,6 @@ fun FollowScreen(
             }
                 .distinctUntilChanged()
                 .collect { isAtTop = it }
-        }
-    }
-
-    LaunchedEffect(useTabletTwoColumnLayout, selectedTabletPlatformId) {
-        if (useTabletTwoColumnLayout) {
-            liveListState.scrollToItem(0)
-            inactiveListState.scrollToItem(0)
         }
     }
 
@@ -289,7 +292,15 @@ fun FollowScreen(
             FollowTabletPlatformBar(
                 options = tabletPlatformOptions,
                 selectedSiteId = selectedTabletPlatformId,
-                onSelected = { selectedTabletPlatformId = it }
+                onSelected = { siteId ->
+                    if (selectedTabletPlatformId != siteId) {
+                        selectedTabletPlatformId = siteId
+                        scope.launch {
+                            liveListState.scrollToItem(0)
+                            inactiveListState.scrollToItem(0)
+                        }
+                    }
+                }
             )
         } else {
             // Compact filter bar: platform options are few, so show them all without horizontal scroll.
@@ -357,6 +368,7 @@ fun FollowScreen(
             }
         }
 
+        FollowRefreshProgressLine(refreshProgress)
         PullToRefreshBox(
             isRefreshing = updatingStatus,
             onRefresh = { viewModel.updateFollowStatus() },
@@ -921,24 +933,17 @@ private fun SwipeableFollowItem(
 ) {
     val density = LocalDensity.current
     val actionButtonWidth = 72.dp
+    val refreshEntry = rememberFollowRefreshEntry(viewModel.refreshEntries, follow.id)
     val buttonWidth = with(density) { actionButtonWidth.toPx() }
     val totalReveal = buttonWidth * 2 // 两个按钮的总宽度
     val cardMetrics = followCompactCardMetrics()
-    var offsetX by remember(follow.id) { mutableFloatStateOf(0f) }
-    var isDragging by remember(follow.id) { mutableStateOf(false) }
-    // 拖动中直接跟手，松手后再平滑吸附，避免手势滞后造成阻力感。
-    val animatedOffset by animateFloatAsState(
-        targetValue = offsetX,
-        animationSpec = if (isDragging) {
-            snap()
-        } else {
-            spring(
-                dampingRatio = Spring.DampingRatioNoBouncy,
-                stiffness = Spring.StiffnessMedium
-            )
-        },
-        label = "swipeOffset"
-    )
+    val offsetX = remember(follow.id) { Animatable(0f) }
+    val motionPolicy = LocalAppMotionPolicy.current
+    val actionScope = rememberCoroutineScope()
+    val animatedOffset = offsetX.value
+    SideEffect {
+        offsetX.updateBounds(lowerBound = -totalReveal, upperBound = 0f)
+    }
     val actionsAlpha = followSwipeActionAlpha(animatedOffset)
     val actionsEnabled = actionsAlpha > 0f
 
@@ -969,7 +974,7 @@ private fun SwipeableFollowItem(
                         .fillMaxHeight()
                         .clickable(enabled = actionsEnabled) {
                             viewModel.toggleSpecialFollow(follow)
-                            offsetX = 0f
+                            actionScope.launch { offsetX.snapTo(0f) }
                         },
                     color = Color(0xFFFF9F00)
                 ) {
@@ -1001,7 +1006,7 @@ private fun SwipeableFollowItem(
                         .fillMaxHeight()
                         .clickable(enabled = actionsEnabled) {
                             onUnfollowConfirm(follow)
-                            offsetX = 0f
+                            actionScope.launch { offsetX.snapTo(0f) }
                         },
                     color = MaterialTheme.colorScheme.error
                 ) {
@@ -1033,31 +1038,59 @@ private fun SwipeableFollowItem(
         Box(
             modifier = Modifier
                 .offset { IntOffset(animatedOffset.roundToInt(), 0) }
-                .pointerInput(follow.id) {
-                    detectHorizontalDragGestures(
-                        onDragStart = {
-                            isDragging = true
-                        },
-                        onDragEnd = {
-                            isDragging = false
-                            offsetX = followSwipeSettledOffset(offsetX, totalReveal)
-                        },
-                        onDragCancel = {
-                            isDragging = false
-                            offsetX = followSwipeSettledOffset(offsetX, totalReveal)
-                        },
-                        onHorizontalDrag = { _, dragAmount ->
-                            // 只允许左滑（负方向）
-                            val newOffset = (offsetX + dragAmount).coerceIn(-totalReveal, 0f)
-                            offsetX = newOffset
+                .pointerInput(follow.id, totalReveal, motionPolicy.reducedMotion) {
+                    coroutineScope {
+                        var velocityTracker = VelocityTracker()
+                        fun settle(velocityX: Float) {
+                            val target = followSwipeSettledOffset(
+                                offsetX = offsetX.value,
+                                totalReveal = totalReveal,
+                                velocityX = velocityX
+                            )
+                            launch {
+                                if (motionPolicy.reducedMotion) {
+                                    offsetX.snapTo(target)
+                                } else {
+                                    offsetX.animateTo(
+                                        targetValue = target,
+                                        animationSpec = AppMotion.momentumSpec(),
+                                        initialVelocity = velocityX
+                                    )
+                                }
+                            }
                         }
-                    )
+
+                        detectHorizontalDragGestures(
+                            onDragStart = {
+                                velocityTracker = VelocityTracker()
+                                launch { offsetX.stop() }
+                            },
+                            onDragEnd = {
+                                settle(velocityTracker.calculateVelocity().x)
+                            },
+                            onDragCancel = {
+                                settle(0f)
+                            },
+                            onHorizontalDrag = { change, dragAmount ->
+                                velocityTracker.addPosition(
+                                    change.uptimeMillis,
+                                    change.position
+                                )
+                                launch {
+                                    val newOffset = (offsetX.value + dragAmount)
+                                        .coerceIn(-totalReveal, 0f)
+                                    offsetX.snapTo(newOffset)
+                                }
+                            }
+                        )
+                    }
                 }
         ) {
             FollowUserItem(
                 userName = follow.userName,
                 faceUrl = follow.face,
                 liveStatus = follow.liveStatus,
+                refreshHint = followRefreshHint(refreshEntry),
                 siteId = follow.siteId,
                 showTime = follow.showTime,
                 isSpecialFollow = follow.isSpecialFollow,
@@ -1071,12 +1104,12 @@ private fun SwipeableFollowItem(
                 cornerRadius = 14.dp,
                 onClick = {
                     // 如果按钮已展开，点击关闭；否则进入直播间
-                    if (offsetX < -10f) {
-                        offsetX = 0f
+                    if (offsetX.value < -10f) {
+                        actionScope.launch { offsetX.snapTo(0f) }
                     } else {
                         navigator.navigateToRoom(
                             siteId = follow.siteId,
-                            roomId = follow.roomId,
+                            roomId = follow.playbackRoomId,
                             initialIsFollowing = true
                         )
                     }
@@ -1320,9 +1353,17 @@ internal fun followCompactPlatformFilterMetrics(): FollowCompactPlatformFilterMe
     )
 }
 
-internal fun followSwipeSettledOffset(offsetX: Float, totalReveal: Float): Float {
+internal fun followSwipeSettledOffset(
+    offsetX: Float,
+    totalReveal: Float,
+    velocityX: Float = 0f
+): Float {
     if (totalReveal <= 0f) return 0f
-    return if (offsetX < -totalReveal / 3f) -totalReveal else 0f
+    val projectedOffset = AppMotion.projectedEndpoint(
+        currentValue = offsetX,
+        velocity = velocityX
+    )
+    return if (projectedOffset < -totalReveal / 3f) -totalReveal else 0f
 }
 
 internal fun followSwipeActionAlpha(offsetX: Float): Float {

@@ -1,7 +1,6 @@
 package com.mylive.app.ui.screen.settings
 
 import android.widget.Toast
-import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -30,7 +29,10 @@ import com.mylive.app.data.local.entity.ShieldEntity
 import com.mylive.app.data.local.entity.ShieldPresetEntity
 import com.mylive.app.ui.component.settings.SettingsSwitch
 import com.mylive.app.ui.util.copyPlainText
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -43,16 +45,8 @@ fun ShieldSettingsScreen(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
-    var isExiting by remember { mutableStateOf(false) }
-    val handleBack: () -> Unit = {
-        if (!isExiting) {
-            isExiting = true
-            navigator.goBack()
-        }
-    }
-    BackHandler(enabled = !isExiting) {
-        handleBack()
-    }
+    val navigation = navigator.rememberRouteActions()
+    val handleBack = navigation.onBack
 
     val danmuShieldEnable by viewModel.danmuShieldEnable.collectAsStateWithLifecycle(initialValue = true)
     val danmuKeywordShieldEnable by viewModel.danmuKeywordShieldEnable.collectAsStateWithLifecycle(initialValue = true)
@@ -73,6 +67,20 @@ fun ShieldSettingsScreen(
     var showImportDialog by remember { mutableStateOf(false) }
     var importJsonText by remember { mutableStateOf("") }
     var exportJsonForFile by remember { mutableStateOf("") }
+    var importing by remember { mutableStateOf(false) }
+
+    suspend fun importAndNotify(json: String): Boolean {
+        val success = viewModel.importPresetJsonAndAwait(json)
+        currentCoroutineContext().ensureActive()
+        if (navigation.isCurrent) {
+            Toast.makeText(
+                context,
+                if (success) R.string.shield_preset_import_success else R.string.shield_preset_import_failed,
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+        return success
+    }
 
     val exportFileLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
@@ -93,23 +101,25 @@ fun ShieldSettingsScreen(
     val importFileLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
-        if (uri != null) {
+        if (uri != null && !importing) {
+            importing = true
             coroutineScope.launch {
-                runCatching {
-                    withContext(Dispatchers.IO) {
+                try {
+                    val json = withContext(Dispatchers.IO) {
                         context.contentResolver.openInputStream(uri)?.use { input ->
                             input.readUtf8TextWithinLimit()
                         } ?: error("无法读取导入文件")
                     }
-                }.onSuccess { json ->
-                    val success = viewModel.importPresetJson(json)
-                    Toast.makeText(
-                        context,
-                        if (success) R.string.shield_preset_import_success else R.string.shield_preset_import_failed,
-                        Toast.LENGTH_SHORT
-                    ).show()
-                }.onFailure {
-                    Toast.makeText(context, R.string.shield_preset_import_failed, Toast.LENGTH_SHORT).show()
+                    importAndNotify(json)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (e: Exception) {
+                    currentCoroutineContext().ensureActive()
+                    if (navigation.isCurrent) {
+                        Toast.makeText(context, R.string.shield_preset_import_failed, Toast.LENGTH_SHORT).show()
+                    }
+                } finally {
+                    importing = false
                 }
             }
         }
@@ -194,6 +204,7 @@ fun ShieldSettingsScreen(
                     )
                     2 -> PresetTabContent(
                         presets = presets,
+                        importing = importing,
                         onSaveCurrent = { viewModel.savePreset(it) },
                         onOverwrite = { viewModel.savePreset(it.name) },
                         onApply = { viewModel.applyPreset(it) },
@@ -217,11 +228,13 @@ fun ShieldSettingsScreen(
                             }
                         },
                         onImportTextClick = {
-                            importJsonText = ""
-                            showImportDialog = true
+                            if (!importing) {
+                                importJsonText = ""
+                                showImportDialog = true
+                            }
                         },
                         onImportFileClick = {
-                            importFileLauncher.launch(arrayOf("application/json", "text/*"))
+                            if (!importing) importFileLauncher.launch(arrayOf("application/json", "text/*"))
                         }
                     )
                 }
@@ -247,15 +260,19 @@ fun ShieldSettingsScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        val success = viewModel.importPresetJson(importJsonText)
-                        if (success) {
-                            Toast.makeText(context, R.string.shield_preset_import_success, Toast.LENGTH_SHORT).show()
-                            showImportDialog = false
-                        } else {
-                            Toast.makeText(context, R.string.shield_preset_import_failed, Toast.LENGTH_SHORT).show()
+                        if (!importing) {
+                            importing = true
+                            val json = importJsonText
+                            coroutineScope.launch {
+                                try {
+                                    if (importAndNotify(json)) showImportDialog = false
+                                } finally {
+                                    importing = false
+                                }
+                            }
                         }
                     },
-                    enabled = importJsonText.isNotBlank()
+                    enabled = importJsonText.isNotBlank() && !importing
                 ) {
                     Text(stringResource(R.string.action_confirm))
                 }
@@ -634,6 +651,7 @@ private fun UserTabContent(
 @Composable
 private fun PresetTabContent(
     presets: List<ShieldPresetEntity>,
+    importing: Boolean,
     onSaveCurrent: (String) -> Unit,
     onOverwrite: (ShieldPresetEntity) -> Unit,
     onApply: (ShieldPresetEntity) -> Unit,
@@ -660,6 +678,7 @@ private fun PresetTabContent(
             Box(modifier = Modifier.weight(1f)) {
                 OutlinedButton(
                     onClick = { showImportMenu = true },
+                    enabled = !importing,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Icon(Icons.Default.Download, contentDescription = null)

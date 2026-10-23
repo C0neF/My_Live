@@ -52,3 +52,12 @@ val AppTypography = Typography(
         lineHeight = 16.sp
     )
 )
+
+// Keep sp units and system font scaling; larger windows need readable supporting text too.
+val TabletTypography = AppTypography.copy(
+    titleLarge = AppTypography.titleLarge.copy(fontSize = 22.sp, lineHeight = 30.sp),
+    bodyLarge = AppTypography.bodyLarge.copy(fontSize = 17.sp, lineHeight = 26.sp),
+    bodyMedium = AppTypography.bodyMedium.copy(fontSize = 15.sp, lineHeight = 23.sp),
+    bodySmall = AppTypography.bodySmall.copy(fontSize = 13.sp, lineHeight = 20.sp),
+    labelSmall = AppTypography.labelSmall.copy(fontSize = 12.sp, lineHeight = 18.sp)
+)

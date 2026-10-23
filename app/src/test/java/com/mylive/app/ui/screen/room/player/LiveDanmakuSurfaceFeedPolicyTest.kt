@@ -14,7 +14,7 @@ class LiveDanmakuSurfaceFeedPolicyTest {
                 isInPip = true,
                 danmuEnable = true,
                 pipHideDanmu = false,
-                isExiting = false
+                routeActive = true
             )
         )
         assertFalse(
@@ -22,7 +22,7 @@ class LiveDanmakuSurfaceFeedPolicyTest {
                 isInPip = true,
                 danmuEnable = true,
                 pipHideDanmu = true,
-                isExiting = false
+                routeActive = true
             )
         )
         assertFalse(
@@ -30,7 +30,7 @@ class LiveDanmakuSurfaceFeedPolicyTest {
                 isInPip = false,
                 danmuEnable = true,
                 pipHideDanmu = false,
-                isExiting = false
+                routeActive = true
             )
         )
         assertFalse(
@@ -38,16 +38,16 @@ class LiveDanmakuSurfaceFeedPolicyTest {
                 isInPip = true,
                 danmuEnable = true,
                 pipHideDanmu = false,
-                isExiting = true
+                routeActive = false
             )
         )
     }
 
     @Test
-    fun normalSurfaceFeedStopsWhileExiting() {
-        assertTrue(shouldFeedLiveDanmakuSurface(hasController = true, isExiting = false))
-        assertFalse(shouldFeedLiveDanmakuSurface(hasController = true, isExiting = true))
-        assertFalse(shouldFeedLiveDanmakuSurface(hasController = false, isExiting = false))
+    fun normalSurfaceFeedRequiresAnActiveRoute() {
+        assertTrue(shouldFeedLiveDanmakuSurface(hasController = true, routeActive = true))
+        assertFalse(shouldFeedLiveDanmakuSurface(hasController = true, routeActive = false))
+        assertFalse(shouldFeedLiveDanmakuSurface(hasController = false, routeActive = true))
     }
 
     @Test
@@ -68,5 +68,12 @@ class LiveDanmakuSurfaceFeedPolicyTest {
             Regex("""viewModel\.newDanmakuMessages\.collect\s*\{""")
                 .containsMatchIn(screen)
         )
+    }
+    @Test
+    fun screenDanmakuIsHiddenDuringPauseBufferingOrPlaybackError() {
+        assertTrue(shouldDisplayPlaybackDanmaku(PlayerState(isPlaying = true, isLoading = false)))
+        assertFalse(shouldDisplayPlaybackDanmaku(PlayerState(isPlaying = false, isLoading = false)))
+        assertFalse(shouldDisplayPlaybackDanmaku(PlayerState(isPlaying = true, isLoading = true)))
+        assertFalse(shouldDisplayPlaybackDanmaku(PlayerState(isPlaying = true, isLoading = false, error = "failed")))
     }
 }

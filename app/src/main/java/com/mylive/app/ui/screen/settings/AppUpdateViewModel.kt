@@ -20,6 +20,7 @@ data class AppUpdateUiState(
     val downloadProgress: Int = 0,
     val updateInfo: AppUpdateInfo? = null,
     val downloadedFile: File? = null,
+    val installRequestId: Long = 0,
     val message: String? = null,
     val error: String? = null
 )
@@ -33,16 +34,16 @@ class AppUpdateViewModel @Inject constructor(
     private val updateChannelName = "v${BuildConfig.VERSION_NAME.substringBefore('.')} 稳定版"
 
     fun checkForUpdate() {
-        if (_uiState.value.checking) return
+        if (_uiState.value.checking || _uiState.value.downloading) return
+        _uiState.update {
+            it.copy(
+                checking = true,
+                message = null,
+                error = null,
+                downloadedFile = null
+            )
+        }
         viewModelScope.launch {
-            _uiState.update {
-                it.copy(
-                    checking = true,
-                    message = null,
-                    error = null,
-                    downloadedFile = null
-                )
-            }
             runCatching { repository.checkLatestUpdate() }
                 .onSuccess { update ->
                     _uiState.update {
@@ -67,17 +68,17 @@ class AppUpdateViewModel @Inject constructor(
 
     fun downloadUpdate() {
         val update = _uiState.value.updateInfo ?: return
-        if (_uiState.value.downloading) return
+        if (_uiState.value.downloading || _uiState.value.checking) return
+        _uiState.update {
+            it.copy(
+                downloading = true,
+                downloadProgress = 0,
+                downloadedFile = null,
+                message = null,
+                error = null
+            )
+        }
         viewModelScope.launch {
-            _uiState.update {
-                it.copy(
-                    downloading = true,
-                    downloadProgress = 0,
-                    downloadedFile = null,
-                    message = null,
-                    error = null
-                )
-            }
             runCatching {
                 repository.downloadApk(update) { progress ->
                     _uiState.update { it.copy(downloadProgress = progress) }
@@ -88,6 +89,9 @@ class AppUpdateViewModel @Inject constructor(
                         downloading = false,
                         downloadProgress = 100,
                         downloadedFile = file,
+                        // Each completed download requests installation, even if an implementation
+                        // reuses a cached file and StateFlow conflates intermediate states.
+                        installRequestId = it.installRequestId + 1,
                         message = "下载完成，准备安装"
                     )
                 }

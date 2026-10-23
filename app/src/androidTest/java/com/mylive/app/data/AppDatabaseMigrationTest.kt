@@ -81,10 +81,36 @@ class AppDatabaseMigrationTest {
     }
 
     private companion object {
+        const val TEST_DB_4_5 = "migration-test-4-5"
+        const val TEST_DB_1_5 = "migration-test-1-5"
         const val TEST_DB = "migration-test-1-2"
         const val TEST_DB_2_3 = "migration-test-2-3"
         const val TEST_DB_1_3 = "migration-test-1-3"
         const val TEST_DB_3_4 = "migration-test-3-4"
         const val TEST_DB_1_4 = "migration-test-1-4"
+    }
+
+    @Test fun migrate4To5PreservesFollowIdentityAndMetadata() {
+        helper.createDatabase(TEST_DB_4_5, 4).apply {
+            execSQL("INSERT INTO follow_users (id, roomId, siteId, userName, face, addTime, tag, " +
+                "isSpecialFollow, liveStatus, liveStartTime, showTime) " +
+                "VALUES ('legacy-id', '7376429659866598196', 'douyin', 'anchor', '', 123, 'group', 1, 1, 456, NULL)")
+            close()
+        }
+        helper.runMigrationsAndValidate(TEST_DB_4_5, 5, true, AppDatabase.MIGRATION_4_5).apply {
+            query("SELECT * FROM follow_users WHERE id = 'legacy-id'").use { cursor ->
+                org.junit.Assert.assertTrue(cursor.moveToFirst())
+                org.junit.Assert.assertEquals("group", cursor.getString(cursor.getColumnIndexOrThrow("tag")))
+                org.junit.Assert.assertEquals(1, cursor.getInt(cursor.getColumnIndexOrThrow("isSpecialFollow")))
+                org.junit.Assert.assertTrue(cursor.isNull(cursor.getColumnIndexOrThrow("canonicalRoomId")))
+            }
+            close()
+        }
+    }
+
+    @Test fun migrate1To5() {
+        helper.createDatabase(TEST_DB_1_5, 1).close()
+        helper.runMigrationsAndValidate(TEST_DB_1_5, 5, true, AppDatabase.MIGRATION_1_2,
+            AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5).close()
     }
 }

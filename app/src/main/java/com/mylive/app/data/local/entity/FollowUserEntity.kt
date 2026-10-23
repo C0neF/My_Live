@@ -6,7 +6,7 @@ import androidx.room.PrimaryKey
 
 @Entity(
     tableName = "follow_users",
-    indices = [Index(value = ["siteId", "roomId"])]
+    indices = [Index(value = ["siteId", "roomId"]), Index(value = ["siteId", "canonicalRoomId"])]
 )
 data class FollowUserEntity(
     @PrimaryKey
@@ -20,5 +20,10 @@ data class FollowUserEntity(
     val isSpecialFollow: Boolean = false,
     val liveStatus: Int = 0, // 0=未知, 1=直播中, 2=未开播
     val liveStartTime: Long? = null,
-    val showTime: String? = null // 平台报告的开播时间戳（秒），仅 B站/斗鱼 有值
+    val showTime: String? = null, // 平台报告的开播时间戳（秒），仅 B站/斗鱼 有值
+    val canonicalRoomId: String? = null
 )
+
+/** Keep the original record/room IDs for legacy references, and navigate via the confirmed alias. */
+val FollowUserEntity.playbackRoomId: String
+    get() = if (siteId == "douyin") canonicalRoomId?.takeIf { it.isNotBlank() } ?: roomId else roomId

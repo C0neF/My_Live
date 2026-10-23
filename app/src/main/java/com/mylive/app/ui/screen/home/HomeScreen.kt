@@ -1,21 +1,14 @@
 package com.mylive.app.ui.screen.home
 
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import com.mylive.app.ui.theme.Icons
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
@@ -23,11 +16,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mylive.app.ui.navigation.Navigator
@@ -42,6 +34,7 @@ import com.mylive.app.ui.component.status.ErrorState
 import com.mylive.app.ui.component.status.LiveRoomCardSkeleton
 import com.mylive.app.ui.component.status.LiveRoomGridSkeleton
 import com.mylive.app.ui.motion.AppMotion
+import com.mylive.app.ui.motion.LocalAppMotionPolicy
 import com.mylive.app.ui.screen.backToTopButtonVisible
 import com.mylive.app.ui.screen.isScrollableContentAtTop
 import com.mylive.app.ui.theme.livePlatformAccentColor
@@ -67,9 +60,16 @@ fun HomeScreen(
     homeLiveRoomGridColumns: Int? = null,
     viewModel: HomeViewModel = hiltViewModel()
 ) {
+    val motionPolicy = LocalAppMotionPolicy.current
+    val headerScrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior(
+        snapAnimationSpec = motionPolicy.contentSpec()
+    )
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val siteTabs by viewModel.siteTabs.collectAsStateWithLifecycle()
     val selectedTab = homeSelectedPlatformIndex(siteTabs = siteTabs, siteId = uiState.siteId)
+    val platformItems = remember(siteTabs) {
+        siteTabs.map { HomePlatformItem(it.id, homePlatformDisplayName(it.name)) }
+    }
     val activePlatformAccentColor = homePlatformAccentColor(siteTabs.getOrNull(selectedTab)?.id.orEmpty())
 
     LaunchedEffect(activePlatformAccentColor) {
@@ -84,70 +84,30 @@ fun HomeScreen(
 
     LaunchedEffect(refreshSignal) {
         if (refreshSignal > 0) {
+            headerScrollBehavior.state.heightOffset = 0f
             viewModel.refresh()
         }
+    }
+
+    // Restore search if loading ends without rooms and the scrollable skeleton disappears.
+    LaunchedEffect(uiState.rooms.isEmpty(), uiState.isLoading, uiState.error) {
+        if (uiState.rooms.isEmpty()) headerScrollBehavior.state.heightOffset = 0f
     }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
+            .nestedScroll(headerScrollBehavior.nestedScrollConnection)
     ) {
-        // Compact Premium Header with Title "MyLive" & Search Pill side-by-side
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "MyLive",
-                style = MaterialTheme.typography.titleLarge.copy(
-                    fontWeight = FontWeight.ExtraBold,
-                    letterSpacing = 0.5.sp
-                ),
-                color = MaterialTheme.colorScheme.onSurface
-            )
-
-            Spacer(modifier = Modifier.width(12.dp))
-
-            // Modern Search Pill Bar (Compact)
-            Row(
-                modifier = Modifier
-                    .weight(1f)
-                    .height(36.dp)
-                    .background(
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                        shape = RoundedCornerShape(18.dp)
-                    )
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = { navigator.navigate(Route.Search) }
-                    )
-                    .padding(horizontal = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Search,
-                    contentDescription = stringResource(R.string.cd_search),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                    modifier = Modifier.size(16.dp)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = "搜索直播间或主播...",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                    fontSize = 13.sp
-                )
-            }
-        }
+        HomeSearchHeader(
+            scrollState = headerScrollBehavior.state,
+            onSearchClick = { navigator.navigate(Route.Search) }
+        )
 
         // Platform selector: show all platforms and let the content pager handle swipes.
         val pagerState = rememberPagerState(initialPage = selectedTab, pageCount = { siteTabs.size })
         val coroutineScope = rememberCoroutineScope()
-        val platformScrollState = rememberScrollState()
 
         fun selectHomeSite(index: Int) {
             if (siteTabs.isEmpty()) return
@@ -180,47 +140,38 @@ fun HomeScreen(
         }
 
         if (siteTabs.isNotEmpty()) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(platformScrollState)
-                    .padding(horizontal = 12.dp)
-                    .padding(bottom = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                siteTabs.forEachIndexed { siteIndex, site ->
-                    HomePlatformTab(
-                        platformId = site.id,
-                        name = homePlatformDisplayName(site.name),
-                        isSelected = selectedTab == siteIndex,
-                        onClick = {
-                            coroutineScope.launch {
-                                val targetIndex = siteIndex.coerceIn(0, siteTabs.lastIndex)
-                                if (pagerState.currentPage == targetIndex) {
-                                    selectHomeSite(targetIndex)
-                                    return@launch
-                                }
-                                homePlatformPreJumpPageForTarget(
-                                    currentPage = pagerState.currentPage,
-                                    targetPage = targetIndex
-                                )?.let { preJumpPage ->
-                                    pagerState.scrollToPage(preJumpPage)
-                                }
-                                val diff = targetIndex - pagerState.currentPage
-                                pagerState.animateScrollToPage(
-                                    page = targetIndex,
-                                    animationSpec = AppMotion.pagerSpec(diff)
-                                )
-                            }
+            HomePlatformBar(
+                items = platformItems,
+                selectedIndex = selectedTab,
+                onSelect = { siteIndex ->
+                    coroutineScope.launch {
+                        val targetIndex = siteIndex.coerceIn(0, siteTabs.lastIndex)
+                        if (pagerState.currentPage == targetIndex) {
+                            selectHomeSite(targetIndex)
+                            return@launch
                         }
-                    )
+                        if (motionPolicy.reducedMotion) {
+                            pagerState.scrollToPage(targetIndex)
+                        } else {
+                            homePlatformPreJumpPageForTarget(
+                                currentPage = pagerState.currentPage,
+                                targetPage = targetIndex
+                            )?.let { preJumpPage ->
+                                pagerState.scrollToPage(preJumpPage)
+                            }
+                            pagerState.animateScrollToPage(
+                                page = targetIndex,
+                                animationSpec = AppMotion.pagerSpec()
+                            )
+                        }
+                    }
                 }
-            }
+            )
         }
 
         HorizontalPager(
             state = pagerState,
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.weight(1f).testTag("home_rooms_pager"),
             userScrollEnabled = siteTabs.size > 1
         ) { page ->
             val pageState = if (page == selectedTab) {
@@ -233,7 +184,10 @@ fun HomeScreen(
             HomeRoomsPage(
                 uiState = pageState,
                 suppressInitialLoadingEffect = suppressInitialLoadingEffect && page == selectedTab,
-                onRevealBottomBar = onRevealBottomBar,
+                onRevealBottomBar = {
+                    headerScrollBehavior.state.heightOffset = 0f
+                    onRevealBottomBar()
+                },
                 onRefresh = {
                     if (page == selectedTab) {
                         viewModel.refresh()
@@ -241,7 +195,7 @@ fun HomeScreen(
                 },
                 onRetry = {
                     if (page == selectedTab) {
-                        viewModel.refresh()
+                        viewModel.retry()
                     }
                 },
                 onLoadMore = {
@@ -363,10 +317,28 @@ private fun HomeRoomsPage(
                             onClick = { onRoomClick(room.roomId) }
                         )
                     }
-                    if (uiState.hasMore && !uiState.isLoading) {
+                    if (uiState.hasMore && !uiState.isLoading && uiState.error == null) {
                         item(contentType = "home_load_more_trigger") {
                             LaunchedEffect(uiState.currentPage, uiState.rooms.size) {
                                 onLoadMore()
+                            }
+                        }
+                    }
+                    if (uiState.error != null && !uiState.isLoading) {
+                        item(
+                            span = { GridItemSpan(maxLineSpan) },
+                            contentType = "home_load_more_error"
+                        ) {
+                            Column(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(
+                                    text = uiState.error.orEmpty(),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                                TextButton(onClick = onRetry) { Text("重试") }
                             }
                         }
                     }
@@ -398,57 +370,6 @@ private fun HomeRoomsPage(
                     .padding(end = metrics.endPaddingDp.dp, bottom = metrics.bottomPaddingDp.dp)
             )
         }
-    }
-}
-
-@Composable
-private fun HomePlatformTab(
-    platformId: String,
-    name: String,
-    isSelected: Boolean,
-    onClick: () -> Unit
-) {
-    val brandColor = homePlatformAccentColor(platformId) ?: MaterialTheme.colorScheme.primary
-    val contentColor by animateColorAsState(
-        targetValue = if (isSelected) {
-            MaterialTheme.colorScheme.onSurface
-        } else {
-            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-        },
-        label = "tabContentColor"
-    )
-    val indicatorColor by animateColorAsState(
-        targetValue = if (isSelected) brandColor else Color.Transparent,
-        label = "tabIndicatorColor"
-    )
-
-    Column(
-        modifier = Modifier
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onClick
-            )
-            .padding(horizontal = 8.dp, vertical = 6.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text(
-            text = name,
-            color = contentColor,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            style = MaterialTheme.typography.titleMedium.copy(
-                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
-            ),
-            fontSize = 15.sp
-        )
-        Spacer(modifier = Modifier.height(5.dp))
-        Box(
-            modifier = Modifier
-                .height(2.dp)
-                .width(20.dp)
-                .background(indicatorColor, shape = RoundedCornerShape(1.dp))
-        )
     }
 }
 

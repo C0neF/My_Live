@@ -26,11 +26,11 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun SettingsNumber(
     title: String,
-    subtitle: String? = null,
     value: Int,
     onValueChange: (Int) -> Unit,
-    range: IntRange = 0..100,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    subtitle: String? = null,
+    range: IntRange = 0..100
 ) {
     var showDialog by remember { mutableStateOf(false) }
     var tempValue by remember(value) { mutableIntStateOf(value) }

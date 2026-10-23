@@ -23,7 +23,7 @@ class DouyinSiteTest {
         val jsEngineProvider = Provider { jsEngine }
         val okHttpClient = OkHttpClient()
         val httpClient = HttpClient(okHttpClient)
-        val douyinSite = DouyinSite(httpClient, jsEngineProvider, okHttpClient)
+        val douyinSite = DouyinSite(httpClient, jsEngineProvider, okHttpClient) { "" }
 
         // Using a known room webRid or search for one
         val searchResult = try {

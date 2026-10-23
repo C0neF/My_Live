@@ -25,6 +25,21 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class ProfileBackupManagerSettingsTest {
+    @Test
+    fun douyuCredentialsAreExcludedFromExportAndImport() = runBlocking {
+        settingsDataStore.setValue(SettingsDataStore.EncryptedDouyuCookie, "sealed-test-renewal")
+        settingsDataStore.setValue(SettingsDataStore.DouyuCookie, "legacy-test-login")
+        val exported = backupManager.exportProfileJson()
+        assertTrue(!exported.contains("sealed-test-renewal"))
+        assertTrue(!exported.contains("legacy-test-login"))
+        val imported = JSONObject(exported)
+        imported.getJSONObject("settings")
+            .put(SettingsDataStore.DouyuCookie.name, "foreign-login")
+            .put(SettingsDataStore.EncryptedDouyuCookie.name, "foreign-renewal")
+        backupManager.importProfileJson(imported.toString())
+        assertEquals("legacy-test-login", settingsDataStore.getFlow(SettingsDataStore.DouyuCookie, "").first())
+        assertEquals("sealed-test-renewal", settingsDataStore.getFlow(SettingsDataStore.EncryptedDouyuCookie, "").first())
+    }
 
     private lateinit var db: AppDatabase
     private lateinit var settingsDataStore: SettingsDataStore
@@ -39,12 +54,13 @@ class ProfileBackupManagerSettingsTest {
             .build()
         settingsDataStore = SettingsDataStore(context)
         settingsDataStore.clearAll()
-        followRepository = FollowRepository(db.followUserDao(), db.followUserTagDao())
+        followRepository = FollowRepository(db.followUserDao(), db.followUserTagDao(), db)
         backupManager = ProfileBackupManager(
             settingsDataStore = settingsDataStore,
             followRepository = followRepository,
             historyRepository = HistoryRepository(db.historyDao()),
-            shieldRepository = ShieldRepository(db.shieldDao())
+            shieldRepository = ShieldRepository(db.shieldDao()),
+            database = db
         )
     }
 

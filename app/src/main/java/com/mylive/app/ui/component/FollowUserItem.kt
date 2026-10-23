@@ -17,7 +17,20 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.sp
+
+internal fun followPlatformBadgeTextColor(
+    siteId: String,
+    themeBackground: Color,
+    defaultColor: Color
+): Color {
+    return if (siteId == "douyin" && themeBackground.luminance() < 0.5f) {
+        Color.White
+    } else {
+        defaultColor
+    }
+}
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -38,7 +51,8 @@ fun FollowUserItem(
     horizontalGap: Dp = 16.dp,
     liveBadgeSize: Dp = 12.dp,
     playIconSize: Dp = 24.dp,
-    cornerRadius: Dp = 12.dp
+    cornerRadius: Dp = 12.dp,
+    refreshHint: String? = null
 ) {
     val containerColor = MaterialTheme.colorScheme.surfaceVariant
         .copy(alpha = 0.25f)
@@ -114,9 +128,14 @@ fun FollowUserItem(
                             "bilibili" -> Color(0xFFFB7299)
                             "douyu" -> Color(0xFFFF5D23)
                             "huya" -> Color(0xFFFF9F00)
-                            "douyin" -> Color(0xFF000000)
+                            "douyin" -> Color.Black
                             else -> MaterialTheme.colorScheme.secondary
                         }
+                        val siteTextColor = followPlatformBadgeTextColor(
+                            siteId = siteId,
+                            themeBackground = MaterialTheme.colorScheme.background,
+                            defaultColor = siteColor
+                        )
                         val siteName = when (siteId) {
                             "bilibili" -> "B站"
                             "douyu" -> "斗鱼"
@@ -133,7 +152,7 @@ fun FollowUserItem(
                                 text = siteName,
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = siteColor,
+                                color = siteTextColor,
                                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
                             )
                         }
@@ -154,6 +173,11 @@ fun FollowUserItem(
                             else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                     fontWeight = if (liveStatus == 1) FontWeight.SemiBold else FontWeight.Normal
                 )
+                refreshHint?.let {
+                    Text(it, style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
             }
             
             if (liveStatus == 1) {

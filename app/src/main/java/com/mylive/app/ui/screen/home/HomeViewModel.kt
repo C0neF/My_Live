@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.mylive.app.core.model.LiveRoomItem
 import com.mylive.app.core.site.LiveSite
+import com.mylive.app.core.site.mergeRoomCatalogPage
+import com.mylive.app.core.site.LatestCatalogRequestGate
 import com.mylive.app.core.site.preserveSelectedSiteIndex
 import com.mylive.app.core.site.sortedByDefaultOrder
 import com.mylive.app.core.site.sortedByUserOrder
@@ -47,6 +49,8 @@ class HomeViewModel @Inject constructor(
 
     private var currentSiteIndex = 0
     private var loadJob: Job? = null
+    private var failedPage: Int? = null
+    private val loadRequestGate = LatestCatalogRequestGate()
     private var previousSiteIds = sites.sortedByDefaultOrder().map { it.id }
 
     fun selectSite(index: Int) {
@@ -64,8 +68,7 @@ class HomeViewModel @Inject constructor(
 
     fun loadMore() {
         if (!_uiState.value.hasMore || _uiState.value.isLoading) return
-        _uiState.value = _uiState.value.copy(currentPage = _uiState.value.currentPage + 1)
-        loadRecommendRooms()
+        loadRecommendRooms(pageToLoad = _uiState.value.currentPage + 1)
     }
 
     fun refresh() {
@@ -74,12 +77,26 @@ class HomeViewModel @Inject constructor(
             currentPage = 1,
             error = null
         )
-        loadRecommendRooms(isRefresh = true)
+        loadRecommendRooms(isRefresh = true, pageToLoad = 1)
     }
 
-    private fun loadRecommendRooms(isRefresh: Boolean = false) {
-        val site = siteTabs.value.getOrNull(currentSiteIndex) ?: return
+    fun retry() {
+        if (_uiState.value.isLoading || _uiState.value.isRefreshing) return
+        loadRecommendRooms(pageToLoad = failedPage ?: 1)
+    }
+
+    private fun loadRecommendRooms(
+        isRefresh: Boolean = false,
+        pageToLoad: Int = _uiState.value.currentPage
+    ) {
+        val site = siteTabs.value.getOrNull(currentSiteIndex) ?: run {
+            loadRequestGate.invalidate()
+            loadJob?.cancel()
+            return
+        }
+        val requestToken = loadRequestGate.begin()
         loadJob?.cancel()
+        failedPage = null
         loadJob = viewModelScope.launch {
             _uiState.value = _uiState.value.copy(
                 siteId = site.id,
@@ -87,7 +104,8 @@ class HomeViewModel @Inject constructor(
                 error = null
             )
             try {
-                val result = site.getRecommendRooms(page = _uiState.value.currentPage)
+                val result = site.getRecommendRooms(page = pageToLoad)
+                if (!loadRequestGate.isCurrent(requestToken)) return@launch
                 _uiState.value = _uiState.value.copy(
                     siteId = site.id,
                     isLoading = false,
@@ -95,16 +113,19 @@ class HomeViewModel @Inject constructor(
                     // Recommend feeds frequently repeat the same room across pages. De-dupe by
                     // roomId when appending so the LazyVerticalGrid never receives a duplicate
                     // key (which throws IllegalArgumentException and crashes the home screen).
-                    rooms = if (_uiState.value.currentPage == 1) {
-                        result.items
-                    } else {
-                        (_uiState.value.rooms + result.items).distinctBy { it.roomId }
-                    },
+                    rooms = mergeRoomCatalogPage(
+                        existing = _uiState.value.rooms,
+                        incoming = result.items,
+                        replace = pageToLoad == 1
+                    ),
+                    currentPage = pageToLoad,
                     hasMore = result.hasMore
                 )
                 HomeStateCache.put(site.id, _uiState.value)
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
+                if (!loadRequestGate.isCurrent(requestToken)) return@launch
+                failedPage = pageToLoad
                 _uiState.value = _uiState.value.copy(
                     siteId = site.id,
                     isLoading = false,

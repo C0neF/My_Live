@@ -157,7 +157,7 @@ class LiveRoomPortraitToolbarPolicyTest {
             .substringBefore("// ── Room Info Bar")
 
         assertTrue(landscapeSource.contains("extraTabs = landscapeQuickAccessExtraTabs("))
-        assertTrue(landscapeSource.contains("quickAccessInitialTabKey = \"follow\""))
+        assertTrue(landscapeSource.contains("quickAccessInitialTabKey = null"))
         assertTrue(landscapeSource.contains("val liveRoomQuickAccessEnabled = liveRoomPreferences.liveRoomQuickAccessEnabled"))
         assertTrue(landscapeSource.contains("val quickAccessAction = liveRoomQuickAccessAction("))
         assertTrue(landscapeSource.contains("onQuickAccessClick = quickAccessAction"))

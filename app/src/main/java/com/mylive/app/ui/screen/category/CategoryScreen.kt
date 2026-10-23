@@ -14,6 +14,8 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
+import com.mylive.app.ui.layout.LocalAppLayout
+import com.mylive.app.ui.layout.readableFontScale
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -32,6 +34,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -50,6 +55,7 @@ import com.mylive.app.ui.component.status.CategoryListSkeleton
 import com.mylive.app.ui.component.status.EmptyState
 import com.mylive.app.ui.component.status.ErrorState
 import com.mylive.app.ui.motion.AppMotion
+import com.mylive.app.ui.motion.LocalAppMotionPolicy
 import com.mylive.app.ui.theme.Icons
 import com.mylive.app.ui.theme.livePlatformAccentColor
 import com.mylive.app.ui.theme.livePlatformOnAccentColor
@@ -64,6 +70,7 @@ fun CategoryScreen(
     contentBottomPadding: Dp = 96.dp,
     viewModel: CategoryViewModel = hiltViewModel()
 ) {
+    val motionPolicy = LocalAppMotionPolicy.current
     val siteTabs by viewModel.siteList.collectAsStateWithLifecycle()
     val selectedSiteIndex by viewModel.selectedSiteIndex.collectAsStateWithLifecycle()
     val categories by viewModel.categories.collectAsStateWithLifecycle()
@@ -158,17 +165,20 @@ fun CategoryScreen(
                                     selectCategorySite(targetIndex)
                                     return@launch
                                 }
-                                AppMotion.preJumpPageForTarget(
-                                    currentPage = pagerState.currentPage,
-                                    targetPage = targetIndex
-                                )?.let { preJumpPage ->
-                                    pagerState.scrollToPage(preJumpPage)
+                                if (motionPolicy.reducedMotion) {
+                                    pagerState.scrollToPage(targetIndex)
+                                } else {
+                                    AppMotion.preJumpPageForTarget(
+                                        currentPage = pagerState.currentPage,
+                                        targetPage = targetIndex
+                                    )?.let { preJumpPage ->
+                                        pagerState.scrollToPage(preJumpPage)
+                                    }
+                                    pagerState.animateScrollToPage(
+                                        page = targetIndex,
+                                        animationSpec = AppMotion.pagerSpec()
+                                    )
                                 }
-                                val diff = targetIndex - pagerState.currentPage
-                                pagerState.animateScrollToPage(
-                                    page = targetIndex,
-                                    animationSpec = AppMotion.pagerSpec(diff)
-                                )
                             }
                         }
                     )
@@ -265,6 +275,8 @@ private fun CategoryPlatformTab(
 
     Column(
         modifier = Modifier
+            .testTag("category_platform_$platformId")
+            .semantics { selected = isSelected }
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
@@ -300,7 +312,7 @@ private fun CategoryList(
     contentBottomPadding: Dp = 96.dp,
     onSubCategoryClick: (LiveSubCategory) -> Unit
 ) {
-    var selectedParentIndex by remember(categories) { mutableIntStateOf(0) }
+    var selectedParentIndex by rememberSaveable(categories) { mutableIntStateOf(0) }
 
     Row(modifier = Modifier.fillMaxSize()) {
         // Left: parent category tabs
@@ -376,7 +388,7 @@ private fun CategoryList(
 
         if (subCategories.isEmpty() && currentCategory != null) {
             LazyVerticalGrid(
-                columns = GridCells.Fixed(3),
+                columns = GridCells.Adaptive(((if (LocalAppLayout.current.tablet) 136 else 100) * readableFontScale(LocalAppLayout.current.fontScale)).dp),
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight(),
@@ -410,7 +422,7 @@ private fun CategoryList(
             }
         } else {
             LazyVerticalGrid(
-                columns = GridCells.Fixed(3),
+                columns = GridCells.Adaptive(((if (LocalAppLayout.current.tablet) 136 else 100) * readableFontScale(LocalAppLayout.current.fontScale)).dp),
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight(),

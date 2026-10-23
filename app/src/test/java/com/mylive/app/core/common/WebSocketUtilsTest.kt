@@ -37,6 +37,23 @@ class WebSocketUtilsTest {
     }
 
     @Test
+    fun requestedHandshakeTimeoutOverridesTheSharedHttpClientBudget() {
+        val sharedClient = OkHttpClient.Builder()
+            .connectTimeout(20, TimeUnit.SECONDS)
+            .build()
+
+        val socketClient = buildWebSocketClient(
+            baseClient = sharedClient,
+            disableCompression = false,
+            connectTimeoutMillis = 3_000L
+        )
+
+        assertTrue(socketClient !== sharedClient)
+        assertTrue(socketClient.connectTimeoutMillis == 3_000)
+        assertTrue(sharedClient.connectTimeoutMillis == 20_000)
+    }
+
+    @Test
     fun canDisableCompressionExtensionForIncompatibleServers() {
         val server = MockWebServer()
         val openLatch = CountDownLatch(1)
@@ -107,6 +124,51 @@ class WebSocketUtilsTest {
             assertTrue(closeLatch.await(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS))
         } finally {
             server.shutdown()
+        }
+    }
+
+    @Test
+    fun failedPrimaryHandshakeFallsThroughToBackupEndpoint() {
+        val primary = MockWebServer()
+        val backup = MockWebServer()
+        primary.enqueue(MockResponse().setResponseCode(500))
+        val backupOpen = CountDownLatch(1)
+        val backupClosed = CountDownLatch(1)
+        backup.enqueue(
+            MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
+                override fun onOpen(webSocket: WebSocket, response: Response) {
+                    backupOpen.countDown()
+                }
+
+                override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                    webSocket.close(code, reason)
+                }
+
+                override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                    backupClosed.countDown()
+                }
+            })
+        )
+        primary.start()
+        backup.start()
+
+        val ready = CountDownLatch(1)
+        val socket = WebSocketUtils(OkHttpClient())
+        try {
+            socket.connect(
+                url = primary.url("/socket").toString().replace("http://", "ws://"),
+                backupUrl = backup.url("/socket").toString().replace("http://", "ws://"),
+                connectTimeoutMillis = 3_000L,
+                onReady = { ready.countDown() }
+            )
+
+            assertTrue(backupOpen.await(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS))
+            assertTrue(ready.await(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS))
+        } finally {
+            socket.close()
+            assertTrue(backupClosed.await(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS))
+            primary.shutdown()
+            backup.shutdown()
         }
     }
 

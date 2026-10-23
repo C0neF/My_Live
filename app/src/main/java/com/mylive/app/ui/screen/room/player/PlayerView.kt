@@ -5,6 +5,12 @@ import android.graphics.Rect
 import android.os.SystemClock
 import android.view.LayoutInflater
 import com.mylive.app.R
+import com.mylive.app.core.model.DanmakuSettingsPolicy
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.testTagsAsResourceId
+import com.mylive.app.BuildConfig
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import androidx.activity.compose.BackHandler
@@ -16,6 +22,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -31,6 +38,9 @@ import kotlin.math.roundToInt
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -42,7 +52,9 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.verticalDrag
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.platform.LocalConfiguration
+import com.mylive.app.ui.layout.LocalAppLayout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -52,6 +64,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.PlayerView as Media3PlayerView
 import com.mylive.app.core.model.LivePlayQuality
@@ -82,8 +95,8 @@ internal fun quantizeSystemVolumeGesture(volume: Float): Float {
 fun PlayerView(
     playerController: PlayerController?,
     viewState: PlayerViewUiState,
-    actions: PlayerViewActions = PlayerViewActions(),
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    actions: PlayerViewActions = PlayerViewActions()
 ) {
     val stateFlow = playerController?.state
     val state by (stateFlow?.collectAsStateWithLifecycle() ?: remember { mutableStateOf(PlayerState()) })
@@ -98,6 +111,17 @@ fun PlayerView(
     // Sheets visibility states
     var showLineSheet by remember { mutableStateOf(false) }
     var showDanmuSettingsSheet by remember { mutableStateOf(false) }
+    var showDiagnosticsSheet by remember { mutableStateOf(false) }
+    var diagnosticsSnapshot by remember { mutableStateOf<PlaybackDiagnosticSnapshot?>(null) }
+    var diagnosticDanmakuController by remember { mutableStateOf<DanmakuController?>(null) }
+    LaunchedEffect(showDiagnosticsSheet, playerController, viewState.currentQualityName, diagnosticDanmakuController) {
+        if (!showDiagnosticsSheet) return@LaunchedEffect
+        while (true) {
+            diagnosticsSnapshot = playerController?.playbackDiagnostics(viewState.currentQualityName)
+                ?.withDanmaku(diagnosticDanmakuController?.diagnostics())
+            delay(1000)
+        }
+    }
 
     val context = LocalContext.current
     val activity = context as? Activity
@@ -106,6 +130,13 @@ fun PlayerView(
     val resolvedAccentColor = viewState.accentColor ?: MaterialTheme.colorScheme.primary
 
     val isFullscreen = viewState.fullscreenOverride ?: state.isFullscreen
+    // Buffering still has an active play request. EOF/idle can retain playWhenReady=true,
+    // but their control remains Play so the existing retry behavior stays available.
+    val showPauseButton = state.error == null && (
+        state.isPlaying || state.playWhenReady && (
+            state.playbackState == Player.STATE_READY || state.playbackState == Player.STATE_BUFFERING
+        )
+    )
 
     // Intercept back key when in fullscreen to exit fullscreen first (still allowed while locked).
     BackHandler(enabled = isFullscreen) {
@@ -138,28 +169,12 @@ fun PlayerView(
         }
     }
 
-    // Resolve danmu scale/speed defaults correctly
-    val resolvedSize = remember(danmakuConfig.size) {
-        if (danmakuConfig.size <= 2.0) {
-            danmakuConfig.size * 16.0
-        } else {
-            danmakuConfig.size
-        }
-    }
-    val resolvedSpeed = remember(danmakuConfig.speed) {
-        if (danmakuConfig.speed > 5.0) 1.0 else danmakuConfig.speed
-    }
-    val resolvedDanmakuConfig = remember(danmakuConfig, resolvedSize, resolvedSpeed) {
-        danmakuConfig.copy(size = resolvedSize, speed = resolvedSpeed)
+    val resolvedDanmakuConfig = remember(danmakuConfig) {
+        danmakuConfig.normalized()
     }
 
-    // Line list reactive states
-    val currentLineIndex by remember(state.currentUrl) {
-        derivedStateOf { playerController?.getCurrentUrlIndex() ?: 0 }
-    }
-    val urls by remember(state.currentUrl) {
-        derivedStateOf { playerController?.getUrls() ?: emptyList() }
-    }
+    val currentLineIndex = state.currentLineIndex
+    val urls = state.urls
     val currentLineName = if (urls.isNotEmpty()) "线路 ${currentLineIndex + 1}" else "线路"
 
     // Danmaku quick settings and inline controls read primary/primaryContainer from
@@ -167,7 +182,15 @@ fun PlayerView(
     MaterialTheme(
         colorScheme = MaterialTheme.colorScheme.copy(primary = resolvedAccentColor)
     ) {
-    Box(modifier = modifier.background(Color.Black)) {
+    Box(modifier = modifier) {
+    Box(
+        modifier = Modifier.fillMaxSize().background(Color.Black)
+            .semantics {
+                contentDescription = if (state.firstFrameRendered) "直播画面已显示" else "等待直播画面"
+                testTagsAsResourceId = true
+            }
+            .testTag(if (state.firstFrameRendered) "player_video_rendered" else "player_video_waiting")
+    ) {
         // Video surface
         val player = playerController?.player
         if (player != null) {
@@ -230,6 +253,7 @@ fun PlayerView(
                 AndroidView(
                     factory = { ctx ->
                         DanmakuSurfaceView(ctx).also { view ->
+                            diagnosticDanmakuController = view.controller
                             applyDanmakuConfig(view.controller, resolvedDanmakuConfig)
                             danmakuActions.onControllerCreated?.invoke(view.controller)
                         }
@@ -237,7 +261,11 @@ fun PlayerView(
                     update = { view ->
                         applyDanmakuConfig(view.controller, resolvedDanmakuConfig)
                     },
-                    onRelease = { view -> view.release() },
+                    onRelease = { view ->
+                        view.release()
+                        if (diagnosticDanmakuController === view.controller) diagnosticDanmakuController = null
+                        danmakuActions.onControllerReleased?.invoke(view.controller)
+                    },
                     modifier = Modifier.fillMaxSize()
                 )
             }
@@ -252,7 +280,7 @@ fun PlayerView(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .pointerInput(isLocked) {
+                .pointerInput(isLocked, playerController) {
                     detectTapGestures(
                         onTap = {
                             showControls = !showControls
@@ -262,15 +290,10 @@ fun PlayerView(
                             if (!isLocked) {
                                 playerController?.toggleFullscreen()
                             }
-                        },
-                        onLongPress = {
-                            if (!isLocked) {
-                                playerController?.togglePlayPause()
-                            }
                         }
                     )
                 }
-                .pointerInput(isLocked) {
+                .pointerInput(isLocked, playerController) {
                     if (isLocked) return@pointerInput
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false)
@@ -278,6 +301,9 @@ fun PlayerView(
                         val isLeftSide = startX < size.width / 2f
                         val canStartVerticalGesture = down.position.y in
                             (size.height * 0.25f)..(size.height * 0.75f)
+                        val velocityTracker = VelocityTracker().apply {
+                            addPosition(down.uptimeMillis, down.position)
+                        }
 
                         var lastY = down.position.y
                         var gestureStartVolume = playerController?.state?.value?.volume ?: 1f
@@ -295,6 +321,7 @@ fun PlayerView(
                         while (true) {
                             val event = awaitPointerEvent()
                             val change = event.changes.firstOrNull { it.id == pointerId } ?: break
+                            velocityTracker.addPosition(change.uptimeMillis, change.position)
                             if (!change.pressed) break
 
                             val positionChange = change.position - change.previousPosition
@@ -338,9 +365,9 @@ fun PlayerView(
                                         totalVerticalDragY += dragAmount
                                         volumeValue = quantizeSystemVolumeGesture(
                                             systemVolumeForVerticalDrag(
-                                                startVolume = gestureStartVolume,
-                                                totalDragY = totalVerticalDragY,
-                                                heightPx = size.height.toFloat()
+                                            startVolume = gestureStartVolume,
+                                            totalDragY = totalVerticalDragY,
+                                            heightPx = size.height.toFloat()
                                             )
                                         )
                                         val now = SystemClock.uptimeMillis()
@@ -376,7 +403,9 @@ fun PlayerView(
                         }
 
                         if (isHorizontal) {
-                            actions.onHorizontalDragEnd?.invoke()
+                            actions.onHorizontalDragEnd?.invoke(
+                                velocityTracker.calculateVelocity().x
+                            )
                         }
 
                         showVolumeIndicator = false
@@ -413,7 +442,7 @@ fun PlayerView(
             exit = fadeOut()
         ) {
             if (isLocked) {
-                // Locked state controls overlay (Only dual edge floating lock buttons)
+                // Fullscreen keeps one lock action; the embedded player retains both edges.
                 Box(modifier = Modifier.fillMaxSize()) {
                     // Left lock button
                     Box(
@@ -438,42 +467,58 @@ fun PlayerView(
                         )
                     }
 
-                    // Right lock button
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.CenterEnd)
-                            .padding(end = 24.dp)
-                            .size(44.dp)
-                            .clip(CircleShape)
-                            .background(Color.Black.copy(alpha = 0.5f))
-                            .clickable {
-                                isLocked = false
-                                showControls = true
-                                controlsVisible = true
-                            },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Lock,
-                            contentDescription = "解锁",
-                            tint = Color.White,
-                            modifier = Modifier.size(22.dp)
-                        )
+                    if (!isFullscreen) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.CenterEnd)
+                                .padding(end = 24.dp)
+                                .size(44.dp)
+                                .clip(CircleShape)
+                                .background(Color.Black.copy(alpha = 0.5f))
+                                .clickable {
+                                    isLocked = false
+                                    showControls = true
+                                    controlsVisible = true
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Lock,
+                                contentDescription = "解锁",
+                                tint = Color.White,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
                     }
                 }
             } else {
-                // Normal controls overlay (TopBar + BottomBar + Dual lock buttons)
+                // Normal controls overlay.
                 Box(modifier = Modifier.fillMaxSize()) {
                     Column(modifier = Modifier.fillMaxSize()) {
                         PlayerTopBar(
                             title = viewState.title,
-                            onBack = actions.onBack
+                            onBack = actions.onBack,
+                            onDiagnosticsClick = if (
+                                shouldShowPlaybackDiagnostics(
+                                    debugBuild = BuildConfig.DEBUG || BuildConfig.BUILD_TYPE == "qa",
+                                    hasController = playerController != null
+                                )
+                            ) {
+                                {
+                                    diagnosticsSnapshot = playerController?.playbackDiagnostics(
+                                        viewState.currentQualityName
+                                    )
+                                    showDiagnosticsSheet = diagnosticsSnapshot != null
+                                }
+                            } else {
+                                null
+                            }
                         )
 
                         Spacer(modifier = Modifier.weight(1f))
 
                         PlayerBottomBar(
-                            isPlaying = state.isPlaying,
+                            showPauseButton = showPauseButton,
                             onPlayPauseClick = { playerController?.togglePlayPause() },
                             danmuEnable = viewState.danmakuEnabled,
                             onDanmuToggle = {
@@ -494,9 +539,9 @@ fun PlayerView(
                                 actions.onFullscreenClick?.invoke()
                                     ?: playerController?.toggleFullscreen()
                             },
-                            onRoomSettingsClick = actions.onRoomSettingsClick,
+                            onRoomSettingsClick = actions.onRoomSettingsClick.takeUnless { isFullscreen },
                             onQuickAccessClick = actions.onQuickAccessClick,
-                            onFollowClick = actions.onFollowClick,
+                            onFollowClick = actions.onFollowClick.takeUnless { isFullscreen },
                             isFollowing = viewState.isFollowing,
                             followEnabled = viewState.followEnabled,
                             onRefreshClick = actions.onRefreshClick,
@@ -523,23 +568,24 @@ fun PlayerView(
                         )
                     }
 
-                    // Right edge lock button (unlocked state)
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.CenterEnd)
-                            .padding(end = 24.dp)
-                            .size(44.dp)
-                            .clip(CircleShape)
-                            .background(Color.Black.copy(alpha = 0.5f))
-                            .clickable { isLocked = true },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.LockOpen,
-                            contentDescription = "锁屏",
-                            tint = Color.White,
-                            modifier = Modifier.size(22.dp)
-                        )
+                    if (!isFullscreen) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.CenterEnd)
+                                .padding(end = 24.dp)
+                                .size(44.dp)
+                                .clip(CircleShape)
+                                .background(Color.Black.copy(alpha = 0.5f))
+                                .clickable { isLocked = true },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.LockOpen,
+                                contentDescription = "锁屏",
+                                tint = Color.White,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
                     }
                 }
             }
@@ -569,6 +615,7 @@ fun PlayerView(
         if (state.error != null) {
             PlayerErrorOverlay(message = state.error ?: "")
         }
+    }
     }
 
     // Line switcher bottom sheet
@@ -601,6 +648,14 @@ fun PlayerView(
             },
             onDismiss = { showDanmuSettingsSheet = false }
         )
+    }
+    if (showDiagnosticsSheet) {
+        diagnosticsSnapshot?.let { snapshot ->
+            PlaybackDiagnosticsBottomSheet(
+                snapshot = snapshot,
+                onDismiss = { showDiagnosticsSheet = false }
+            )
+        }
     }
     }
 }
@@ -649,7 +704,8 @@ private fun PlayerErrorOverlay(
 @Composable
 private fun PlayerTopBar(
     title: String,
-    onBack: (() -> Unit)?
+    onBack: (() -> Unit)?,
+    onDiagnosticsClick: (() -> Unit)?
 ) {
     val topGradient = remember {
         Brush.verticalGradient(
@@ -687,12 +743,21 @@ private fun PlayerTopBar(
                 .weight(1f)
                 .padding(horizontal = 8.dp)
         )
+        if (onDiagnosticsClick != null) {
+            IconButton(onClick = onDiagnosticsClick) {
+                Icon(
+                    Icons.Default.Info,
+                    contentDescription = "播放诊断",
+                    tint = Color.White
+                )
+            }
+        }
     }
 }
 
 @Composable
 private fun PlayerBottomBar(
-    isPlaying: Boolean,
+    showPauseButton: Boolean,
     onPlayPauseClick: () -> Unit,
     danmuEnable: Boolean,
     onDanmuToggle: () -> Unit,
@@ -738,13 +803,15 @@ private fun PlayerBottomBar(
         val itemGap = if (compact) 4.dp else 8.dp
         val horizontalPadding = if (compact) 8.dp else 16.dp
         var showOverflowMenu by remember { mutableStateOf(false) }
+        val overflowMenuScrollState = rememberScrollState()
+        val overflowMenuColor = MenuDefaults.containerColor
         val placeFollowActionOnRight = shouldPlacePlayerFollowActionOnRight(isPortrait)
         val showQualityAction = (!isPortrait || isFullscreen) && onQualityClick != null
         val showLineAction = !isPortrait || isFullscreen
         val showRoomSettingsAction = shouldShowPlayerRoomSettingsAction(isPortrait)
-        val showFullscreenAction = shouldShowPlayerFullscreenAction(isPortrait)
+        val showFullscreenAction = shouldShowPlayerFullscreenAction(isPortrait) || isFullscreen || (LocalAppLayout.current.tablet && !isFullscreen)
         val hasOverflowActions = compact && (
-            onRefreshClick != null ||
+            (!isFullscreen && onRefreshClick != null) ||
                 showQualityAction ||
                 showLineAction ||
                 (showRoomSettingsAction && onRoomSettingsClick != null) ||
@@ -774,7 +841,7 @@ private fun PlayerBottomBar(
                 Spacer(modifier = Modifier.width(itemGap))
             }
 
-            if (!compact && onRefreshClick != null) {
+            if (onRefreshClick != null && (!compact || isFullscreen)) {
                 IconButton(
                     onClick = onRefreshClick,
                     modifier = Modifier.size(buttonSize)
@@ -794,8 +861,8 @@ private fun PlayerBottomBar(
                 modifier = Modifier.size(buttonSize)
             ) {
                 Icon(
-                    if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                    contentDescription = if (isPlaying) "暂停" else "播放",
+                    if (showPauseButton) Icons.Default.Pause else Icons.Default.PlayArrow,
+                    contentDescription = if (showPauseButton) "暂停" else "播放",
                     tint = Color.White,
                     modifier = Modifier.size(iconSize)
                 )
@@ -815,7 +882,7 @@ private fun PlayerBottomBar(
             }
             Spacer(modifier = Modifier.width(itemGap))
 
-            if (shouldShowPlayerDanmuSettingsButton(isPortrait)) {
+            if (shouldShowPlayerDanmuSettingsButton(isPortrait, isFullscreen)) {
                 IconButton(
                     onClick = onDanmuSettingsClick,
                     modifier = Modifier.size(buttonSize)
@@ -907,21 +974,6 @@ private fun PlayerBottomBar(
                 Spacer(modifier = Modifier.width(itemGap))
             }
 
-            if (showFullscreenAction) {
-                IconButton(
-                    onClick = onFullscreenClick,
-                    modifier = Modifier.size(buttonSize)
-                ) {
-                    Icon(
-                        if (isFullscreen) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
-                        contentDescription = "全屏",
-                        tint = Color.White,
-                        modifier = Modifier.size(iconSize)
-                    )
-                }
-                Spacer(modifier = Modifier.width(itemGap))
-            }
-
             if (hasOverflowActions) {
                 Box {
                     IconButton(
@@ -937,9 +989,17 @@ private fun PlayerBottomBar(
                     }
                     DropdownMenu(
                         expanded = showOverflowMenu,
-                        onDismissRequest = { showOverflowMenu = false }
+                        onDismissRequest = { showOverflowMenu = false },
+                        modifier = Modifier
+                            .heightIn(max = 280.dp)
+                            .playerOverflowMenuEdgeFades(
+                                scrollState = overflowMenuScrollState,
+                                edgeColor = overflowMenuColor
+                            ),
+                        scrollState = overflowMenuScrollState,
+                        containerColor = overflowMenuColor
                     ) {
-                        if (onRefreshClick != null) {
+                        if (!isFullscreen && onRefreshClick != null) {
                             DropdownMenuItem(
                                 text = { Text("刷新") },
                                 leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null) },
@@ -989,6 +1049,21 @@ private fun PlayerBottomBar(
                         }
                     }
                 }
+                Spacer(modifier = Modifier.width(itemGap))
+            }
+
+            if (showFullscreenAction) {
+                IconButton(
+                    onClick = onFullscreenClick,
+                    modifier = Modifier.size(buttonSize)
+                ) {
+                    Icon(
+                        if (isFullscreen) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
+                        contentDescription = if (isFullscreen) "退出全屏" else "全屏",
+                        tint = Color.White,
+                        modifier = Modifier.size(iconSize)
+                    )
+                }
             }
         }
     }
@@ -1024,6 +1099,57 @@ internal fun resolvePlayerDanmuButtonTint(
     return if (danmuEnable) accentColor else Color.White
 }
 
+internal data class PlayerOverflowMenuScrollEdges(
+    val showTop: Boolean,
+    val showBottom: Boolean
+)
+
+internal fun resolvePlayerOverflowMenuScrollEdges(
+    scrollValue: Int,
+    maxScrollValue: Int
+): PlayerOverflowMenuScrollEdges {
+    val boundedMax = maxScrollValue.coerceAtLeast(0)
+    val boundedValue = scrollValue.coerceIn(0, boundedMax)
+    return PlayerOverflowMenuScrollEdges(
+        showTop = boundedValue > 0,
+        showBottom = boundedValue < boundedMax
+    )
+}
+
+private fun Modifier.playerOverflowMenuEdgeFades(
+    scrollState: ScrollState,
+    edgeColor: Color
+): Modifier = drawWithContent {
+    drawContent()
+    val edges = resolvePlayerOverflowMenuScrollEdges(
+        scrollValue = scrollState.value,
+        maxScrollValue = scrollState.maxValue
+    )
+    val edgeHeight = minOf(18.dp.toPx(), size.height)
+    if (edges.showTop) {
+        drawRect(
+            brush = Brush.verticalGradient(
+                colors = listOf(edgeColor.copy(alpha = 0.9f), Color.Transparent),
+                startY = 0f,
+                endY = edgeHeight
+            ),
+            size = Size(size.width, edgeHeight)
+        )
+    }
+    if (edges.showBottom) {
+        val top = size.height - edgeHeight
+        drawRect(
+            brush = Brush.verticalGradient(
+                colors = listOf(Color.Transparent, edgeColor.copy(alpha = 0.9f)),
+                startY = top,
+                endY = size.height
+            ),
+            topLeft = Offset(0f, top),
+            size = Size(size.width, edgeHeight)
+        )
+    }
+}
+
 internal fun shouldUseCompactPlayerBottomBar(availableWidthDp: Int, isPortrait: Boolean): Boolean {
     return !isPortrait && availableWidthDp < 480
 }
@@ -1040,8 +1166,44 @@ internal fun shouldShowPlayerFullscreenAction(isPortrait: Boolean): Boolean {
     return isPortrait
 }
 
-internal fun shouldShowPlayerDanmuSettingsButton(isPortrait: Boolean): Boolean {
-    return isPortrait
+internal fun shouldShowPlayerDanmuSettingsButton(isPortrait: Boolean, isFullscreen: Boolean = false): Boolean {
+    return isPortrait && !isFullscreen
+}
+
+internal fun shouldShowPlaybackDiagnostics(debugBuild: Boolean, hasController: Boolean): Boolean =
+    debugBuild && hasController
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PlaybackDiagnosticsBottomSheet(
+    snapshot: PlaybackDiagnosticSnapshot,
+    onDismiss: () -> Unit
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surface
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(bottom = 32.dp)
+        ) {
+            Text(
+                text = "播放诊断",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+            )
+            HorizontalDivider()
+            snapshot.entries.forEach { entry ->
+                ListItem(
+                    headlineContent = { Text(entry.label) },
+                    supportingContent = { Text(entry.value) }
+                )
+            }
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1172,7 +1334,8 @@ private fun DanmakuSettingsBottomSheet(
                 // Size Selector
                 Text("弹幕字号", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                 Spacer(modifier = Modifier.height(8.dp))
-                val sizeValues = listOf(0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.5)
+                val sizeValue = DanmakuSettingsPolicy.sizeMultiplier(danmuSize)
+                val sizeValues = DanmakuSettingsPolicy.choicesWithCurrent(DanmakuSettingsPolicy.sizeValues, sizeValue)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1181,9 +1344,9 @@ private fun DanmakuSettingsBottomSheet(
                 ) {
                     sizeValues.forEach { size ->
                         FilterChip(
-                            selected = danmuSize == size,
+                            selected = DanmakuSettingsPolicy.sameValue(sizeValue, size),
                             onClick = { onDanmuSizeChange(size) },
-                            label = { Text("${size}x") }
+                            label = { Text(DanmakuSettingsPolicy.multiplierText(size)) }
                         )
                     }
                 }
@@ -1192,19 +1355,19 @@ private fun DanmakuSettingsBottomSheet(
                 // Speed Selector
                 Text("弹幕速度", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                 Spacer(modifier = Modifier.height(8.dp))
-                val speedValues = listOf(0.6, 0.8, 1.0, 1.2, 1.5)
-                val speedLabels = listOf("极慢", "较慢", "正常", "较快", "最快")
+                val speedValue = DanmakuSettingsPolicy.speedMultiplier(danmuSpeed)
+                val speedValues = DanmakuSettingsPolicy.choicesWithCurrent(DanmakuSettingsPolicy.speedValues, speedValue)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    speedValues.forEachIndexed { idx, speed ->
+                    speedValues.forEach { speed ->
                         FilterChip(
-                            selected = danmuSpeed == speed,
+                            selected = DanmakuSettingsPolicy.sameValue(speedValue, speed),
                             onClick = { onDanmuSpeedChange(speed) },
-                            label = { Text(speedLabels[idx]) }
+                            label = { Text(DanmakuSettingsPolicy.multiplierText(speed)) }
                         )
                     }
                 }
@@ -1213,19 +1376,19 @@ private fun DanmakuSettingsBottomSheet(
                 // Area Selector
                 Text("显示区域", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                 Spacer(modifier = Modifier.height(8.dp))
-                val areaValues = listOf(0.25, 0.333, 0.5, 0.667, 1.0)
-                val areaLabels = listOf("1/4屏", "1/3屏", "1/2屏", "2/3屏", "全屏")
+                val areaValue = DanmakuSettingsPolicy.area(danmuArea)
+                val areaValues = DanmakuSettingsPolicy.choicesWithCurrent(DanmakuSettingsPolicy.areaValues, areaValue)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    areaValues.forEachIndexed { idx, area ->
+                    areaValues.forEach { area ->
                         FilterChip(
-                            selected = danmuArea == area,
+                            selected = DanmakuSettingsPolicy.sameValue(areaValue, area),
                             onClick = { onDanmuAreaChange(area) },
-                            label = { Text(areaLabels[idx]) }
+                            label = { Text(DanmakuSettingsPolicy.percentText(area)) }
                         )
                     }
                 }
@@ -1234,19 +1397,19 @@ private fun DanmakuSettingsBottomSheet(
                 // Opacity Selector
                 Text("不透明度", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                 Spacer(modifier = Modifier.height(8.dp))
-                val opacityValues = listOf(0.2, 0.4, 0.6, 0.8, 1.0)
-                val opacityLabels = listOf("20%", "40%", "60%", "80%", "100%")
+                val opacityValue = DanmakuSettingsPolicy.opacity(danmuOpacity)
+                val opacityValues = DanmakuSettingsPolicy.choicesWithCurrent(DanmakuSettingsPolicy.opacityValues, opacityValue)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    opacityValues.forEachIndexed { idx, opacity ->
+                    opacityValues.forEach { opacity ->
                         FilterChip(
-                            selected = danmuOpacity == opacity,
+                            selected = DanmakuSettingsPolicy.sameValue(opacityValue, opacity),
                             onClick = { onDanmuOpacityChange(opacity) },
-                            label = { Text(opacityLabels[idx]) }
+                            label = { Text(DanmakuSettingsPolicy.percentText(opacity)) }
                         )
                     }
                 }

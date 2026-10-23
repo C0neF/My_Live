@@ -14,7 +14,7 @@ sealed interface SitePlayData {
 sealed interface DanmakuArgs {
     data class BiliBili(
         val roomId: Int,
-        val uid: Int,
+        val uid: Long,
         val token: String,
         val buvid: String,
         val serverHost: String,

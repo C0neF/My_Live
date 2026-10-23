@@ -22,6 +22,27 @@ import org.robolectric.annotation.Config
 @Config(sdk = [34])
 class FollowRepositoryImportTest {
 
+    @Test
+    fun failingTagInsertRollsBackBothCollections() = runBlocking {
+        val original = FollowUserEntity("bilibili_1", "1", "bilibili", "original", "", 1L)
+        repository.addFollow(original)
+        val originalTag = FollowUserTagEntity("tag-1", "original", listOf(original.id))
+        repository.addTag(originalTag)
+        db.openHelper.writableDatabase.execSQL(
+            "CREATE TRIGGER reject_tag BEFORE INSERT ON follow_user_tags " +
+                "WHEN NEW.id = 'rejected' BEGIN SELECT RAISE(ABORT, 'test failure'); END"
+        )
+        val failure = runCatching {
+            repository.importFromJson(
+                """{"follows":[{"siteId":"douyin","roomId":"2","userName":"incoming"}],"tags":[{"id":"rejected","tag":"new"}]}""",
+                overlay = true
+            )
+        }
+        assertEquals(true, failure.isFailure)
+        assertEquals(listOf(original), repository.getAllFollows().first())
+        assertEquals(listOf(originalTag), repository.getAllTags().first())
+    }
+
     private lateinit var db: AppDatabase
     private lateinit var repository: FollowRepository
 
@@ -31,7 +52,7 @@ class FollowRepositoryImportTest {
         db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
             .allowMainThreadQueries()
             .build()
-        repository = FollowRepository(db.followUserDao(), db.followUserTagDao())
+        repository = FollowRepository(db.followUserDao(), db.followUserTagDao(), db)
     }
 
     @After

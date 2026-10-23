@@ -35,6 +35,20 @@ class LanSyncCryptoTest {
     }
 
     @Test
+    fun envelopeByteBoundMatchesRealSealingAcrossBase64RemaindersAndUtf8() {
+        val payloads = (0..6).map { "x".repeat(it) } + listOf("界", "😀", "界😀", "x".repeat(1_024))
+        payloads.forEach { payload ->
+            val bytes = payload.toByteArray(Charsets.UTF_8).size
+            val sealed = LanSyncCrypto.encrypt(pairingCode, payload, context)
+            assertEquals(
+                "Envelope bound must match actual sealing of $bytes UTF-8 bytes",
+                sealed.toByteArray(Charsets.UTF_8).size.toLong(),
+                LanSyncCrypto.maxEnvelopeBytes(bytes)
+            )
+        }
+    }
+
+    @Test
     fun sealedPayloadDoesNotLeakPlaintextOnTheWire() {
         val sealed = LanSyncCrypto.encrypt(pairingCode, """{"userName":"streamer"}""", context)
 

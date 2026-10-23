@@ -17,9 +17,9 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun SettingsAction(
     title: String,
-    subtitle: String? = null,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    subtitle: String? = null
 ) {
     Row(
         modifier = modifier

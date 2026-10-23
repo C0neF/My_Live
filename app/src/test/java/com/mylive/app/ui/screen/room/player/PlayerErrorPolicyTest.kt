@@ -41,11 +41,15 @@ class PlayerErrorPolicyTest {
 
     @Test
     fun playerRequestsFreshPlaybackSourceAfterCurrentUrlsAreExhausted() {
-        val source = File("src/main/java/com/mylive/app/ui/screen/room/player/PlayerController.kt").readText()
+        val controller = File("src/main/java/com/mylive/app/ui/screen/room/player/PlayerController.kt").readText()
+        val session = File("src/main/java/com/mylive/app/ui/screen/room/player/LivePlaybackSession.kt").readText()
+        val viewModel = File("src/main/java/com/mylive/app/ui/screen/room/LiveRoomViewModel.kt").readText()
 
-        assertTrue(source.contains("onPlaybackSourceExhausted"))
-        assertTrue(source.contains("sourceRefreshAttempted"))
-        assertTrue(source.contains("resetSourceRefreshAttempt"))
+        assertTrue(controller.contains("onPlaybackSourceExhausted"))
+        assertTrue(session.contains("PlaybackSourceRecoveryGate"))
+        assertTrue(viewModel.contains("PlaybackRequestOrigin.SourceRecovery"))
+        assertFalse(controller.contains("sourceRefreshAttempted"))
+        assertFalse(controller.contains("resetSourceRefreshAttempt"))
     }
 
     @Test

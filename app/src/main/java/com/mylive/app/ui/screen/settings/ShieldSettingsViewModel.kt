@@ -7,6 +7,9 @@ import com.mylive.app.data.local.entity.ShieldPresetEntity
 import com.mylive.app.data.repository.SettingsRepository
 import com.mylive.app.data.repository.ShieldRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import org.json.JSONArray
@@ -172,48 +175,15 @@ class ShieldSettingsViewModel @Inject constructor(
     fun applyPreset(preset: ShieldPresetEntity) {
         viewModelScope.launch {
             try {
-                val decoded = JSONObject(preset.value)
-                val keywordArr = decoded.optJSONArray("keywords") ?: JSONArray()
-                val globalUsersArr = decoded.optJSONArray("users") ?: JSONArray()
-                val userGroupsObj = decoded.optJSONObject("userGroups") ?: JSONObject()
-
-                // Clear current
-                shieldRepository.clearAllKeywords()
-                shieldRepository.clearAllUserShields()
-
-                // Insert new keywords
-                for (i in 0 until keywordArr.length()) {
-                    val kw = keywordArr.getString(i).trim()
-                    if (kw.isNotEmpty()) {
-                        shieldRepository.addShield(ShieldEntity(value = "keyword:$kw"))
-                    }
-                }
-
-                // Insert global users
-                for (i in 0 until globalUsersArr.length()) {
-                    val user = globalUsersArr.getString(i).trim()
-                    if (user.isNotEmpty()) {
-                        shieldRepository.addShield(ShieldEntity(value = "user:__all__:$user"))
-                    }
-                }
-
-                // Insert group users
-                val keys = userGroupsObj.keys()
-                while (keys.hasNext()) {
-                    val siteId = keys.next()
-                    val usersArr = userGroupsObj.optJSONArray(siteId) ?: JSONArray()
-                    for (i in 0 until usersArr.length()) {
-                        val user = usersArr.getString(i).trim()
-                        if (user.isNotEmpty()) {
-                            shieldRepository.addShield(ShieldEntity(value = "user:$siteId:$user"))
-                        }
-                    }
-                }
+                val shields = decodeShieldRules(JSONObject(preset.value))
+                shieldRepository.importConfiguration(shields)
 
                 // Enable toggles
                 settingsRepository.setDanmuShieldEnable(true)
                 settingsRepository.setDanmuKeywordShieldEnable(true)
                 settingsRepository.setDanmuUserShieldEnable(true)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
                 Timber.e(e, "applyPreset failed")
             }
@@ -282,62 +252,80 @@ class ShieldSettingsViewModel @Inject constructor(
         }
     }
 
+    /** Accepts valid input for a background import; screen feedback must await persistence. */
     fun importPresetJson(content: String): Boolean {
+        val imported = decodeImportConfiguration(content) ?: return false
+        viewModelScope.launch { persistImportConfiguration(imported) }
+        return true
+    }
+
+    suspend fun importPresetJsonAndAwait(content: String): Boolean {
+        currentCoroutineContext().ensureActive()
+        val imported = decodeImportConfiguration(content) ?: return false
+        return persistImportConfiguration(imported)
+    }
+
+    private data class ImportedConfiguration(
+        val currentShields: List<ShieldEntity>?,
+        val presets: List<ShieldPresetEntity>
+    )
+
+    private fun decodeImportConfiguration(content: String): ImportedConfiguration? =
         try {
             val decoded = JSONObject(content)
-            val currentObj = decoded.optJSONObject("current")
-            val presetsArr = decoded.optJSONArray("presets") ?: JSONArray()
-
-            viewModelScope.launch {
-                // Import presets
-                for (i in 0 until presetsArr.length()) {
-                    val pObj = presetsArr.optJSONObject(i) ?: continue
-                    val name = pObj.optString("name", "").trim()
-                    if (name.isNotEmpty()) {
-                        shieldRepository.addPreset(ShieldPresetEntity(name = name, value = pObj.toString()))
-                    }
-                }
-
-                // Apply current if present
-                if (currentObj != null) {
-                    val keywordArr = currentObj.optJSONArray("keywords") ?: JSONArray()
-                    val globalUsersArr = currentObj.optJSONArray("users") ?: JSONArray()
-                    val userGroupsObj = currentObj.optJSONObject("userGroups") ?: JSONObject()
-
-                    shieldRepository.clearAllKeywords()
-                    shieldRepository.clearAllUserShields()
-
-                    for (i in 0 until keywordArr.length()) {
-                        val kw = keywordArr.getString(i).trim()
-                        if (kw.isNotEmpty()) {
-                            shieldRepository.addShield(ShieldEntity(value = "keyword:$kw"))
-                        }
-                    }
-
-                    for (i in 0 until globalUsersArr.length()) {
-                        val user = globalUsersArr.getString(i).trim()
-                        if (user.isNotEmpty()) {
-                            shieldRepository.addShield(ShieldEntity(value = "user:__all__:$user"))
-                        }
-                    }
-
-                    val keys = userGroupsObj.keys()
-                    while (keys.hasNext()) {
-                        val siteId = keys.next()
-                        val usersArr = userGroupsObj.optJSONArray(siteId) ?: JSONArray()
-                        for (i in 0 until usersArr.length()) {
-                            val user = usersArr.getString(i).trim()
-                            if (user.isNotEmpty()) {
-                                shieldRepository.addShield(ShieldEntity(value = "user:$siteId:$user"))
-                            }
-                        }
-                    }
-                }
+            val currentShields = if (decoded.has("current")) {
+                decodeShieldRules(decoded.getJSONObject("current"))
+            } else null
+            val presetsArr = decoded.optionalArray("presets")
+            val importedPresets = List(presetsArr.length()) { index ->
+                val preset = presetsArr.getJSONObject(index)
+                val rawName = preset.get("name")
+                require(rawName is String && rawName.isNotBlank()) { "invalid_preset_name" }
+                // Validate every nested rule before scheduling any database write.
+                decodeShieldRules(preset)
+                ShieldPresetEntity(name = rawName.trim(), value = preset.toString())
             }
-            return true
+
+            ImportedConfiguration(currentShields, importedPresets)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             Timber.e(e, "importPresetJson failed")
-            return false
+            null
+        }
+
+    private suspend fun persistImportConfiguration(imported: ImportedConfiguration): Boolean =
+        try {
+            shieldRepository.importConfiguration(imported.currentShields, imported.presets)
+            currentCoroutineContext().ensureActive()
+            true
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (e: Exception) {
+            Timber.e(e, "importPresetJson persistence failed")
+            false
+        }
+
+    private fun JSONObject.optionalArray(key: String): JSONArray =
+        if (has(key)) getJSONArray(key) else JSONArray()
+
+    private fun decodeShieldRules(source: JSONObject): List<ShieldEntity> = buildList {
+        fun addRules(array: JSONArray, prefix: String) {
+            for (index in 0 until array.length()) {
+                val rawValue = array.get(index)
+                require(rawValue is String) { "invalid_shield_rule" }
+                val value = rawValue.trim()
+                if (value.isNotEmpty()) add(ShieldEntity(value = "$prefix$value"))
+            }
+        }
+
+        addRules(source.optionalArray("keywords"), "keyword:")
+        addRules(source.optionalArray("users"), "user:__all__:")
+        val userGroups = if (source.has("userGroups")) source.getJSONObject("userGroups") else JSONObject()
+        val siteIds = userGroups.keys()
+        while (siteIds.hasNext()) {
+            val siteId = siteIds.next()
+            addRules(userGroups.getJSONArray(siteId), "user:$siteId:")
         }
     }
 }

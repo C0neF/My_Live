@@ -15,9 +15,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.activity.compose.BackHandler
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mylive.app.ui.navigation.Navigator
+import com.mylive.app.ui.layout.AdaptivePageFrame
 import com.mylive.app.ui.navigation.Route
 import com.mylive.app.R
 import com.mylive.app.data.local.entity.HistoryEntity
@@ -36,18 +36,7 @@ fun HistoryScreen(
 ) {
     val history by viewModel.history.collectAsStateWithLifecycle()
 
-    var isExiting by remember { mutableStateOf(false) }
-
-    val handleBack: () -> Unit = {
-        if (!isExiting) {
-            isExiting = true
-            navigator.goBack()
-        }
-    }
-
-    BackHandler(enabled = !isExiting) {
-        handleBack()
-    }
+    val handleBack = navigator.rememberRouteActions().onBack
 
     Scaffold(
         topBar = {
@@ -64,11 +53,11 @@ fun HistoryScreen(
             )
         }
     ) { padding ->
+        AdaptivePageFrame(Modifier.padding(padding)) {
         if (history.isEmpty()) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(padding)
             ) {
                 EmptyState(
                     message = stringResource(R.string.history_empty),
@@ -78,8 +67,7 @@ fun HistoryScreen(
         } else {
             LazyColumn(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding),
+                    .fillMaxSize(),
                 contentPadding = PaddingValues(vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
@@ -96,6 +84,7 @@ fun HistoryScreen(
                     )
                 }
             }
+        }
         }
     }
 }

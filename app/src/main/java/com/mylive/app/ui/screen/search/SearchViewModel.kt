@@ -5,6 +5,8 @@ import androidx.lifecycle.viewModelScope
 import com.mylive.app.core.model.LiveRoomItem
 import com.mylive.app.core.model.LiveAnchorItem
 import com.mylive.app.core.site.LiveSite
+import com.mylive.app.core.site.mergeAnchorCatalogPage
+import com.mylive.app.core.site.mergeRoomCatalogPage
 import com.mylive.app.core.site.preserveSelectedSiteIndex
 import com.mylive.app.core.site.sortedByDefaultOrder
 import com.mylive.app.core.site.sortedByUserOrder
@@ -126,7 +128,7 @@ class SearchViewModel @Inject constructor(
                     if (!isCurrentSearchRequest(requestId, siteIndex, searchType, nextKeyword)) return@launch
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
-                        rooms = result.items,
+                        rooms = mergeRoomCatalogPage(emptyList(), result.items, replace = true),
                         anchors = emptyList(),
                         currentPage = 1,
                         hasMore = result.hasMore
@@ -137,7 +139,7 @@ class SearchViewModel @Inject constructor(
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
                         rooms = emptyList(),
-                        anchors = result.items,
+                        anchors = mergeAnchorCatalogPage(emptyList(), result.items, replace = true),
                         currentPage = 1,
                         hasMore = result.hasMore
                     )
@@ -180,15 +182,19 @@ class SearchViewModel @Inject constructor(
         val site = siteTabs.value.getOrNull(siteIndex) ?: return
         val nextPage = state.currentPage + 1
 
+        _uiState.value = _uiState.value.copy(isLoading = true, error = null)
         loadMoreJob = viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true)
             try {
                 if (searchType == 0) {
                     val result = site.searchRooms(keyword, page = nextPage)
                     if (!isCurrentSearchRequest(requestId, siteIndex, searchType, keyword)) return@launch
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
-                        rooms = _uiState.value.rooms + result.items,
+                        rooms = mergeRoomCatalogPage(
+                            existing = _uiState.value.rooms,
+                            incoming = result.items,
+                            replace = false
+                        ),
                         hasMore = result.hasMore,
                         currentPage = nextPage
                     )
@@ -197,7 +203,11 @@ class SearchViewModel @Inject constructor(
                     if (!isCurrentSearchRequest(requestId, siteIndex, searchType, keyword)) return@launch
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
-                        anchors = _uiState.value.anchors + result.items,
+                        anchors = mergeAnchorCatalogPage(
+                            existing = _uiState.value.anchors,
+                            incoming = result.items,
+                            replace = false
+                        ),
                         hasMore = result.hasMore,
                         currentPage = nextPage
                     )
@@ -207,7 +217,10 @@ class SearchViewModel @Inject constructor(
             } catch (e: Exception) {
                 if (!isCurrentSearchRequest(requestId, siteIndex, searchType, keyword)) return@launch
                 Timber.e(e, "Load more failed")
-                _uiState.value = _uiState.value.copy(isLoading = false)
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = e.message ?: "加载失败"
+                )
             }
         }
     }

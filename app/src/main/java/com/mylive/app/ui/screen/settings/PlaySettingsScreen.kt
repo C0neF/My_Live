@@ -1,6 +1,5 @@
 package com.mylive.app.ui.screen.settings
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
@@ -71,18 +70,7 @@ fun PlaySettingsScreen(
     val scaleDefault = stringResource(R.string.play_scale_default)
 
     var activeDialog by remember { mutableStateOf<PlaySettingDialog?>(null) }
-    var isExiting by remember { mutableStateOf(false) }
-
-    val handleBack: () -> Unit = {
-        if (!isExiting) {
-            isExiting = true
-            navigator.goBack()
-        }
-    }
-
-    BackHandler(enabled = !isExiting) {
-        handleBack()
-    }
+    val handleBack = navigator.rememberRouteActions().onBack
 
     Scaffold(
         topBar = {

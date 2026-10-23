@@ -114,7 +114,7 @@ class ChatAutoScrollPolicyTest {
     }
 
     @Test
-    fun preservesDisplayedHistoryWhileAutoScrollIsDisabled() {
+    fun preservesRecentDisplayedHistoryWithinBoundWhileAutoScrollIsDisabled() {
         assertTrue(
             mergeChatDisplayMessages(
                 currentDisplay = listOf(1L, 2L, 3L, 4L),
@@ -122,7 +122,20 @@ class ChatAutoScrollPolicyTest {
                 autoScrollDisabled = true,
                 maxEnabledMessages = 3,
                 keyOf = { it }
-            ) == listOf(1L, 2L, 3L, 4L, 5L)
+            ) == listOf(3L, 4L, 5L)
+        )
+    }
+
+    @Test
+    fun frozenFirstSnapshotIsAlsoHardCapped() {
+        assertTrue(
+            mergeChatDisplayMessages(
+                currentDisplay = emptyList<Long>(),
+                sourceMessages = listOf(1L, 2L, 3L, 4L),
+                autoScrollDisabled = true,
+                maxEnabledMessages = 2,
+                keyOf = { it }
+            ) == listOf(3L, 4L)
         )
     }
 

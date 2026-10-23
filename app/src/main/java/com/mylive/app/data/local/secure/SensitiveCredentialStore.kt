@@ -95,6 +95,11 @@ class SensitiveCredentialStore @Inject constructor(
         legacyKey = SettingsDataStore.DouyinCookie
     )
 
+    val douyuCookie: Flow<String> = credentialFlow(
+        encryptedKey = SettingsDataStore.EncryptedDouyuCookie,
+        legacyKey = SettingsDataStore.DouyuCookie
+    )
+
     val webDavPassword: Flow<String> = credentialFlow(
         encryptedKey = SettingsDataStore.EncryptedWebDAVPassword,
         legacyKey = SettingsDataStore.kWebDAVPassword
@@ -106,6 +111,27 @@ class SensitiveCredentialStore @Inject constructor(
 
     suspend fun setDouyinCookie(value: String) {
         setCredential(SettingsDataStore.EncryptedDouyinCookie, SettingsDataStore.DouyinCookie, value)
+    }
+
+    suspend fun setDouyuCookie(value: String) {
+        setCredential(SettingsDataStore.EncryptedDouyuCookie, SettingsDataStore.DouyuCookie, value)
+    }
+
+    suspend fun replaceDouyuCookieIfUnchanged(expected: String, replacement: String): Boolean {
+        var replaced = false
+        settingsDataStore.edit { prefs ->
+            val encrypted = prefs[SettingsDataStore.EncryptedDouyuCookie].orEmpty()
+            val current = if (encrypted.isNotEmpty()) {
+                runCatching { cipher.decrypt(encrypted) }.getOrDefault("")
+            } else prefs[SettingsDataStore.DouyuCookie].orEmpty()
+            if (current == expected) {
+                if (replacement.isEmpty()) prefs.remove(SettingsDataStore.EncryptedDouyuCookie)
+                else prefs[SettingsDataStore.EncryptedDouyuCookie] = cipher.encrypt(replacement)
+                prefs.remove(SettingsDataStore.DouyuCookie)
+                replaced = true
+            }
+        }
+        return replaced
     }
 
     suspend fun setWebDavPassword(value: String) {

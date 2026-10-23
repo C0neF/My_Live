@@ -1,7 +1,9 @@
 package com.mylive.app.ui.screen.room
 
 import android.content.pm.ActivityInfo
+import com.mylive.app.core.model.TabletOrientationMode
 import com.mylive.app.ui.screen.room.player.livePlaybackHostRequestedOrientation
+import com.mylive.app.ui.screen.room.player.shouldApplyLivePlaybackAutoFullscreen
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertEquals
@@ -27,9 +29,10 @@ class LiveRoomAutoFullscreenPolicyTest {
 
         assertTrue(source.contains("private fun applyLivePlaybackHostWindow("))
         assertTrue(source.contains("private fun restoreLivePlaybackHostWindow("))
-        assertTrue(source.contains("DisposableEffect(activity, liveRoomView)"))
+        assertTrue(source.contains("DisposableEffect(activity, liveRoomView"))
         assertTrue(source.contains("onDispose {"))
-        assertTrue(source.contains("activity?.let(::restoreLivePlaybackHostWindow)"))
+        assertTrue(source.contains("restoreLivePlaybackHostWindow("))
+        assertTrue(source.contains("tabletOrientationMode = tabletOrientationMode"))
         assertTrue(source.contains("ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED"))
     }
 
@@ -100,6 +103,49 @@ class LiveRoomAutoFullscreenPolicyTest {
                 fullscreen = true,
                 controlsLocked = true,
                 restorePortrait = true
+            )
+        )
+    }
+
+    @Test
+    fun tabletLockRestoresChosenOrientationInsteadOfForcingPortrait() {
+        assertEquals(
+            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE,
+            livePlaybackHostRequestedOrientation(
+                fullscreen = false,
+                controlsLocked = false,
+                restorePortrait = true,
+                tabletOrientationMode = TabletOrientationMode.Landscape
+            )
+        )
+        assertEquals(
+            ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT,
+            livePlaybackHostRequestedOrientation(
+                fullscreen = false,
+                controlsLocked = false,
+                tabletOrientationMode = TabletOrientationMode.Portrait
+            )
+        )
+    }
+
+    @Test
+    fun portraitLockedTabletDoesNotAutoRotateWhenRoomOpens() {
+        assertFalse(
+            shouldApplyLivePlaybackAutoFullscreen(
+                autoFullScreen = true,
+                tabletOrientationMode = TabletOrientationMode.Portrait
+            )
+        )
+        assertTrue(
+            shouldApplyLivePlaybackAutoFullscreen(
+                autoFullScreen = true,
+                tabletOrientationMode = TabletOrientationMode.Landscape
+            )
+        )
+        assertTrue(
+            shouldApplyLivePlaybackAutoFullscreen(
+                autoFullScreen = true,
+                tabletOrientationMode = null
             )
         )
     }
@@ -199,7 +245,7 @@ class LiveRoomAutoFullscreenPolicyTest {
     fun pictureInPictureDanmakuHonorsHideSetting() {
         val source = File("src/main/java/com/mylive/app/ui/screen/room/LiveRoomScreen.kt").readText()
         val pipBranch = source.substringAfter("if (isInPip) {")
-            .substringBefore("} else if (isLandscape || isFullscreen)")
+            .substringBefore("} else if (roomLayout == LiveRoomLayout.Immersive)")
 
         assertTrue(source.contains("val pipHideDanmu = liveRoomPreferences.pipHideDanmu"))
         assertTrue(source.contains("val pipDanmuEnable = liveRoomPreferences.danmuEnable"))
@@ -212,7 +258,7 @@ class LiveRoomAutoFullscreenPolicyTest {
     fun tabletLiveRoomRoutingMatchesMainBranchPolicy() {
         val source = File("src/main/java/com/mylive/app/ui/screen/room/LiveRoomScreen.kt").readText()
 
-        assertTrue(source.contains("} else if (isLandscape || isFullscreen) {"))
+        assertTrue(source.contains("} else if (roomLayout == LiveRoomLayout.Immersive) {"))
         assertFalse(source.contains("liveRoomUseTabletLayout("))
         assertFalse(source.contains("val useTabletLayout"))
         assertFalse(source.contains("screenWidthDp = configuration.screenWidthDp"))
@@ -230,6 +276,24 @@ class LiveRoomAutoFullscreenPolicyTest {
         assertEquals(320f, liveRoomInitialSidePanelOffsetPx(320f), 0.001f)
         assertEquals(0f, liveRoomSidePanelOffsetAfterDrag(8f, -32f, 320f), 0.001f)
         assertEquals(320f, liveRoomSidePanelOffsetAfterDrag(300f, 40f, 320f), 0.001f)
+        assertEquals(
+            0f,
+            liveRoomSidePanelSettledOffset(
+                currentOffsetPx = 300f,
+                velocityX = -2_000f,
+                panelWidthPx = 320f
+            ),
+            0.001f
+        )
+        assertEquals(
+            320f,
+            liveRoomSidePanelSettledOffset(
+                currentOffsetPx = 20f,
+                velocityX = 2_500f,
+                panelWidthPx = 320f
+            ),
+            0.001f
+        )
         assertTrue(source.contains("val roomTabs = remember { resolveLandscapeLiveRoomTabs() }"))
         assertTrue(source.contains("LandscapeRoomSidePanelHeader("))
         assertTrue(source.contains("onQuickAccessClick = quickAccessAction"))

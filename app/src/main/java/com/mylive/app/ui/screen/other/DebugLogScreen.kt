@@ -2,7 +2,6 @@ package com.mylive.app.ui.screen.other
 
 import android.content.Intent
 import android.widget.Toast
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -28,18 +27,7 @@ import com.mylive.app.core.common.CoreLog
 fun DebugLogScreen(navigator: Navigator) {
     val context = LocalContext.current
     val logs by CoreLog.entries.collectAsStateWithLifecycle()
-    var isExiting by remember { mutableStateOf(false) }
-
-    val handleBack: () -> Unit = {
-        if (!isExiting) {
-            isExiting = true
-            navigator.goBack()
-        }
-    }
-
-    BackHandler(enabled = !isExiting) {
-        handleBack()
-    }
+    val handleBack = navigator.rememberRouteActions().onBack
 
     Scaffold(
         topBar = {

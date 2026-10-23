@@ -104,7 +104,7 @@ class WebSocketConnectionPolicyTest {
             "private var connectBackupUrls",
             "private var connectHeartBeatTime",
             "private var connectIdleTimeoutMillis",
-            "private var connectDisableCompression",
+            "private var connectSocketClient",
             "private var connectHeaders",
             "private var callbackMessage",
             "private var callbackClose",

@@ -71,12 +71,11 @@ class PlayerDanmakuSettingsPolicyTest {
     }
 
     @Test
-    fun danmuQuickSettingsButtonOnlyShowsInPortraitPlayer() {
-        val source = File("src/main/java/com/mylive/app/ui/screen/room/player/PlayerView.kt").readText()
-
+    fun danmuQuickSettingsButtonOnlyShowsInNonFullscreenPortraitPlayer() {
         assertTrue(shouldShowPlayerDanmuSettingsButton(isPortrait = true))
         assertFalse(shouldShowPlayerDanmuSettingsButton(isPortrait = false))
-        assertTrue(source.contains("if (shouldShowPlayerDanmuSettingsButton(isPortrait))"))
+        assertFalse(shouldShowPlayerDanmuSettingsButton(isPortrait = true, isFullscreen = true))
+        assertFalse(shouldShowPlayerDanmuSettingsButton(isPortrait = false, isFullscreen = true))
     }
 
     @Test

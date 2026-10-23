@@ -23,7 +23,7 @@ import com.mylive.app.data.local.entity.ShieldPresetEntity
         ShieldEntity::class,
         ShieldPresetEntity::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -34,6 +34,13 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun shieldDao(): ShieldDao
 
     companion object {
+        val MIGRATION_4_5: Migration = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE follow_users ADD COLUMN canonicalRoomId TEXT DEFAULT NULL")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_follow_users_siteId_canonicalRoomId " +
+                    "ON follow_users(siteId, canonicalRoomId)")
+            }
+        }
         /**
          * Migration 1 → 2: [FollowUserTagEntity.userIds] changed Kotlin type from `String`
          * (raw JSON array) to `List<String>` (via [Converters]). The SQLite column affinity

@@ -18,9 +18,12 @@ class LiveMessageBufferTest {
             message = "hello"
         )
 
-        assertEquals(listOf(0L), buffer.add(message).map { it.id })
-        assertEquals(listOf(0L, 1L), buffer.add(message).map { it.id })
-        assertEquals(listOf(1L, 2L), buffer.add(message).map { it.id })
+        buffer.append(message)
+        assertEquals(listOf(0L), buffer.snapshot().map { it.id })
+        buffer.append(message)
+        assertEquals(listOf(0L, 1L), buffer.snapshot().map { it.id })
+        buffer.append(message)
+        assertEquals(listOf(1L, 2L), buffer.snapshot().map { it.id })
     }
 
     @Test
@@ -32,9 +35,10 @@ class LiveMessageBufferTest {
             message = "hello"
         )
 
-        buffer.add(message)
+        buffer.append(message)
         assertEquals(emptyList<DisplayLiveMessage>(), buffer.clear())
-        assertEquals(listOf(0L), buffer.add(message).map { it.id })
+        buffer.append(message)
+        assertEquals(listOf(0L), buffer.snapshot().map { it.id })
     }
 
     @Test
@@ -45,9 +49,11 @@ class LiveMessageBufferTest {
             userName = "alice",
             message = "hello"
         )
-        val first = buffer.add(message)
+        buffer.append(message)
+        val first = buffer.snapshot()
         assertTrue(first === buffer.snapshot())
-        val second = buffer.add(message)
+        buffer.append(message)
+        val second = buffer.snapshot()
         assertTrue(second === buffer.snapshot())
         assertFalse(first === second)
         val cleared = buffer.clear()

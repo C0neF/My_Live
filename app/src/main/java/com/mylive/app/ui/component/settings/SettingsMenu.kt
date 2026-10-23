@@ -17,11 +17,11 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun SettingsMenu(
     title: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
     subtitle: String? = null,
     value: String? = null,
-    onClick: () -> Unit,
-    enabled: Boolean = true,
-    modifier: Modifier = Modifier
+    enabled: Boolean = true
 ) {
     val contentColor = if (enabled) {
         MaterialTheme.colorScheme.onSurface

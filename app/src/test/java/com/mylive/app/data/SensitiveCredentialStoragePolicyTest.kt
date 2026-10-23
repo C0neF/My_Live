@@ -62,12 +62,27 @@ class SensitiveCredentialStoragePolicyTest {
     fun noCredentialIsEverWrittenToItsLegacyPlaintextKey() = runBlocking {
         store.setBilibiliCookie("bili")
         store.setDouyinCookie("douyin")
+        store.setDouyuCookie("dy_auth=test-login; LTP0=test-renewal")
         store.setWebDavPassword("hunter2")
 
         val raw = stored.value
         assertNull(raw[SettingsDataStore.BilibiliCookie])
         assertNull(raw[SettingsDataStore.DouyinCookie])
+        assertNull(raw[SettingsDataStore.DouyuCookie])
         assertNull(raw[SettingsDataStore.kWebDAVPassword])
+    }
+
+    @Test
+    fun douyuLoginAndRenewalAreEncryptedTogetherAndLateRenewalCannotUndoLogout() = runBlocking {
+        val original = "dy_auth=test-login; LTP0=test-renewal"
+        store.setDouyuCookie(original)
+        assertFalse(stored.value[SettingsDataStore.EncryptedDouyuCookie].orEmpty().contains("test-renewal"))
+        assertEquals(original, store.douyuCookie.first())
+        assertTrue(store.replaceDouyuCookieIfUnchanged(original, "dy_auth=fresh; LTP0=test-renewal"))
+        store.setDouyuCookie("")
+        assertFalse(store.replaceDouyuCookieIfUnchanged("dy_auth=fresh; LTP0=test-renewal", original))
+        assertEquals("", store.douyuCookie.first())
+        assertNull(stored.value[SettingsDataStore.EncryptedDouyuCookie])
     }
 
     @Test

@@ -1,6 +1,7 @@
 package com.mylive.app.data.repository
 
 import androidx.datastore.preferences.core.Preferences
+import com.mylive.app.core.model.TabletOrientationMode
 import com.mylive.app.data.local.datastore.SettingsDataStore
 
 data class LiveRoomPreferences(
@@ -41,7 +42,8 @@ data class LiveRoomPreferences(
     val autoFullScreen: Boolean = false,
     val liveRoomQuickAccessEnabled: Boolean = true,
     val autoPipOnExit: Boolean = false,
-    val pipHideDanmu: Boolean = false
+    val pipHideDanmu: Boolean = false,
+    val tabletOrientationMode: TabletOrientationMode = TabletOrientationMode.FollowSystem
 )
 
 internal fun toLiveRoomPreferences(preferences: Preferences): LiveRoomPreferences {
@@ -83,6 +85,10 @@ internal fun toLiveRoomPreferences(preferences: Preferences): LiveRoomPreference
         autoFullScreen = preferences[SettingsDataStore.AutoFullScreen] ?: false,
         liveRoomQuickAccessEnabled = preferences[SettingsDataStore.LiveRoomQuickAccessEnabled] ?: true,
         autoPipOnExit = preferences[SettingsDataStore.AutoPipOnExit] ?: false,
-        pipHideDanmu = preferences[SettingsDataStore.PIPHideDanmu] ?: false
+        pipHideDanmu = preferences[SettingsDataStore.PIPHideDanmu] ?: false,
+        tabletOrientationMode = TabletOrientationMode.fromPersistedValue(
+            preferences[SettingsDataStore.TabletOrientationMode]
+                ?: TabletOrientationMode.FollowSystem.persistedValue
+        )
     )
 }

@@ -1,7 +1,6 @@
 package com.mylive.app.ui.screen.sync
 
 import android.widget.Toast
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -75,29 +74,10 @@ class SyncDeviceViewModel @Inject constructor(
             _syncingKey.value = "follow"
             try {
                 val peer = lanSyncClient.connect(address, port, token)
-                val follows = followRepository.getAllFollows().first()
-                val jsonArray = org.json.JSONArray()
-                follows.forEach { f ->
-                    jsonArray.put(JSONObject().apply {
-                        put("siteId", f.siteId)
-                        put("id", f.id)
-                        put("roomId", f.roomId)
-                        put("userName", f.userName)
-                        put("face", f.face)
-                        put("addTime", f.addTime.toString())
-                        put("tag", f.tag)
-                        put("isSpecialFollow", f.isSpecialFollow)
-                    })
+                check(peer.peerInfo.supportsFollowBundle) {
+                    "对方应用版本不支持完整关注同步，请更新对方应用后重试"
                 }
-                peer.import(LanSyncImportType.FOLLOW, jsonArray.toString(), overlay)
-
-                // Also sync tags
-                val tags = followRepository.getAllTags().first()
-                peer.import(
-                    LanSyncImportType.TAG,
-                    encodeFollowTagsForLanSync(tags),
-                    overlay
-                )
+                peer.import(LanSyncImportType.FOLLOW, followRepository.exportToJson(), overlay)
 
                 _syncResults.value = _syncResults.value + ("follow" to "✅ 关注列表同步成功")
             } catch (e: Exception) {
@@ -167,16 +147,7 @@ fun SyncDeviceScreen(
     val syncingKey by viewModel.syncingKey.collectAsStateWithLifecycle()
     val syncResults by viewModel.syncResults.collectAsStateWithLifecycle()
 
-    var isExiting by remember { mutableStateOf(false) }
-    val handleBack: () -> Unit = {
-        if (!isExiting) {
-            isExiting = true
-            navigator.goBack()
-        }
-    }
-    BackHandler(enabled = !isExiting) {
-        handleBack()
-    }
+    val handleBack = navigator.rememberRouteActions().onBack
 
     // Extract parameters from Route key
     val address = key.address

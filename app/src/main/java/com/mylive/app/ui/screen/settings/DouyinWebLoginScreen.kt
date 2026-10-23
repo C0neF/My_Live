@@ -7,7 +7,6 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -43,20 +42,11 @@ fun DouyinWebLoginScreen(
     viewModel: AccountViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
-    var isExiting by remember { mutableStateOf(false) }
     var webViewInstance by remember { mutableStateOf<WebView?>(null) }
     var progressVal by remember { mutableFloatStateOf(0f) }
+    var savingCookie by remember { mutableStateOf(false) }
 
-    val handleBack: () -> Unit = {
-        if (!isExiting) {
-            isExiting = true
-            navigator.goBack()
-        }
-    }
-
-    BackHandler(enabled = !isExiting) {
-        handleBack()
-    }
+    val handleBack = navigator.rememberRouteActions().onBack
 
     // Read cookie utility
     val getDouyinCookies: () -> String = {
@@ -91,10 +81,12 @@ fun DouyinWebLoginScreen(
 
     val saveAndFinish: (Boolean) -> Unit = { silent ->
         val cookies = getDouyinCookies()
-        if (cookies.isNotEmpty() && hasLoginState(cookies)) {
-            viewModel.saveDouyinCookie(cookies)
-            Toast.makeText(context, "抖音登录态已保存", Toast.LENGTH_SHORT).show()
-            handleBack()
+        if (!savingCookie && cookies.isNotEmpty() && hasLoginState(cookies)) {
+            savingCookie = true
+            viewModel.saveDouyinCookie(cookies) {
+                Toast.makeText(context, "抖音登录态已保存", Toast.LENGTH_SHORT).show()
+                handleBack()
+            }
         } else {
             if (!silent) {
                 Toast.makeText(context, "未检测到登录态，请在页面中完成登录后再点击保存", Toast.LENGTH_LONG).show()
@@ -105,7 +97,9 @@ fun DouyinWebLoginScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("抖音网页登录") },
+                title = {
+                    Text(stringResource(R.string.account_web_login_title, stringResource(R.string.account_douyin_section)))
+                },
                 navigationIcon = {
                     IconButton(onClick = handleBack) {
                         Icon(

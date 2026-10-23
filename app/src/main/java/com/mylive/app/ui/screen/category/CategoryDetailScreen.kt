@@ -28,12 +28,12 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.activity.compose.BackHandler
 import com.mylive.app.ui.navigation.Navigator
 import com.mylive.app.ui.navigation.Route
 import com.mylive.app.R
 import com.mylive.app.ui.component.LiveRoomCard
-import com.mylive.app.ui.component.LiveRoomGridMinCellWidth
+import com.mylive.app.ui.layout.AdaptivePageFrame
+import com.mylive.app.ui.layout.LocalAppLayout
 import com.mylive.app.ui.component.status.ErrorState
 import com.mylive.app.ui.component.status.LiveRoomGridSkeleton
 import com.mylive.app.ui.navigation.navigateToRoom
@@ -58,18 +58,7 @@ fun CategoryDetailScreen(
     val hasMore by viewModel.hasMore.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
 
-    var isExiting by remember { mutableStateOf(false) }
-
-    val handleBack: () -> Unit = {
-        if (!isExiting) {
-            isExiting = true
-            navigator.goBack()
-        }
-    }
-
-    BackHandler(enabled = !isExiting) {
-        handleBack()
-    }
+    val handleBack = navigator.rememberRouteActions().onBack
 
     val gridState = rememberLazyGridState()
 
@@ -102,10 +91,10 @@ fun CategoryDetailScreen(
             )
         }
     ) { padding ->
+        AdaptivePageFrame(Modifier.padding(padding).background(MaterialTheme.colorScheme.background)) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
                 .background(MaterialTheme.colorScheme.background)
         ) {
         when {
@@ -139,7 +128,7 @@ fun CategoryDetailScreen(
                     else -> viewModel.siteId.replaceFirstChar { it.uppercase() }
                 }
                 LazyVerticalGrid(
-                    columns = GridCells.Adaptive(LiveRoomGridMinCellWidth),
+                    columns = GridCells.Adaptive(LocalAppLayout.current.liveRoomMinCellWidthDp.dp),
                     state = gridState,
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -182,6 +171,7 @@ fun CategoryDetailScreen(
                     }
                 }
             }
+        }
         }
         }
     }

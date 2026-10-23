@@ -2,9 +2,9 @@ name: Android CI
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, V3]
   push:
-    branches: [main, V2]
+    branches: [main, V2, V3]
 
 permissions:
   contents: read
@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   verify:
-    name: Test, assemble, and lint
+    name: Test, assemble Debug and QA, and lint
     runs-on: ubuntu-latest
 
     steps:
@@ -35,4 +35,10 @@ jobs:
         shell: bash
         run: |
           chmod +x ./gradlew
-          ./gradlew --no-daemon :app:testDebugUnitTest :app:assembleDebug :app:lintDebug
+          ./gradlew --no-daemon \
+            :app:testDebugUnitTest \
+            :app:assembleDebug \
+            :app:assembleQa \
+            :app:lintDebug \
+            :app:compileDebugAndroidTestKotlin \
+            :macrobenchmark:assembleBenchmark

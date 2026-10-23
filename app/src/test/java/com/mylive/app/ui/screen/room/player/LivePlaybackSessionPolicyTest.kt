@@ -8,6 +8,43 @@ import java.io.File
 class LivePlaybackSessionPolicyTest {
 
     @Test
+    fun sourceRecoveryLocksOnlyWhileAcquiringTheSource() {
+        val gate = PlaybackSourceRecoveryGate()
+        assertTrue(gate.tryStartRecovery { true })
+        assertFalse(gate.tryStartRecovery { true })
+        gate.finishRecovery()
+        assertTrue(gate.tryStartRecovery { true })
+    }
+
+    @Test
+    fun synchronousSourceDeliveryDoesNotRelockAfterTheCallbackReturns() {
+        val gate = PlaybackSourceRecoveryGate()
+        assertTrue(gate.tryStartRecovery {
+            assertFalse(gate.tryStartRecovery { true })
+            gate.finishRecovery()
+            true
+        })
+        assertTrue(gate.tryStartRecovery { true })
+    }
+
+    @Test
+    fun failedAcquisitionReleasesTheLockBeforePropagatingTheError() {
+        val gate = PlaybackSourceRecoveryGate()
+        val error = IllegalStateException("source failed")
+        val result = runCatching { gate.tryStartRecovery { throw error } }
+        assertTrue(result.exceptionOrNull() === error)
+        assertTrue(gate.tryStartRecovery { true })
+    }
+
+    @Test
+    fun rejectedSourceRecoveryReleasesTheLock() {
+        val gate = PlaybackSourceRecoveryGate()
+
+        assertFalse(gate.tryStartRecovery { false })
+        assertTrue(gate.tryStartRecovery { true })
+    }
+
+    @Test
     fun lifecyclePausePolicyMatchesBackgroundAndAutoPauseMatrix() {
         assertTrue(
             shouldLifecyclePauseLivePlayback(

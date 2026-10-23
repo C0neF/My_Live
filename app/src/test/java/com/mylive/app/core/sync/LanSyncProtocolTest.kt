@@ -119,6 +119,21 @@ class LanSyncProtocolTest {
     }
 
     @Test
+    fun followBundlesRequireAnExplicitPairedCapabilityAndDoNotLeakItToUnpairedCallers() {
+        val legacy = LanSyncProtocol.decodePeerInfo("""{"protocol":"MLSYNC2","paired":true}""")
+        assertFalse(legacy.supportsFollowBundle)
+        val paired = LanSyncProtocol.decodePeerInfo(
+            LanSyncProtocol.encodePeerInfo(paired = true, port = 23234, supportsFollowBundle = true)
+        )
+        assertTrue(paired.supportsFollowBundle)
+        val unpaired = LanSyncProtocol.encodePeerInfo(
+            paired = false, port = 23234, supportsFollowBundle = true
+        )
+        assertFalse(unpaired.contains("follow_bundle"))
+        assertFalse(LanSyncProtocol.decodePeerInfo(unpaired).supportsFollowBundle)
+    }
+
+    @Test
     fun a401KeepsTheReasonThePeerGave() {
         // All three are 401s, but only one of them is fixed by re-scanning the QR code. Reporting
         // a clock skew as "wrong pairing code" sent users round a loop that could not help.

@@ -1,7 +1,6 @@
 package com.mylive.app.ui.screen.settings
 
 import android.widget.Toast
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -60,33 +59,29 @@ fun AppUpdateScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    var launchedInstallFile by remember { mutableStateOf<File?>(null) }
-    var isExiting by remember { mutableStateOf(false) }
+    var handledInstallRequestId by remember(viewModel) { mutableStateOf<Long?>(null) }
+    var pendingPermissionRequestId by remember(viewModel) { mutableStateOf<Long?>(null) }
     val updateMajorVersion = BuildConfig.VERSION_NAME.substringBefore('.')
     val updateChannelName = "v$updateMajorVersion 稳定版"
 
-    val handleBack: () -> Unit = {
-        if (!isExiting) {
-            isExiting = true
-            navigator.goBack()
-        }
-    }
-
-    BackHandler(enabled = !isExiting) {
-        handleBack()
-    }
+    val handleBack = navigator.rememberRouteActions().onBack
 
     LaunchedEffect(Unit) {
         viewModel.checkForUpdate()
     }
 
-    val launchDownloadedUpdate: (File) -> Unit = { file ->
-        if (launchedInstallFile != file) {
+    fun launchDownloadedUpdate(file: File, requestId: Long, requestPermission: Boolean) {
+        if (handledInstallRequestId != requestId) {
             runCatching {
                 if (AppUpdateInstaller.canRequestPackageInstalls(context)) {
-                    launchedInstallFile = file
+                    // Treat each completion as a separate user request, including the same APK.
+                    // Consume before launching so returning from a cancelled/failed installer
+                    // cannot reopen it automatically.
+                    handledInstallRequestId = requestId
+                    pendingPermissionRequestId = null
                     context.startActivity(AppUpdateInstaller.createInstallIntent(context, file))
-                } else {
+                } else if (requestPermission) {
+                    pendingPermissionRequestId = requestId
                     Toast.makeText(
                         context,
                         "请允许 My Live 安装未知应用后再安装更新",
@@ -97,6 +92,8 @@ fun AppUpdateScreen(
                     )
                 }
             }.onFailure {
+                handledInstallRequestId = requestId
+                pendingPermissionRequestId = null
                 Toast.makeText(
                     context,
                     it.message ?: "无法打开安装器",
@@ -106,18 +103,18 @@ fun AppUpdateScreen(
         }
     }
 
-    LaunchedEffect(uiState.downloadedFile) {
+    LaunchedEffect(uiState.installRequestId, uiState.downloadedFile) {
         val file = uiState.downloadedFile ?: return@LaunchedEffect
-        launchDownloadedUpdate(file)
+        launchDownloadedUpdate(file, uiState.installRequestId, requestPermission = true)
     }
 
-    DisposableEffect(lifecycleOwner, uiState.downloadedFile) {
+    DisposableEffect(lifecycleOwner, uiState.installRequestId, uiState.downloadedFile) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_RESUME -> {
                     val file = uiState.downloadedFile
-                    if (file != null && AppUpdateInstaller.canRequestPackageInstalls(context)) {
-                        launchDownloadedUpdate(file)
+                    if (file != null && pendingPermissionRequestId == uiState.installRequestId) {
+                        launchDownloadedUpdate(file, uiState.installRequestId, requestPermission = false)
                     }
                 }
                 else -> Unit

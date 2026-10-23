@@ -21,7 +21,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.*
-import androidx.activity.compose.BackHandler
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringArrayResource
@@ -31,17 +30,13 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mylive.app.R
+import com.mylive.app.core.model.DanmakuSettingsPolicy
 import com.mylive.app.ui.component.settings.SettingsMenu
 import com.mylive.app.ui.navigation.Navigator
 import com.mylive.app.ui.navigation.Route
 import com.mylive.app.ui.component.settings.SettingsSwitch
 
-private val fontSizeValues = listOf(0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.5)
-private val speedValues = listOf(0.6, 0.8, 1.0, 1.2, 1.5)
-private val areaValues = listOf(0.25, 0.333, 0.5, 0.667, 1.0)
-private val opacityValues = listOf(0.2, 0.4, 0.6, 0.8, 1.0)
-private val fontWeightValues = listOf(200, 400, 600, 800)
-private val strokeWidthValues = listOf(0.0, 0.5, 1.0, 2.0)
+private val fontWeightValues = DanmakuSettingsPolicy.fontWeightValues
 private val lineCountValues = (0..12).toList()
 private val delayValues = (0..50).map { it * 100 }
 private val safeMarginValues = (0..12).map { it * 4 }
@@ -92,34 +87,28 @@ fun DanmuSettingsScreen(
     val danmuKeywordShieldEnable by viewModel.danmuKeywordShieldEnable.collectAsStateWithLifecycle()
     val danmuUserShieldEnable by viewModel.danmuUserShieldEnable.collectAsStateWithLifecycle()
 
-    val fontSizeOptions = stringArrayResource(R.array.danmu_font_size_options)
-    val speedOptions = stringArrayResource(R.array.danmu_speed_options)
-    val areaOptions = stringArrayResource(R.array.danmu_area_options)
-    val opacityOptions = stringArrayResource(R.array.danmu_opacity_options)
+    val size = DanmakuSettingsPolicy.sizeMultiplier(danmuSize)
+    val speed = DanmakuSettingsPolicy.speedMultiplier(danmuSpeed)
+    val area = DanmakuSettingsPolicy.area(danmuArea)
+    val opacity = DanmakuSettingsPolicy.opacity(danmuOpacity)
+    val weight = DanmakuSettingsPolicy.fontWeight(danmuFontWeight)
+    val stroke = DanmakuSettingsPolicy.strokeWidth(danmuStrokeWidth)
+    val fontSizeValues = DanmakuSettingsPolicy.choicesWithCurrent(DanmakuSettingsPolicy.sizeValues, size)
+    val speedValues = DanmakuSettingsPolicy.choicesWithCurrent(DanmakuSettingsPolicy.speedValues, speed)
+    val areaValues = DanmakuSettingsPolicy.choicesWithCurrent(DanmakuSettingsPolicy.areaValues, area)
+    val opacityValues = DanmakuSettingsPolicy.choicesWithCurrent(DanmakuSettingsPolicy.opacityValues, opacity)
+    val strokeWidthValues = DanmakuSettingsPolicy.choicesWithCurrent(DanmakuSettingsPolicy.strokeValues, stroke)
+    val fontSizeOptions = fontSizeValues.map(DanmakuSettingsPolicy::multiplierText).toTypedArray()
+    val speedOptions = speedValues.map(DanmakuSettingsPolicy::multiplierText).toTypedArray()
+    val areaOptions = areaValues.map(DanmakuSettingsPolicy::percentText).toTypedArray()
+    val opacityOptions = opacityValues.map(DanmakuSettingsPolicy::percentText).toTypedArray()
     val fontWeightOptions = stringArrayResource(R.array.danmu_font_weight_options)
-    val strokeWidthOptions = stringArrayResource(R.array.danmu_stroke_options)
+    val strokeWidthOptions = strokeWidthValues.map(DanmakuSettingsPolicy::strokeText).toTypedArray()
 
-    val fontSizeDefault = stringResource(R.string.danmu_font_size_default)
-    val speedDefault = stringResource(R.string.danmu_speed_default)
-    val areaDefault = stringResource(R.string.danmu_area_default)
-    val opacityDefault = stringResource(R.string.danmu_opacity_default)
     val fontWeightDefault = stringResource(R.string.danmu_font_weight_default)
-    val strokeDefault = stringResource(R.string.danmu_stroke_default)
 
     var activeDialog by remember { mutableStateOf<DanmuSettingDialog?>(null) }
-
-    var isExiting by remember { mutableStateOf(false) }
-
-    val handleBack: () -> Unit = {
-        if (!isExiting) {
-            isExiting = true
-            navigator.goBack()
-        }
-    }
-
-    BackHandler(enabled = !isExiting) {
-        handleBack()
-    }
+    val handleBack = navigator.rememberRouteActions().onBack
 
     Scaffold(
         topBar = {
@@ -217,21 +206,21 @@ fun DanmuSettingsScreen(
             // Menu items with selection dialogs
             SettingsMenu(
                 title = stringResource(R.string.danmu_size_title),
-                value = fontSizeOptions.getOrElse(fontSizeValues.indexOf(danmuSize)) { fontSizeDefault },
+                value = DanmakuSettingsPolicy.multiplierText(size),
                 onClick = { activeDialog = DanmuSettingDialog.FONT_SIZE }
             )
             HorizontalDivider()
 
             SettingsMenu(
                 title = stringResource(R.string.danmu_speed_title),
-                value = speedOptions.getOrElse(speedValues.indexOf(danmuSpeed)) { speedDefault },
+                value = DanmakuSettingsPolicy.multiplierText(speed),
                 onClick = { activeDialog = DanmuSettingDialog.SPEED }
             )
             HorizontalDivider()
 
             SettingsMenu(
                 title = stringResource(R.string.danmu_area_title),
-                value = areaOptions.getOrElse(areaValues.indexOf(danmuArea)) { areaDefault },
+                value = DanmakuSettingsPolicy.percentText(area),
                 onClick = { activeDialog = DanmuSettingDialog.AREA }
             )
             HorizontalDivider()
@@ -246,21 +235,21 @@ fun DanmuSettingsScreen(
 
             SettingsMenu(
                 title = stringResource(R.string.danmu_opacity_title),
-                value = opacityOptions.getOrElse(opacityValues.indexOf(danmuOpacity)) { opacityDefault },
+                value = DanmakuSettingsPolicy.percentText(opacity),
                 onClick = { activeDialog = DanmuSettingDialog.OPACITY }
             )
             HorizontalDivider()
 
             SettingsMenu(
                 title = stringResource(R.string.danmu_font_weight_title),
-                value = fontWeightOptions.getOrElse(fontWeightValues.indexOf(danmuFontWeight)) { fontWeightDefault },
+                value = fontWeightOptions.getOrElse(fontWeightValues.indexOf(weight)) { fontWeightDefault },
                 onClick = { activeDialog = DanmuSettingDialog.FONT_WEIGHT }
             )
             HorizontalDivider()
 
             SettingsMenu(
                 title = stringResource(R.string.danmu_stroke_title),
-                value = strokeWidthOptions.getOrElse(strokeWidthValues.indexOf(danmuStrokeWidth)) { strokeDefault },
+                value = DanmakuSettingsPolicy.strokeText(stroke),
                 onClick = { activeDialog = DanmuSettingDialog.STROKE_WIDTH }
             )
             HorizontalDivider()
@@ -330,7 +319,7 @@ fun DanmuSettingsScreen(
                 title = stringResource(R.string.danmu_size_title),
                 options = fontSizeOptions,
                 values = fontSizeValues,
-                selectedValue = danmuSize,
+                selectedValue = size,
                 onSelect = { viewModel.setDanmuSize(it) },
                 onDismiss = { activeDialog = null }
             )
@@ -340,7 +329,7 @@ fun DanmuSettingsScreen(
                 title = stringResource(R.string.danmu_speed_title),
                 options = speedOptions,
                 values = speedValues,
-                selectedValue = danmuSpeed,
+                selectedValue = speed,
                 onSelect = { viewModel.setDanmuSpeed(it) },
                 onDismiss = { activeDialog = null }
             )
@@ -350,7 +339,7 @@ fun DanmuSettingsScreen(
                 title = stringResource(R.string.danmu_area_title),
                 options = areaOptions,
                 values = areaValues,
-                selectedValue = danmuArea,
+                selectedValue = area,
                 onSelect = { viewModel.setDanmuArea(it) },
                 onDismiss = { activeDialog = null }
             )
@@ -370,7 +359,7 @@ fun DanmuSettingsScreen(
                 title = stringResource(R.string.danmu_opacity_title),
                 options = opacityOptions,
                 values = opacityValues,
-                selectedValue = danmuOpacity,
+                selectedValue = opacity,
                 onSelect = { viewModel.setDanmuOpacity(it) },
                 onDismiss = { activeDialog = null }
             )
@@ -380,7 +369,7 @@ fun DanmuSettingsScreen(
                 title = stringResource(R.string.danmu_font_weight_title),
                 options = fontWeightOptions,
                 values = fontWeightValues,
-                selectedValue = danmuFontWeight,
+                selectedValue = weight,
                 onSelect = { viewModel.setDanmuFontWeight(it) },
                 onDismiss = { activeDialog = null }
             )
@@ -390,7 +379,7 @@ fun DanmuSettingsScreen(
                 title = stringResource(R.string.danmu_stroke_title),
                 options = strokeWidthOptions,
                 values = strokeWidthValues,
-                selectedValue = danmuStrokeWidth,
+                selectedValue = stroke,
                 onSelect = { viewModel.setDanmuStrokeWidth(it) },
                 onDismiss = { activeDialog = null }
             )
@@ -481,7 +470,8 @@ private fun <T> SelectionDialog(
                     .verticalScroll(rememberScrollState())
             ) {
                 values.forEachIndexed { index, value ->
-                    val isSelected = value == selectedValue
+                    val isSelected = if (value is Double && selectedValue is Double)
+                        DanmakuSettingsPolicy.sameValue(value, selectedValue) else value == selectedValue
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()

@@ -1,7 +1,6 @@
 package com.mylive.app.ui.screen.sync
 
 import android.widget.Toast
-import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.layout.*
 import com.mylive.app.ui.theme.Icons
@@ -12,6 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
 import com.mylive.app.ui.navigation.Navigator
 import com.mylive.app.ui.navigation.Route
 import com.journeyapps.barcodescanner.ScanContract
@@ -25,16 +25,7 @@ import com.mylive.app.service.RemoteSyncService
 fun SyncScanScreen(navigator: Navigator) {
     val context = LocalContext.current
 
-    var isExiting by remember { mutableStateOf(false) }
-    val handleBack: () -> Unit = {
-        if (!isExiting) {
-            isExiting = true
-            navigator.goBack()
-        }
-    }
-    BackHandler(enabled = !isExiting) {
-        handleBack()
-    }
+    val handleBack = navigator.rememberRouteActions().onBack
 
     val scanLauncher = rememberLauncherForActivityResult(
         contract = ScanContract()
@@ -114,7 +105,7 @@ private fun handleScanResult(
 
     // LAN pairing QR: mylive-sync://<host>:<port>?token=<token> — carries the pairing token.
     if (trimmed.startsWith("mylive-sync://")) {
-        val uri = android.net.Uri.parse(trimmed)
+        val uri = trimmed.toUri()
         val host = uri.host
         if (host.isNullOrBlank()) {
             Toast.makeText(context, "无效的配对二维码", Toast.LENGTH_LONG).show()

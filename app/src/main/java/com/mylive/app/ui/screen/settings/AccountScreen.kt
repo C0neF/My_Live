@@ -1,12 +1,12 @@
 package com.mylive.app.ui.screen.settings
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.KeyboardOptions
 import com.mylive.app.ui.theme.Icons
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -21,6 +21,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mylive.app.ui.navigation.Navigator
 import com.mylive.app.ui.navigation.Route
 import com.mylive.app.R
+import com.mylive.app.core.site.douyin.DouyinCookieInspector
+import com.mylive.app.core.site.douyu.DouyuCookieInspection
+import com.mylive.app.core.site.douyu.inspectDouyuCookie
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.VisualTransformation
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -32,18 +39,7 @@ fun AccountScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
 
-    var isExiting by remember { mutableStateOf(false) }
-
-    val handleBack: () -> Unit = {
-        if (!isExiting) {
-            isExiting = true
-            navigator.goBack()
-        }
-    }
-
-    BackHandler(enabled = !isExiting) {
-        handleBack()
-    }
+    val handleBack = navigator.rememberRouteActions().onBack
 
     // Show message snackbar
     LaunchedEffect(uiState.message) {
@@ -53,6 +49,7 @@ fun AccountScreen(
             AccountMessage.DouyinCookieSaved -> context.getString(R.string.account_douyin_cookie_saved)
             AccountMessage.BilibiliLoggedOut -> context.getString(R.string.account_bilibili_logged_out)
             AccountMessage.DouyinLoggedOut -> context.getString(R.string.account_douyin_logged_out)
+            is AccountMessage.DouyuNotice -> msg.text
         }
         snackbarHostState.showSnackbar(text)
         viewModel.clearMessage()
@@ -99,19 +96,19 @@ fun AccountScreen(
 
             if (uiState.isLoggedInBiliBili) {
                 AccountCard(
-                    title = stringResource(R.string.account_logout),
-                    subtitle = stringResource(R.string.account_clear_bilibili_cookie),
+                    title = stringResource(R.string.account_clear_cookie_action),
+                    subtitle = stringResource(R.string.account_clear_cookie_subtitle),
                     onClick = { viewModel.logoutBiliBili() }
                 )
             } else {
                 AccountCard(
-                    title = stringResource(R.string.account_webview_login),
-                    subtitle = stringResource(R.string.account_webview_login_subtitle),
+                    title = stringResource(R.string.account_web_login),
+                    subtitle = stringResource(R.string.account_web_login_subtitle),
                     onClick = { navigator.navigate(Route.SettingsAccountLoginWebview) }
                 )
                 AccountCard(
                     title = stringResource(R.string.account_cookie_login),
-                    subtitle = stringResource(R.string.account_cookie_login_bilibili_subtitle),
+                    subtitle = stringResource(R.string.account_cookie_login_subtitle),
                     onClick = { viewModel.showBilibiliCookieDialog() }
                 )
             }
@@ -123,10 +120,10 @@ fun AccountScreen(
             
             AccountCard(
                 title = stringResource(R.string.account_status_label),
+                subtitle = douyinCookieStatusDescription(uiState.douyinCookieInspection),
                 contentRight = {
                     Text(
-                        text = if (uiState.isLoggedInDouyin) stringResource(R.string.account_status_logged_in)
-                               else stringResource(R.string.account_status_logged_out),
+                        text = douyinCookieStatusLabel(uiState.douyinCookieInspection.kind),
                         style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
                         color = if (uiState.isLoggedInDouyin) MaterialTheme.colorScheme.primary
                                 else MaterialTheme.colorScheme.onSurfaceVariant
@@ -134,25 +131,61 @@ fun AccountScreen(
                 }
             )
 
-            if (uiState.isLoggedInDouyin) {
+            if (uiState.hasDouyinCookie) {
                 AccountCard(
-                    title = stringResource(R.string.account_logout),
-                    subtitle = stringResource(R.string.account_clear_douyin_cookie),
+                    title = stringResource(R.string.account_clear_cookie_action),
+                    subtitle = stringResource(R.string.account_clear_cookie_subtitle),
                     onClick = { viewModel.logoutDouyin() }
                 )
-            } else {
+            }
+            if (!uiState.isLoggedInDouyin) {
                 AccountCard(
-                    title = stringResource(R.string.account_webview_login),
-                    subtitle = "通过内置浏览器登录抖音",
+                    title = stringResource(R.string.account_web_login),
+                    subtitle = stringResource(R.string.account_web_login_subtitle),
                     onClick = { navigator.navigate(Route.SettingsAccountDouyinLoginWebview) }
                 )
                 AccountCard(
                     title = stringResource(R.string.account_cookie_login),
-                    subtitle = stringResource(R.string.account_cookie_login_douyin_subtitle),
+                    subtitle = stringResource(R.string.account_cookie_login_subtitle),
                     onClick = { viewModel.showDouyinCookieDialog() }
                 )
             }
             
+            Spacer(modifier = Modifier.height(16.dp))
+            AccountSectionHeader(title = stringResource(R.string.account_douyu_section))
+            AccountCard(
+                title = stringResource(R.string.account_status_label),
+                subtitle = douyuCookieStatusDescription(uiState.douyuInspection),
+                contentRight = {
+                    Text(
+                        if (uiState.douyuBusy) "处理中…" else if (uiState.douyuInspection.hasLoginToken) "已保存" else "未配置",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            )
+            AccountCard(
+                title = stringResource(R.string.account_web_login),
+                subtitle = stringResource(R.string.account_web_login_subtitle),
+                onClick = { navigator.navigate(Route.SettingsAccountDouyuLoginWebview) }
+            )
+            AccountCard(
+                title = stringResource(R.string.account_cookie_login),
+                subtitle = stringResource(R.string.account_cookie_login_subtitle),
+                onClick = { viewModel.showDouyuCookieDialog() }
+            )
+            if (uiState.douyuInspection.canRenew && !uiState.douyuBusy) {
+                AccountCard(title = "立即续期", onClick = viewModel::renewDouyuCookie)
+            }
+            if (uiState.douyuInspection.configured && !uiState.douyuBusy) {
+                AccountCard(
+                    title = stringResource(R.string.account_clear_cookie_action),
+                    subtitle = stringResource(R.string.account_clear_cookie_subtitle),
+                    onClick = {
+                        clearDouyuWebCookies()
+                        viewModel.logoutDouyu()
+                    }
+                )
+            }
             Spacer(modifier = Modifier.height(16.dp))
         }
     }
@@ -170,10 +203,32 @@ fun AccountScreen(
     if (uiState.showDouyinCookieDialog) {
         CookieInputDialog(
             title = stringResource(R.string.account_douyin_cookie_input_title),
+            inputHint = { text ->
+                douyinCookieStatusDescription(DouyinCookieInspector.inspect(text))
+            },
             onConfirm = { viewModel.saveDouyinCookie(it) },
             onDismiss = { viewModel.hideDouyinCookieDialog() }
         )
     }
+    if (uiState.showDouyuCookieDialog) {
+        CookieInputDialog(
+            title = stringResource(R.string.account_douyu_cookie_input_title),
+            inputHint = { douyuCookieStatusDescription(inspectDouyuCookie(it)) },
+            maskInput = true,
+            inputTag = "douyu_cookie_input",
+            onConfirm = { viewModel.saveDouyuCookie(it) },
+            onDismiss = viewModel::hideDouyuCookieDialog
+        )
+    }
+}
+
+internal fun douyuCookieStatusDescription(info: DouyuCookieInspection): String = when {
+    !info.configured -> "支持网页登录或导入 Cookie"
+    !info.hasLoginToken && info.canRenew -> "已保存续期凭据，需要续期取得登录状态"
+    !info.hasLoginToken -> "仅检测到设备标识，请重新登录"
+    info.expiresAtMillis?.let { it <= System.currentTimeMillis() } == true -> "登录状态已过期，请续期或重新登录"
+    info.canRenew -> "检测到登录状态，已配置自动续期；实际可用性以平台响应为准"
+    else -> "检测到登录状态；未获取到续期凭据，过期后需重新登录"
 }
 
 @Composable
@@ -247,6 +302,9 @@ private fun AccountCard(
 @Composable
 private fun CookieInputDialog(
     title: String,
+    inputHint: ((String) -> String)? = null,
+    maskInput: Boolean = false,
+    inputTag: String = "account_cookie_input",
     onConfirm: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -261,9 +319,17 @@ private fun CookieInputDialog(
                 onValueChange = { cookieText = it },
                 label = { Text(stringResource(R.string.account_cookie_label)) },
                 placeholder = { Text(stringResource(R.string.account_cookie_placeholder)) },
+                supportingText = inputHint?.let { hint ->
+                    { Text(hint(cookieText)) }
+                },
                 modifier = Modifier
                     .fillMaxWidth()
+                    .testTag(inputTag)
                     .heightIn(min = 120.dp),
+                visualTransformation = if (maskInput) PasswordVisualTransformation() else VisualTransformation.None,
+                keyboardOptions = if (maskInput) {
+                    KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false)
+                } else KeyboardOptions.Default,
                 maxLines = 8
             )
         },

@@ -2,6 +2,14 @@ package com.mylive.app.ui.screen.room.player
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.flow.StateFlow
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import com.mylive.app.core.model.LiveMessage
 import kotlinx.coroutines.flow.SharedFlow
 
@@ -16,17 +24,24 @@ fun LiveDanmakuSurfaceFeed(
     messages: SharedFlow<LiveMessage>,
     controller: DanmakuController?,
     active: Boolean,
-    clearWhenInactive: Boolean = false
+    clearWhenInactive: Boolean = false,
+    playbackState: StateFlow<PlayerState>? = null
 ) {
-    LaunchedEffect(controller, active, clearWhenInactive, messages) {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val playerState by (playbackState?.collectAsStateWithLifecycle()
+        ?: remember { mutableStateOf(PlayerState(isPlaying = true, isLoading = false)) })
+    val displayActive = active && shouldDisplayPlaybackDanmaku(playerState)
+    LaunchedEffect(controller, displayActive, clearWhenInactive, messages, lifecycleOwner) {
         val target = controller
-        if (target != null && active) {
-            messages.collect { message ->
-                if (active) {
-                    target.addDanmaku(message)
+        if (target != null && displayActive) {
+            lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                try {
+                    messages.collect { message -> target.addDanmaku(message) }
+                } finally {
+                    target.clear()
                 }
             }
-        } else if (clearWhenInactive) {
+        } else if (clearWhenInactive || !displayActive) {
             target?.clear()
         }
     }
@@ -37,11 +52,15 @@ internal fun shouldFeedPipDanmakuSurface(
     isInPip: Boolean,
     danmuEnable: Boolean,
     pipHideDanmu: Boolean,
-    isExiting: Boolean
-): Boolean = isInPip && danmuEnable && !pipHideDanmu && !isExiting
+    routeActive: Boolean
+): Boolean = isInPip && danmuEnable && !pipHideDanmu && routeActive
 
 /** Pure policy for normal (non-PiP) surface feeding. */
 internal fun shouldFeedLiveDanmakuSurface(
     hasController: Boolean,
-    isExiting: Boolean
-): Boolean = hasController && !isExiting
+    routeActive: Boolean,
+    enabled: Boolean = true
+): Boolean = hasController && routeActive && enabled
+
+internal fun shouldDisplayPlaybackDanmaku(state: PlayerState): Boolean =
+    state.isPlaying && !state.isLoading && state.error == null

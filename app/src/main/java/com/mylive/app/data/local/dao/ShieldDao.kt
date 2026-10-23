@@ -4,9 +4,11 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import com.mylive.app.data.local.entity.ShieldEntity
 import com.mylive.app.data.local.entity.ShieldPresetEntity
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 
 @Dao
 interface ShieldDao {
@@ -19,6 +21,24 @@ interface ShieldDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertShields(shields: List<ShieldEntity>)
+
+    @Transaction
+    suspend fun importKeywords(shields: List<ShieldEntity>, overlay: Boolean) {
+        if (overlay) clearAllKeywords()
+        val existingValues = getAllShields().first().mapTo(mutableSetOf()) { it.value }
+        val additions = shields.filter { existingValues.add(it.value) }
+        if (additions.isNotEmpty()) insertShields(additions)
+    }
+
+    @Transaction
+    suspend fun importConfiguration(currentShields: List<ShieldEntity>?, presets: List<ShieldPresetEntity>) {
+        if (currentShields != null) {
+            clearAllKeywords()
+            clearAllUserShields()
+            if (currentShields.isNotEmpty()) insertShields(currentShields)
+        }
+        if (presets.isNotEmpty()) insertPresets(presets)
+    }
 
     @Query("DELETE FROM shields WHERE id = :id")
     suspend fun deleteShield(id: Long)

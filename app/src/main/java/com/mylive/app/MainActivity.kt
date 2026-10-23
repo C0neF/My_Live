@@ -2,6 +2,7 @@ package com.mylive.app
 
 import android.Manifest
 import android.app.PictureInPictureParams
+import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -9,18 +10,33 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Box
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.core.content.ContextCompat
+import androidx.core.view.doOnPreDraw
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation3.runtime.NavKey
+import com.mylive.app.core.model.TabletOrientationMode
+import com.mylive.app.core.model.AppLayoutMode
+import com.mylive.app.ui.layout.ProvideAppLayout
+import com.mylive.app.ui.layout.LocalAppLayout
 import com.mylive.app.data.repository.SettingsRepository
+import com.mylive.app.ui.motion.ProvideAppMotionPolicy
 import com.mylive.app.ui.navigation.AppNavGraph
 import com.mylive.app.ui.navigation.Navigator
 import com.mylive.app.ui.navigation.Route
+import com.mylive.app.ui.orientation.resolveTabletOrientationMode
+import com.mylive.app.ui.orientation.tabletRequestedOrientation
 import com.mylive.app.ui.screen.room.player.LivePlaybackHostSignals
 import com.mylive.app.ui.theme.MyLiveTheme
+import com.mylive.app.service.FollowUpdateScheduleCoordinator
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -38,6 +54,9 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var navigator: Navigator
 
+    @Inject
+    lateinit var followUpdateScheduleCoordinator: FollowUpdateScheduleCoordinator
+
     private var autoExitJob: Job? = null
 
     // Registered unconditionally during init (required by the Activity Result API).
@@ -47,10 +66,11 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        navigator.restoreState(savedInstanceState?.getString(NAVIGATION_STATE_KEY))
         enableEdgeToEdge()
         maybeRequestNotificationPermission()
         observePictureInPictureEligibility()
-        val initialRoute = intent.getStringExtra(EXTRA_INITIAL_ROUTE)
+        val initialRoute = if (savedInstanceState == null) intent.getStringExtra(EXTRA_INITIAL_ROUTE) else null
 
 
 
@@ -72,26 +92,18 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        // Sync follow auto-updates
-        lifecycleScope.launch {
-            combine(
-                settingsRepository.autoUpdateFollowEnable,
-                settingsRepository.autoUpdateFollowDuration
-            ) { enable, duration ->
-                enable to duration
-            }.collect { (enable, duration) ->
-                com.mylive.app.service.FollowUpdateScheduler.schedule(
-                    applicationContext,
-                    enable,
-                    duration
-                )
-            }
-        }
-
         setContent {
             val themeMode by settingsRepository.themeMode.collectAsStateWithLifecycle(initialValue = 0)
             val styleColor by settingsRepository.styleColor.collectAsStateWithLifecycle(
                 initialValue = 0xff3498db.toInt()
+            )
+            val storedTabletOrientationMode by
+                settingsRepository.tabletOrientationMode.collectAsStateWithLifecycle(
+                    initialValue = null
+                )
+            val configuration = LocalConfiguration.current
+            val appLayoutMode by settingsRepository.appLayoutMode.collectAsStateWithLifecycle(
+                initialValue = AppLayoutMode.Auto
             )
 
             val darkTheme = when (themeMode) {
@@ -100,14 +112,42 @@ class MainActivity : ComponentActivity() {
                 else -> androidx.compose.foundation.isSystemInDarkTheme()
             }
 
-            MyLiveTheme(
-                darkTheme = darkTheme,
-                seedColor = androidx.compose.ui.graphics.Color(styleColor)
-            ) {
-                AppNavGraph(navigator = navigator, initialRoute = initialRoute)
+            ProvideAppLayout(appLayoutMode) {
+                val tabletLayout = LocalAppLayout.current.tablet
+                val liveRoomOwnsOrientation = navigator.backStack.lastOrNull() is Route.LiveRoomDetail
+                LaunchedEffect(tabletLayout, storedTabletOrientationMode, liveRoomOwnsOrientation) {
+                    val storedMode = storedTabletOrientationMode ?: return@LaunchedEffect
+                    if (liveRoomOwnsOrientation) return@LaunchedEffect
+                    val resolvedMode = resolveTabletOrientationMode(storedMode, configuration.orientation)
+                    if (tabletLayout && storedMode == TabletOrientationMode.Uninitialized) {
+                        settingsRepository.setTabletOrientationMode(resolvedMode)
+                    }
+                    val orientation = if (tabletLayout) tabletRequestedOrientation(resolvedMode)
+                        else ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                    if (requestedOrientation != orientation) requestedOrientation = orientation
+                }
+                ProvideAppMotionPolicy {
+                    MyLiveTheme(
+                        darkTheme = darkTheme,
+                        seedColor = androidx.compose.ui.graphics.Color(styleColor)
+                    ) {
+                        Box(Modifier.semantics { testTagsAsResourceId = true }) {
+                            AppNavGraph(navigator = navigator, initialRoute = initialRoute)
+                        }
+                    }
+                }
             }
         }
+        window.decorView.doOnPreDraw { view ->
+            view.post { followUpdateScheduleCoordinator.start() }
+        }
     }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putString(NAVIGATION_STATE_KEY, navigator.saveState())
+        super.onSaveInstanceState(outState)
+    }
+
 
     /**
      * On Android 13+ POST_NOTIFICATIONS is a runtime permission. Without it, the follow
@@ -183,6 +223,7 @@ class MainActivity : ComponentActivity() {
     }
 
     companion object {
+        private const val NAVIGATION_STATE_KEY = "mylive.navigation.backStack"
         const val EXTRA_INITIAL_ROUTE = "com.mylive.app.extra.INITIAL_ROUTE"
 
         /**

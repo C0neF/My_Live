@@ -20,6 +20,10 @@ val hasReleaseSigning = listOf(
     releaseKeyPassword
 ).all { !it.isNullOrBlank() }
 
+// Keep physical-device regression runs separate from both the user's app and the QA install.
+val isolatedDeviceTests = providers.gradleProperty("isolatedDeviceTests")
+    .map(String::toBoolean).getOrElse(false)
+
 android {
     namespace = "com.mylive.app"
     compileSdk = 36
@@ -54,12 +58,27 @@ android {
     sourceSets {
         // Make the exported Room schemas available to MigrationTestHelper in instrumented tests.
         getByName("androidTest").assets.directories.add("$projectDir/schemas")
+        // Execute the same loopback protocol contracts on the JVM and the isolated device app.
+        getByName("test").kotlin.directories.add("src/sharedTest/java")
+        getByName("androidTest").kotlin.directories.add("src/sharedTest/java")
     }
 
     buildTypes {
+        debug {
+            if (isolatedDeviceTests) {
+                applicationIdSuffix = ".audit"
+                versionNameSuffix = "-audit"
+            }
+        }
         release {
             if (hasReleaseSigning) {
                 signingConfig = signingConfigs.getByName("release")
+            }
+            // Half the download was four copies of the same native library. QuickJS alone shipped
+            // at ~1.3 MB per ABI, and x86/x86_64 exist for emulators, which nobody installs a
+            // release build on. Debug keeps every ABI so emulator development is unaffected.
+            ndk {
+                abiFilters += listOf("arm64-v8a", "armeabi-v7a")
             }
             isMinifyEnabled = true
             isShrinkResources = true
@@ -68,8 +87,23 @@ android {
                 "proguard-rules.pro"
             )
         }
+        create("qa") {
+            // Install alongside the regular app while exercising the release shrinker.
+            initWith(getByName("release"))
+            applicationIdSuffix = ".qa"
+            versionNameSuffix = "-qa"
+            ndk {
+                abiFilters += listOf("x86", "x86_64")
+            }
+            signingConfig = signingConfigs.getByName("debug")
+            matchingFallbacks += listOf("release")
+        }
         create("benchmark") {
             initWith(getByName("release"))
+            // Macrobenchmark may run on either physical ARM devices or x86/x86_64 emulators.
+            ndk {
+                abiFilters += listOf("x86", "x86_64")
+            }
             signingConfig = signingConfigs.getByName("debug")
             matchingFallbacks += listOf("release")
             isDebuggable = false
@@ -212,5 +246,6 @@ dependencies {
     kspAndroidTest(libs.hilt.compiler)
     androidTestImplementation(libs.androidx.test.rules)
     androidTestImplementation(libs.room.testing)
+    androidTestImplementation(libs.okhttp.mockwebserver)
     debugImplementation(libs.compose.ui.test.manifest)
 }

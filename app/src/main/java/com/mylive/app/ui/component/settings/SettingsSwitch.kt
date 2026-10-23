@@ -16,10 +16,10 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun SettingsSwitch(
     title: String,
-    subtitle: String? = null,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    subtitle: String? = null
 ) {
     Row(
         modifier = modifier

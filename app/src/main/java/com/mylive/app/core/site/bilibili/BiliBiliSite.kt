@@ -1,6 +1,7 @@
 package com.mylive.app.core.site.bilibili
 
 import com.mylive.app.core.common.BoundedLruCache
+import com.mylive.app.core.common.CoreError
 import com.mylive.app.core.common.CoreLog
 import com.mylive.app.core.common.HttpClient
 import com.mylive.app.core.common.WebSocketUtils
@@ -33,7 +34,8 @@ import javax.inject.Singleton
 @Singleton
 class BiliBiliSite @Inject constructor(
     private val httpClient: HttpClient,
-    private val okHttpClient: OkHttpClient
+    private val okHttpClient: OkHttpClient,
+    private val accounts: com.mylive.app.core.site.LiveSiteAccountStore
 ) : AccountAwareLiveSite {
 
     override val id: String = "bilibili"
@@ -59,12 +61,13 @@ class BiliBiliSite @Inject constructor(
             field = nextCookie
             userId = parseBilibiliUserIdFromCookie(nextCookie)
         }
-    var userId: Int = 0
+    var userId: Long = 0L
         private set
 
     private var buvid3: String = ""
     private var buvid4: String = ""
     private var accessId: String = ""
+    private val playInfoGate = BilibiliPlayInfoGate()
 
     override val accountKey: LiveSiteAccount = LiveSiteAccount.BILIBILI
 
@@ -76,12 +79,44 @@ class BiliBiliSite @Inject constructor(
         requestedRoomId: String,
         detail: LiveRoomDetail
     ): LiveDanmakuSession {
-        val args = danmakuArgsByRoom[detail.roomId]
-            ?: danmakuArgsByRoom[requestedRoomId]
-            ?: error("Missing Bilibili danmaku handshake for room ${detail.roomId}")
-        return LiveDanmakuSession(
-            danmaku = BiliBiliDanmaku(WebSocketUtils(okHttpClient)),
-            args = args
+        val realRoomId = detail.roomId
+        return LiveDanmakuSession(danmaku = BiliBiliDanmaku(WebSocketUtils(okHttpClient))) {
+            danmakuArgsByRoom[realRoomId]
+                ?: fetchDanmakuArgs(realRoomId).also { danmakuArgsByRoom[realRoomId] = it }
+        }
+    }
+
+    /**
+     * Fetches the WebSocket handshake for a room: server host list plus the auth token.
+     *
+     * Deliberately not called from [getRoomDetail]. Nothing about playback needs it, and calling
+     * it there put its round trip in front of the first video frame.
+     */
+    private suspend fun fetchDanmakuArgs(realRoomId: String): DanmakuArgs.BiliBili {
+        val danmuInfoBaseUrl =
+            "https://api.live.bilibili.com/xlive/web-room/v1/index/getDanmuInfo"
+        val queryParams = getWbiSign("$danmuInfoBaseUrl?id=$realRoomId")
+        val result = httpClient.getJson(
+            danmuInfoBaseUrl,
+            queryParameters = queryParams,
+            header = getHeader()
+        ) as JSONObject
+
+        val data = result.getJSONObject("data")
+        val hostList = data.getJSONArray("host_list")
+        val serverHosts = buildList {
+            for (i in 0 until hostList.length()) {
+                add(hostList.getJSONObject(i).getString("host"))
+            }
+        }
+
+        return DanmakuArgs.BiliBili(
+            roomId = realRoomId.toIntOrNull() ?: 0,
+            uid = userId,
+            token = data.optString("token", ""),
+            serverHost = serverHosts.firstOrNull() ?: "broadcastlv.chat.bilibili.com",
+            buvid = buvid3,
+            cookie = cookie
         )
     }
 
@@ -107,6 +142,7 @@ class BiliBiliSite @Inject constructor(
     }
 
     private suspend fun getHeader(): Map<String, String> {
+        updateAccountCookie(accounts.cookieFor(accountKey))
         if (buvid3.isEmpty()) {
             val buvidInfo = getBuvid()
             buvid3 = buvidInfo.optString("b_3", "")
@@ -200,46 +236,44 @@ class BiliBiliSite @Inject constructor(
 
     override suspend fun getPlayQualites(detail: LiveRoomDetail): List<LivePlayQuality> {
         val qualities = mutableListOf<LivePlayQuality>()
-        try {
-            val result = httpClient.getJson(
-                "https://api.live.bilibili.com/xlive/web-room/v2/index/getRoomPlayInfo",
-                queryParameters = mapOf(
-                    "room_id" to detail.roomId,
-                    "protocol" to "0,1",
-                    "format" to "0,1,2",
-                    "codec" to "0,1",
-                    "platform" to "web"
-                ),
-                header = getHeader()
-            ) as JSONObject
-            val qualitiesMap = mutableMapOf<Int, String>()
-            val playurlData = result.optJSONObject("data")
-                ?.optJSONObject("playurl_info")
-                ?.optJSONObject("playurl") ?: return qualities
+        val result = getRoomPlayInfo(
+            mapOf(
+                "room_id" to detail.roomId,
+                "protocol" to "0,1",
+                "format" to "0,1,2",
+                "codec" to "0,1",
+                "platform" to "web"
+            )
+        )
+        val qualitiesMap = mutableMapOf<Int, String>()
+        val playurlData = readPlayUrlData(result, detail.roomId)
 
-            val gQnDesc = playurlData.optJSONArray("g_qn_desc") ?: return qualities
-            for (i in 0 until gQnDesc.length()) {
-                val item = gQnDesc.optJSONObject(i) ?: continue
-                qualitiesMap[item.optStringValue("qn").toIntOrNull() ?: 0] = item.optString("desc", "")
-            }
+        val gQnDesc = playurlData.optJSONArray("g_qn_desc")
+            ?: throw CoreError("B站播放信息响应异常：缺少清晰度描述")
+        for (i in 0 until gQnDesc.length()) {
+            val item = gQnDesc.optJSONObject(i) ?: continue
+            qualitiesMap[item.optStringValue("qn").toIntOrNull() ?: 0] = item.optString("desc", "")
+        }
 
-            val acceptQn = playurlData.optJSONArray("stream")
-                ?.optJSONObject(0)
-                ?.optJSONArray("format")
-                ?.optJSONObject(0)
-                ?.optJSONArray("codec")
-                ?.optJSONObject(0)
-                ?.optJSONArray("accept_qn") ?: return qualities
-            for (i in 0 until acceptQn.length()) {
-                val item = acceptQn.optInt(i)
-                val qualityItem = LivePlayQuality(
-                    quality = qualitiesMap[item] ?: "未知清晰度",
-                    data = PlayQualityData.BiliBili(qualityId = item)
-                )
-                qualities.add(qualityItem)
-            }
-        } catch (e: Exception) {
-            CoreLog.e("BiliBili getPlayQualites failed", e)
+        val acceptQn = playurlData.optJSONArray("stream")
+            ?.optJSONObject(0)
+            ?.optJSONArray("format")
+            ?.optJSONObject(0)
+            ?.optJSONArray("codec")
+            ?.optJSONObject(0)
+            ?.optJSONArray("accept_qn")
+            ?: throw CoreError("B站播放信息响应异常：缺少可用清晰度")
+        for (i in 0 until acceptQn.length()) {
+            val item = acceptQn.optInt(i)
+            val qualityItem = LivePlayQuality(
+                quality = qualitiesMap[item] ?: "未知清晰度",
+                data = PlayQualityData.BiliBili(qualityId = item)
+            )
+            qualities.add(qualityItem)
+        }
+        if (qualities.isEmpty()) {
+            CoreLog.w("B站播放信息未返回清晰度：roomId=${detail.roomId}")
+            throw CoreError("B站暂时无法获取播放清晰度，请稍后重试")
         }
         return qualities
     }
@@ -253,31 +287,46 @@ class BiliBiliSite @Inject constructor(
             "referer" to "https://live.bilibili.com",
             "user-agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36 Edg/115.0.1901.188"
         )
-        return try {
-            val result = httpClient.getJson(
+        val result = getRoomPlayInfo(
+            mapOf(
+                "room_id" to detail.roomId,
+                "protocol" to "0,1",
+                "format" to "0,2",
+                "codec" to "0",
+                "platform" to "web",
+                "qn" to qualityId.toString()
+            )
+        )
+        val playurlData = readPlayUrlData(result, detail.roomId)
+        return parseBiliBiliPlayback(
+            playurlData = playurlData,
+            requestedQuality = quality
+        ).copy(headers = headers)
+    }
+
+    private suspend fun getRoomPlayInfo(queryParameters: Map<String, String>): JSONObject {
+        return requestBilibiliPlayInfo(
+            gate = playInfoGate,
+            onRetry = { attempt, delayMillis ->
+                CoreLog.w(
+                    "B站播放信息接口触发 429，${delayMillis}ms 后重试：" +
+                        "roomId=${queryParameters["room_id"]} attempt=$attempt"
+                )
+            }
+        ) {
+            httpClient.getJson(
                 "https://api.live.bilibili.com/xlive/web-room/v2/index/getRoomPlayInfo",
-                queryParameters = mapOf(
-                    "room_id" to detail.roomId,
-                    "protocol" to "0,1",
-                    "format" to "0,2",
-                    "codec" to "0",
-                    "platform" to "web",
-                    "qn" to qualityId.toString()
-                ),
+                queryParameters = queryParameters,
                 header = getHeader()
             ) as JSONObject
-            val playurlData = result.optJSONObject("data")
-                ?.optJSONObject("playurl_info")
-                ?.optJSONObject("playurl")
-                ?: return LivePlayUrl(urls = emptyList(), headers = headers)
-            parseBiliBiliPlayback(
-                playurlData = playurlData,
-                requestedQuality = quality
-            ).copy(headers = headers)
-        } catch (e: Exception) {
-            CoreLog.e("BiliBili getPlayUrls failed", e)
-            LivePlayUrl(urls = emptyList(), headers = headers)
         }
+    }
+
+    private fun readPlayUrlData(result: JSONObject, roomId: String): JSONObject {
+        return result.optJSONObject("data")
+            ?.optJSONObject("playurl_info")
+            ?.optJSONObject("playurl")
+            ?: throw CoreError("B站播放信息响应异常，请稍后重试（roomId=$roomId）")
     }
 
     override suspend fun getRecommendRooms(page: Int): LiveCategoryResult {
@@ -320,32 +369,11 @@ class BiliBiliSite @Inject constructor(
         val roomInfoData = roomInfo.getJSONObject("room_info")
         val realRoomId = roomInfoData.optStringValue("room_id")
 
-        val danmuInfoBaseUrl =
-            "https://api.live.bilibili.com/xlive/web-room/v1/index/getDanmuInfo"
-        val danmuInfoUrl = "$danmuInfoBaseUrl?id=$realRoomId"
-        val queryParams = getWbiSign(danmuInfoUrl)
-        val roomDanmakuResult = httpClient.getJson(
-            danmuInfoBaseUrl,
-            queryParameters = queryParams,
-            header = getHeader()
-        ) as JSONObject
-
-        val hostList = roomDanmakuResult.getJSONObject("data").getJSONArray("host_list")
-        val serverHosts = mutableListOf<String>()
-        for (i in 0 until hostList.length()) {
-            serverHosts.add(hostList.getJSONObject(i).getString("host"))
-        }
-
-        val danmakuArgs = DanmakuArgs.BiliBili(
-            roomId = realRoomId.toIntOrNull() ?: 0,
-            uid = userId,
-            token = roomDanmakuResult.getJSONObject("data").optString("token", ""),
-            serverHost = serverHosts.firstOrNull() ?: "broadcastlv.chat.bilibili.com",
-            buvid = buvid3,
-            cookie = cookie
-        )
-        danmakuArgsByRoom[roomId] = danmakuArgs
-        danmakuArgsByRoom[realRoomId] = danmakuArgs
+        // The danmaku handshake (getDanmuInfo) used to be fetched here. It is worth nothing to
+        // playback, but it sat between the room detail and the play URLs, so every room paid a
+        // round trip for it before the first video frame. It is resolved on demand now — see
+        // [fetchDanmakuArgs] — which both shortens the playback path and lets the handshake
+        // overlap it.
 
         val liveStartTime = roomInfoData.optNullableStringValue("live_start_time")
 
@@ -465,7 +493,18 @@ class BiliBiliSite @Inject constructor(
             queryParameters = mapOf("room_id" to roomId),
             header = getHeader()
         ) as JSONObject
-        return (result.optJSONObject("data")?.optStringValue("live_status")?.toIntOrNull() ?: 0) == 1
+        val code = result.optStringValue("code").toIntOrNull()
+            ?: throw CoreError("B站直播状态响应异常：缺少有效业务状态码")
+        if (code != 0) {
+            throw CoreError("B站直播状态查询失败（错误码 $code），请稍后重试")
+        }
+        val data = result.optJSONObject("data")
+            ?: throw CoreError("B站直播状态响应异常：缺少房间数据")
+        return when (data.optStringValue("live_status").toIntOrNull()) {
+            1 -> true
+            0, 2 -> false
+            else -> throw CoreError("B站直播状态响应异常：无法确认开播状态")
+        }
     }
 
     override suspend fun getSuperChatMessage(

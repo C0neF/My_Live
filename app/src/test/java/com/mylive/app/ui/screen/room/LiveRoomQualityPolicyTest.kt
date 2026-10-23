@@ -10,6 +10,25 @@ import java.io.File
 class LiveRoomQualityPolicyTest {
 
     @Test
+    fun unsupportedHighFrameRateDefaultFallsBackToTheNextSupportedQuality() {
+        val qualities = listOf(
+            LivePlayQuality("原画2K120", PlayQualityData.Douyu(0, emptyList())),
+            LivePlayQuality("蓝光8M", PlayQualityData.Douyu(8, emptyList())),
+            LivePlayQuality("蓝光4M", PlayQualityData.Douyu(4, emptyList()))
+        )
+
+        assertEquals(1, selectHardwareSupportedQualityIndex(qualities, 0) { it != qualities[0] })
+        assertEquals(0, selectHardwareSupportedQualityIndex(qualities, 0) { true })
+        assertEquals(1, selectHardwareSupportedQualityIndex(qualities, 1) { true })
+        assertEquals(0, selectHardwareSupportedQualityIndex(qualities, 0) { false })
+    }
+
+    @Test
+    fun emptyQualitiesDoNotQueryDecoderSupport() {
+        assertEquals(0, selectHardwareSupportedQualityIndex(emptyList(), 0) { error("No quality to query") })
+    }
+
+    @Test
     fun cellularNetworkUsesCellularQualityPreference() {
         assertEquals(
             5,
@@ -106,5 +125,33 @@ class LiveRoomQualityPolicyTest {
                 actualQuality = ultra
             )
         )
+    }
+
+    @Test
+    fun resolvedDouyuDowngradeReplacesTheOriginalHighFrameRateLabel() {
+        val cdns = listOf("hw-h5", "hs-h5")
+        val original = LivePlayQuality("原画2K120", PlayQualityData.Douyu(0, cdns))
+        val blueRay = LivePlayQuality("蓝光4M", PlayQualityData.Douyu(4, cdns))
+
+        assertEquals(
+            1,
+            updatedQualityIndexForResolvedPlayback(
+                qualities = listOf(original, blueRay),
+                currentIndex = 0,
+                requestedQuality = original,
+                actualQuality = blueRay
+            )
+        )
+    }
+
+    @Test
+    fun onlyLatestPlaybackRequestMayApplyItsResolution() {
+        val requests = LatestPlaybackRequestGate()
+
+        val originalRequest = requests.begin()
+        val latestRequest = requests.begin()
+
+        assertTrue(!requests.isCurrent(originalRequest))
+        assertTrue(requests.isCurrent(latestRequest))
     }
 }

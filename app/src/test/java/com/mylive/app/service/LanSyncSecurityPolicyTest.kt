@@ -133,10 +133,10 @@ class LanSyncSecurityPolicyTest {
     fun lanSyncPersistsCollectionsWithBatchDaoOperations() {
         val source = File("src/main/java/com/mylive/app/service/LanSyncService.kt").readText()
 
-        assertTrue(source.contains("followRepository.addFollows(follows)"))
-        assertTrue(source.contains("followRepository.addTags(tags)"))
-        assertTrue(source.contains("historyRepository.addHistories(histories)"))
-        assertTrue(source.contains("shieldRepository.addShields(shields)"))
+        assertTrue(source.contains("followRepository.importFollows(follows, overlay)"))
+        assertTrue(source.contains("followRepository.importTags(tags, overlay)"))
+        assertTrue(source.contains("historyRepository.importFromJson(body, overlay)"))
+        assertTrue(source.contains("shieldRepository.importKeywords(keywords, overlay)"))
     }
 
     @Test
@@ -157,7 +157,7 @@ class LanSyncSecurityPolicyTest {
     }
 
     @Test
-    fun lanSyncOverlayClearsExistingCollectionsBeforeImporting() {
+    fun lanSyncDelegatesOverlayToTransactionalRepositories() {
         val source = File("src/main/java/com/mylive/app/service/LanSyncService.kt").readText()
         val followBlock = source.substringAfter("LanSyncImportType.FOLLOW -> {")
             .substringBefore("LanSyncImportType.TAG -> {")
@@ -166,12 +166,12 @@ class LanSyncSecurityPolicyTest {
         val historyBlock = source.substringAfter("LanSyncImportType.HISTORY -> {")
             .substringBefore("LanSyncImportType.BLOCKED_WORD -> {")
 
-        assertTrue(followBlock.contains("if (overlay)"))
-        assertTrue(followBlock.contains("followRepository.clearAllFollows()"))
-        assertTrue(tagBlock.contains("if (overlay)"))
-        assertTrue(tagBlock.contains("followRepository.clearAllTags()"))
-        assertTrue(historyBlock.contains("if (overlay)"))
-        assertTrue(historyBlock.contains("historyRepository.clearAllHistory()"))
+        assertTrue(followBlock.contains("followRepository.importFollows(follows, overlay)"))
+        assertTrue(tagBlock.contains("followRepository.importTags(tags, overlay)"))
+        assertTrue(historyBlock.contains("historyRepository.importFromJson(body, overlay)"))
+        assertFalse(followBlock.contains("clearAllFollows()"))
+        assertFalse(tagBlock.contains("clearAllTags()"))
+        assertFalse(historyBlock.contains("clearAllHistory()"))
     }
 
     @Test

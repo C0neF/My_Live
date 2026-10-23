@@ -21,17 +21,19 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.mylive.app.BuildConfig
 import com.mylive.app.R
 import com.mylive.app.ui.navigation.Navigator
 import com.mylive.app.ui.navigation.Route
 import com.mylive.app.ui.theme.Icons
+import com.mylive.app.ui.layout.AdaptivePageFrame
+import com.mylive.app.ui.layout.LocalAppLayout
 
 @Composable
 fun MineScreen(
     navigator: Navigator,
     contentBottomPadding: Dp = 96.dp
 ) {
+    AdaptivePageFrame(maxWidthDp = LocalAppLayout.current.settingsMaxWidthDp) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -101,7 +103,7 @@ fun MineScreen(
         Spacer(modifier = Modifier.height(24.dp))
 
         Text(
-            text = stringResource(R.string.mine_version, BuildConfig.VERSION_NAME),
+            text = stringResource(R.string.mine_version),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
@@ -109,6 +111,7 @@ fun MineScreen(
                 .fillMaxWidth()
                 .padding(bottom = contentBottomPadding)
         )
+    }
     }
 }
 

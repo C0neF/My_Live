@@ -62,7 +62,7 @@ class LiveRoomRoutePolicyTest {
             sessionSource.contains("binding?.unbindPlaybackEngine(engine)")
         )
         assertTrue(viewModelSource.contains("fun recoverPlaybackAfterSourceFailure()"))
-        assertTrue(viewModelSource.contains("resetSourceRefreshAttempt = false"))
+        assertTrue(viewModelSource.contains("reloadPlaybackSource(PlaybackRequestOrigin.SourceRecovery)"))
         assertTrue(viewModelSource.contains("fun bindPlaybackEngine("))
         assertTrue(viewModelSource.contains("LivePlaybackEngine"))
     }
@@ -108,11 +108,13 @@ class LiveRoomRoutePolicyTest {
 
         assertTrue(
             "room detail loading must be bound to the route that started it",
-            source.contains("private suspend fun loadRoomDetail(route:")
+            source.substringAfter("private suspend fun loadRoomDetail(")
+                .substringBefore(") {").contains("route: Pair<String, String>")
         )
         assertTrue(
             "play quality loading must ignore callbacks from a previous route",
-            source.contains("private suspend fun loadPlayQualities(detail: LiveRoomDetail, route:")
+            source.substringAfter("private suspend fun loadPlayQualities(")
+                .substringBefore(") {").contains("route: Pair<String, String>")
         )
         assertTrue(
             "play URL loading must ignore callbacks from a previous route",
@@ -126,6 +128,18 @@ class LiveRoomRoutePolicyTest {
         assertTrue(
             "all async room callbacks need a shared active route check",
             source.contains("private fun isActiveRoute(route:")
+        )
+        assertTrue(
+            "route changes must cancel an in-flight lazy danmaku handshake",
+            source.contains("private var danmakuStartJob: Job?") &&
+                source.contains("danmakuStartJob?.cancel()") &&
+                source.contains("danmakuStartJob = viewModelScope.launch")
+        )
+        val invalidRouteBlock = source.substringAfter("if (nextRoomId.isEmpty())")
+            .substringBefore("val nextRoute = nextSiteId to nextRoomId")
+        assertTrue(
+            "an invalid route must invalidate callbacks from the previously active room",
+            invalidRouteBlock.contains("activeRoute = null")
         )
     }
 
@@ -280,7 +294,7 @@ class LiveRoomRoutePolicyTest {
             "src/main/java/com/mylive/app/ui/screen/follow/FollowScreen.kt"
         ).readText()
         val quickAccessSource = File(
-            "src/main/java/com/mylive/app/ui/screen/room/quickaccess/QuickAccessPanel.kt"
+            "src/main/java/com/mylive/app/ui/screen/room/quickaccess/QuickAccessPages.kt"
         ).readText()
         val roomScreenSource = File(
             "src/main/java/com/mylive/app/ui/screen/room/LiveRoomScreen.kt"
@@ -289,7 +303,7 @@ class LiveRoomRoutePolicyTest {
         assertTrue(routeSource.contains("val initialIsFollowing: Boolean? = null"))
         assertTrue(navigatorSource.contains("initialIsFollowing: Boolean? = null"))
         assertTrue(followSource.contains("initialIsFollowing = true"))
-        assertTrue(quickAccessSource.contains("onNavigateToRoom(user.siteId, user.roomId, true)"))
+        assertTrue(quickAccessSource.contains("onNavigateToRoom(user.siteId, user.playbackRoomId, true)"))
         assertTrue(roomScreenSource.contains("initialIsFollowing = true"))
     }
 }

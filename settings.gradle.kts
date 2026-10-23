@@ -24,3 +24,7 @@ dependencyResolutionManagement {
 
 rootProject.name = "My_Live"
 include(":app")
+
+// Keep performance measurements reproducible from the same revision as the app.
+// Device execution remains an explicit/manual verification step.
+include(":macrobenchmark")

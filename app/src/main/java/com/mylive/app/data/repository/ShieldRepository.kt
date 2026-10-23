@@ -26,6 +26,14 @@ class ShieldRepository @Inject constructor(
 
     suspend fun clearAllKeywords() = shieldDao.clearAllKeywords()
 
+    suspend fun importKeywords(keywords: List<String>, overlay: Boolean) =
+        shieldDao.importKeywords(keywords.distinct().map { ShieldEntity(value = "keyword:$it") }, overlay)
+
+    suspend fun importConfiguration(
+        currentShields: List<ShieldEntity>?,
+        presets: List<ShieldPresetEntity> = emptyList()
+    ) = shieldDao.importConfiguration(currentShields, presets)
+
     suspend fun clearUserShieldsBySite(siteId: String) = shieldDao.clearUserShieldsBySite(siteId)
 
     suspend fun clearAllUserShields() = shieldDao.clearAllUserShields()

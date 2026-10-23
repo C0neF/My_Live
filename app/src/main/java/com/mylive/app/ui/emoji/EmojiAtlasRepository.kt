@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Rect
+import android.os.Looper
 import com.mylive.app.core.common.EmojiAtlasRef
 import org.json.JSONObject
 
@@ -18,6 +19,9 @@ object EmojiAtlasRepository {
     fun getBitmap(context: Context, url: String): Bitmap? {
         val ref = EmojiAtlasRef.parse(url) ?: return null
         if (ref.atlasId != EmojiAtlasRef.DOUYIN_ATLAS_ID) return null
+        check(Looper.myLooper() != Looper.getMainLooper()) {
+            "Emoji atlas bitmap resolution must not run on the main thread"
+        }
 
         synchronized(lock) {
             bitmapCache[url]?.takeUnless { it.isRecycled }?.let { return it }

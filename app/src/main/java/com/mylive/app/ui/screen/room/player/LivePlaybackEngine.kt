@@ -1,6 +1,7 @@
 package com.mylive.app.ui.screen.room.player
 
 import kotlinx.coroutines.flow.StateFlow
+import com.mylive.app.core.model.LivePlayUrl
 
 /**
  * Narrow playback port used by [com.mylive.app.ui.screen.room.LiveRoomViewModel].
@@ -8,17 +9,38 @@ import kotlinx.coroutines.flow.StateFlow
  */
 interface LivePlaybackEngine {
     val state: StateFlow<PlayerState>
+    /** Snapshot before asynchronous source acquisition; null keeps other engines compatible. */
+    val playbackPauseGeneration: Long? get() = null
+    fun beginRoomLoad(startedAtMillis: Long) {}
 
     fun play(
         urls: List<String>,
         headers: Map<String, String>? = null,
         startIndex: Int = 0,
-        resetSourceRefreshAttempt: Boolean = true
+        origin: PlaybackRequestOrigin = PlaybackRequestOrigin.UserSelection
     )
+
+    /** Carries per-source video hints while preserving the simpler port for other engines. */
+    fun play(source: LivePlayUrl, origin: PlaybackRequestOrigin = PlaybackRequestOrigin.UserSelection) {
+        play(source.urls, source.headers, origin = origin)
+    }
+
+    /** A resolved source retains the pause boundary of the request that obtained it. */
+    fun play(source: LivePlayUrl, origin: PlaybackRequestOrigin, pauseGeneration: Long?) {
+        play(source, origin)
+    }
 
     fun stop()
 
+    /** Stops the old connection while retaining the intent for an automatic source refresh. */
+    fun stopForSourceRecovery() { stop() }
+
     fun showError(message: String)
+}
+
+enum class PlaybackRequestOrigin {
+    UserSelection,
+    SourceRecovery
 }
 
 /** Binding implemented by the room state owner without exposing it to the player module. */

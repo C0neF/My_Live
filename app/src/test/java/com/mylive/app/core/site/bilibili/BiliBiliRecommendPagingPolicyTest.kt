@@ -83,7 +83,8 @@ class BiliBiliRecommendPagingPolicyTest {
             .build()
         return BiliBiliSite(
             httpClient = HttpClient(okHttpClient),
-            okHttpClient = okHttpClient
+            okHttpClient = okHttpClient,
+            accounts = { "" }
         )
     }
 

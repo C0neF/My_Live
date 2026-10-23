@@ -22,7 +22,7 @@ class SearchScreenPolicyTest {
     @Test
     fun searchScreenOffsetsCompactHeaderFromSystemTopBar() {
         val source = File("src/main/java/com/mylive/app/ui/screen/search/SearchScreen.kt").readText()
-        val rootSource = source.substringAfter("BoxWithConstraints(\n        modifier = Modifier")
+        val rootSource = source.substringAfter("AdaptivePageFrame(\n        modifier = Modifier")
             .substringBefore("val useTabletTwoPane = searchUseTabletTwoPane")
 
         assertTrue(rootSource.contains(".statusBarsPadding()"))
@@ -33,11 +33,12 @@ class SearchScreenPolicyTest {
     fun tabletSearchUsesControlPaneAndResultsPane() {
         val source = File("src/main/java/com/mylive/app/ui/screen/search/SearchScreen.kt").readText()
 
-        assertTrue(searchUseTabletTwoPane(screenWidthDp = 839).not())
-        assertTrue(searchUseTabletTwoPane(screenWidthDp = 840))
+        assertTrue(searchUseTabletTwoPane(screenWidthDp = 839, tabletLayout = true).not())
+        assertTrue(searchUseTabletTwoPane(screenWidthDp = 840, tabletLayout = true))
+        assertFalse(searchUseTabletTwoPane(screenWidthDp = 1280, tabletLayout = false))
         assertEquals(360, searchTabletControlPaneWidthDp())
         assertTrue(source.contains("BoxWithConstraints("))
-        assertTrue(source.contains("val useTabletTwoPane = searchUseTabletTwoPane(maxWidth.value.toInt())"))
+        assertTrue(source.contains("val useTabletTwoPane = searchUseTabletTwoPane(maxWidth.value.toInt(), LocalAppLayout.current.tablet)"))
         assertTrue(source.contains("if (useTabletTwoPane)"))
         assertTrue(source.contains("SearchTabletControlPane("))
         assertTrue(source.contains("SearchResultsContent("))
@@ -192,7 +193,7 @@ class SearchScreenPolicyTest {
         assertTrue(loadingSource.contains("if (animatedSearchType == 1)"))
         assertTrue(loadingSource.contains("SearchAnchorListSkeleton("))
         assertTrue(loadingSource.contains("SearchRoomGridSkeleton("))
-        assertTrue(loadingSource.contains("minCellWidth = LiveRoomGridMinCellWidth"))
+        assertTrue(loadingSource.contains("minCellWidth = LocalAppLayout.current.liveRoomMinCellWidthDp.dp"))
         assertTrue(loadingSource.contains("modifier = Modifier.fillMaxSize()"))
         assertFalse(loadingSource.contains("LiveRoomGridSkeleton("))
         assertFalse(loadingSource.contains("Alignment.Center"))

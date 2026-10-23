@@ -14,11 +14,13 @@ class AccountRepositoryTest {
 
     private val bilibili = MutableStateFlow("")
     private val douyin = MutableStateFlow("")
+    private val douyu = MutableStateFlow("")
 
     private val repository = AccountRepository(
         mockk<SensitiveCredentialStore>().also { store ->
             every { store.bilibiliCookie } returns bilibili
             every { store.douyinCookie } returns douyin
+            every { store.douyuCookie } returns douyu
         }
     )
 
@@ -36,11 +38,13 @@ class AccountRepositoryTest {
     fun eachCredentialLandsUnderItsOwnCapability() = runBlocking {
         bilibili.value = "SESSDATA=bili"
         douyin.value = "ttwid=douyin"
+        douyu.value = "dy_auth=douyu"
 
         val cookies = repository.liveSiteAccountCookies.first()
 
         assertEquals("SESSDATA=bili", cookies[LiveSiteAccount.BILIBILI])
         assertEquals("ttwid=douyin", cookies[LiveSiteAccount.DOUYIN])
+        assertEquals("dy_auth=douyu", cookies[LiveSiteAccount.DOUYU])
     }
 
     @Test

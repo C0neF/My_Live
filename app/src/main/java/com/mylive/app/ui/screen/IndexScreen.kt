@@ -17,31 +17,46 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mylive.app.ui.navigation.Navigator
 import com.mylive.app.R
+import com.mylive.app.core.model.TabletOrientationMode
 import com.mylive.app.ui.motion.adaptiveNavigationContentTransform
+import com.mylive.app.ui.orientation.nextTabletOrientationMode
+import com.mylive.app.ui.orientation.resolveTabletOrientationMode
+import com.mylive.app.ui.layout.LocalAppLayout
+import com.mylive.app.ui.layout.AdaptivePageFrame
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import com.mylive.app.ui.screen.category.CategoryScreen
 import com.mylive.app.ui.screen.follow.FollowScreen
 import com.mylive.app.ui.screen.follow.followCardGridColumns
 import com.mylive.app.ui.screen.home.HomeScreen
 import com.mylive.app.ui.screen.mine.MineScreen
 import com.mylive.app.ui.motion.AppMotion
+import com.mylive.app.ui.motion.LocalAppMotionPolicy
 import com.mylive.app.ui.navigation.Route
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import com.mylive.app.ui.screen.settings.SettingsViewModel
+import kotlin.math.ceil
 
 data class BottomNavItem(
     val key: String,
@@ -98,10 +113,29 @@ fun IndexScreen(
         defaultActiveColor = MaterialTheme.colorScheme.primary
     )
     val configuration = LocalConfiguration.current
-    val useSideNavigation = indexUseSideNavigation(configuration.screenWidthDp)
-    val contentBottomPadding = indexTopLevelContentBottomPaddingDp(useSideNavigation).dp
-    val homeLiveRoomGridColumns = indexHomeLiveRoomGridColumns(configuration.screenWidthDp)
-    val followCardColumns = followCardGridColumns(useSideNavigation)
+    val hapticFeedback = LocalHapticFeedback.current
+    val motionPolicy = LocalAppMotionPolicy.current
+    val appLayout = LocalAppLayout.current
+    val useSideNavigation = appLayout.useNavigationRail
+    val storedTabletOrientationMode by
+        viewModel.tabletOrientationMode.collectAsStateWithLifecycle()
+    val tabletOrientationMode = if (
+        appLayout.tablet
+    ) {
+        resolveTabletOrientationMode(
+            storedMode = storedTabletOrientationMode,
+            currentConfigurationOrientation = configuration.orientation
+        )
+    } else {
+        null
+    }
+    val dockContentPadding = indexNavigationDockContentPadding()
+    val contentBottomPadding = indexTopLevelContentBottomPaddingDp(
+        useSideNavigation = useSideNavigation,
+        dockContentPaddingDp = ceil(dockContentPadding.value).toInt()
+    ).dp
+    val homeLiveRoomGridColumns = appLayout.liveRoomColumns
+    val followCardColumns = appLayout.followColumns
     val topRoute = navigator.backStack.lastOrNull()
     // When a non-Index route covers Index, skip heavy tab composition so Home/Follow
     // collectors and grids do not keep working under a live room.
@@ -129,8 +163,9 @@ fun IndexScreen(
     }
 
     // Scroll-to-hide bottom bar state
-    val maxOffsetPx = with(LocalDensity.current) { 100.dp.toPx() }
+    val maxOffsetPx = with(LocalDensity.current) { dockContentPadding.toPx() }
     var bottomBarOffsetPx by remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(useSideNavigation) { bottomBarOffsetPx = 0f }
 
     val nestedScrollConnection = remember(maxOffsetPx) {
         object : NestedScrollConnection {
@@ -143,6 +178,13 @@ fun IndexScreen(
     }
 
     fun handleMainTabClick(item: BottomNavItem) {
+        performBottomTabSwitchHapticIfNeeded(
+            currentKey = selectedPageKey,
+            clickedKey = item.key,
+            useSideNavigation = useSideNavigation
+        ) {
+            hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        }
         val repeatAction = bottomTabRepeatAction(
             currentKey = selectedPageKey,
             clickedKey = item.key,
@@ -163,35 +205,14 @@ fun IndexScreen(
         modifier = if (useSideNavigation) Modifier else Modifier.nestedScroll(nestedScrollConnection),
         bottomBar = {
             if (!useSideNavigation) {
-                Surface(
+                IndexNavigationDock(
+                    items = bottomNavItems,
+                    selectedIndex = selectedIndex,
+                    activeColor = bottomNavActiveColor,
+                    onItemClick = { handleMainTabClick(it) },
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 10.dp)
-                        .offset { IntOffset(x = 0, y = bottomBarOffsetPx.toInt()) },
-                    shape = RoundedCornerShape(20.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 8.dp, vertical = 8.dp),
-                        horizontalArrangement = Arrangement.SpaceAround,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        bottomNavItems.forEachIndexed { index, item ->
-                            IndexNavigationItem(
-                                item = item,
-                                selected = selectedIndex == index,
-                                activeColor = bottomNavActiveColor,
-                                onClick = { handleMainTabClick(item) },
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .padding(vertical = 2.dp)
-                            )
-                        }
-                    }
-                }
+                        .offset { IntOffset(x = 0, y = bottomBarOffsetPx.toInt()) }
+                )
             }
         }
     ) { paddingValues ->
@@ -201,7 +222,15 @@ fun IndexScreen(
                     items = bottomNavItems,
                     selectedIndex = selectedIndex,
                     activeColor = bottomNavActiveColor,
-                    onItemClick = { handleMainTabClick(it) }
+                    onItemClick = { handleMainTabClick(it) },
+                    tabletOrientationMode = tabletOrientationMode,
+                    onToggleTabletOrientation = tabletOrientationMode?.let { currentMode ->
+                        {
+                            viewModel.setTabletOrientationMode(
+                                nextTabletOrientationMode(currentMode)
+                            )
+                        }
+                    }
                 )
             }
 
@@ -214,7 +243,8 @@ fun IndexScreen(
                     )
                     adaptiveNavigationContentTransform(
                         direction = direction,
-                        useSideNavigation = useSideNavigation
+                        useSideNavigation = useSideNavigation,
+                        motionPolicy = motionPolicy
                     )
                 },
                 modifier = Modifier
@@ -231,7 +261,11 @@ fun IndexScreen(
                     }
                 }
 
-                Box(modifier = Modifier.fillMaxSize()) {
+                AdaptivePageFrame(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .testTag("index_screen_${selection.key}")
+                ) {
                     if (composeIndexTabContent) {
                         tabStateHolder.SaveableStateProvider(selection.key) {
                             when (selection.key) {
@@ -285,29 +319,11 @@ internal fun indexBottomBarOffsetAfterRevealRequest(currentOffsetPx: Float): Flo
     return 0f
 }
 
-internal fun indexUseSideNavigation(screenWidthDp: Int): Boolean {
-    return screenWidthDp >= 600
-}
-
-internal fun indexTopLevelContentBottomPaddingDp(useSideNavigation: Boolean): Int {
-    return if (useSideNavigation) 24 else 96
-}
-
-internal fun indexHomeLiveRoomGridColumns(screenWidthDp: Int): Int? {
-    return when {
-        screenWidthDp < 600 -> null
-        screenWidthDp < 840 -> 3
-        screenWidthDp < 1200 -> 4
-        else -> 5
-    }
-}
-
-internal fun indexSideNavigationRailWidthDp(): Int {
-    return 96
-}
-
-internal fun indexSideNavigationItemWeight(itemCount: Int): Float {
-    return if (itemCount > 0) 1f else 1f
+internal fun indexTopLevelContentBottomPaddingDp(
+    useSideNavigation: Boolean,
+    dockContentPaddingDp: Int = 96
+): Int {
+    return if (useSideNavigation) 24 else maxOf(96, dockContentPaddingDp)
 }
 
 @Composable
@@ -319,6 +335,7 @@ private fun IndexNavigationItem(
     modifier: Modifier = Modifier
 ) {
     val label = stringResource(item.labelRes)
+    val selectionState = selected
     val contentColor by animateColorAsState(
         targetValue = if (selected) {
             activeColor
@@ -337,11 +354,14 @@ private fun IndexNavigationItem(
     )
 
     Column(
-        modifier = modifier.clickable(
-            interactionSource = remember { MutableInteractionSource() },
-            indication = null,
-            onClick = onClick
-        ),
+        modifier = modifier
+            .testTag("index_nav_${item.key}")
+            .semantics { this.selected = selectionState }
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick
+            ),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Box(
@@ -365,7 +385,7 @@ private fun IndexNavigationItem(
             style = MaterialTheme.typography.labelSmall.copy(
                 fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium
             ),
-            fontSize = 10.sp
+            fontSize = if (LocalAppLayout.current.tablet) 12.sp else 10.sp
         )
     }
 }
@@ -375,12 +395,14 @@ private fun IndexSideNavigationRail(
     items: List<BottomNavItem>,
     selectedIndex: Int,
     activeColor: Color,
-    onItemClick: (BottomNavItem) -> Unit
+    onItemClick: (BottomNavItem) -> Unit,
+    tabletOrientationMode: TabletOrientationMode? = null,
+    onToggleTabletOrientation: (() -> Unit)? = null
 ) {
     Surface(
         modifier = Modifier
             .fillMaxHeight()
-            .width(indexSideNavigationRailWidthDp().dp)
+            .width(LocalAppLayout.current.navigationRailWidthDp.dp)
             .statusBarsPadding()
             .navigationBarsPadding()
             .padding(start = 10.dp, top = 12.dp, bottom = 12.dp),
@@ -392,21 +414,97 @@ private fun IndexSideNavigationRail(
             modifier = Modifier
                 .fillMaxHeight()
                 .padding(vertical = 12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.SpaceAround
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            items.forEachIndexed { index, item ->
-                IndexNavigationItem(
-                    item = item,
-                    selected = selectedIndex == index,
-                    activeColor = activeColor,
-                    onClick = { onItemClick(item) },
-                    modifier = Modifier
-                        .weight(indexSideNavigationItemWeight(items.size))
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp)
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items.forEachIndexed { index, item ->
+                    IndexNavigationItem(
+                        item = item,
+                        selected = selectedIndex == index,
+                        activeColor = activeColor,
+                        onClick = { onItemClick(item) },
+                        modifier = Modifier
+                            .heightIn(min = 64.dp)
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp)
+                    )
+                }
+            }
+
+            if (tabletOrientationMode != null && onToggleTabletOrientation != null) {
+                HorizontalDivider(
+                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant
+                )
+                TabletOrientationToggleButton(
+                    currentMode = tabletOrientationMode,
+                    onClick = onToggleTabletOrientation
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun TabletOrientationToggleButton(
+    currentMode: TabletOrientationMode,
+    onClick: () -> Unit
+) {
+    val targetMode = nextTabletOrientationMode(currentMode)
+    val switchDescription = stringResource(
+        if (currentMode == TabletOrientationMode.FollowSystem) {
+            R.string.tablet_orientation_switch_from_system
+        } else if (targetMode == TabletOrientationMode.Landscape) {
+            R.string.tablet_orientation_switch_to_landscape
+        } else {
+            R.string.tablet_orientation_switch_to_portrait
+        }
+    )
+    val actionLabel = stringResource(
+        if (targetMode == TabletOrientationMode.Landscape) {
+            R.string.tablet_orientation_action_landscape
+        } else {
+            R.string.tablet_orientation_action_portrait
+        }
+    )
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        FilledTonalIconButton(
+            onClick = onClick,
+            modifier = Modifier
+                .size(48.dp)
+                .testTag("tablet_orientation_toggle")
+        ) {
+            Icon(
+                imageVector = Icons.Default.Phone,
+                contentDescription = switchDescription,
+                modifier = Modifier
+                    .size(22.dp)
+                    .rotate(
+                        if (targetMode == TabletOrientationMode.Landscape) 90f else 0f
+                    )
+            )
+        }
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = actionLabel,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.labelSmall,
+            fontSize = if (LocalAppLayout.current.tablet) 12.sp else 10.sp,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1
+        )
     }
 }

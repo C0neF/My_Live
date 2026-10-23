@@ -101,6 +101,30 @@ class PlayerControllerPolicyTest {
         assertTrue(stateHandler.contains("isPlaying = false"))
     }
 
+    @Test
+    fun stallWatchdogSamplesOnMainThreadAndReusesTheExistingRecoveryCallback() {
+        val source = readMainSource("com/mylive/app/ui/screen/room/player/PlayerController.kt")
+
+        assertTrue(source.contains("Handler(Looper.getMainLooper())"))
+        assertTrue(source.contains("stallMonitor.sample("))
+        assertTrue(source.contains("playbackSourceRecoveryAction("))
+        assertTrue(source.contains("onPlaybackSourceExhausted?.invoke()"))
+        assertFalse(source.contains("Timer(\"playback-stall"))
+    }
+
+    @Test
+    fun playbackDiagnosticsUseMedia3EventsAndNeverExposeRequestHeaders() {
+        val source = readMainSource("com/mylive/app/ui/screen/room/player/PlayerController.kt")
+        val diagnostics = source.substringAfter("fun playbackDiagnostics(")
+
+        assertTrue(source.contains("AnalyticsListener"))
+        assertTrue(source.contains("onVideoDecoderInitialized"))
+        assertTrue(source.contains("onVideoInputFormatChanged"))
+        assertTrue(source.contains("onDroppedVideoFrames"))
+        assertTrue(diagnostics.contains("buildPlaybackDiagnosticSnapshot("))
+        assertFalse(diagnostics.substringBefore("private fun").contains("headers"))
+    }
+
     private fun readMainSource(relativePath: String): String {
         val candidates = listOf(
             File("src/main/java", relativePath),

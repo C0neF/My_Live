@@ -13,8 +13,8 @@ import coil.compose.AsyncImage
 @Composable
 fun NetImage(
     url: String,
-    contentDescription: String? = null,
     modifier: Modifier = Modifier,
+    contentDescription: String? = null,
     size: Dp = 48.dp,
     isCircle: Boolean = false
 ) {

@@ -7,6 +7,7 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import com.mylive.app.ui.layout.LocalAppLayout
 
 // Every neutral M3 role is set explicitly so the fixed palette fully replaces the
 // Material defaults (which would otherwise leak a tinted gray for surfaceVariant /
@@ -79,7 +80,7 @@ fun MyLiveTheme(
 
     MaterialTheme(
         colorScheme = colorScheme,
-        typography = AppTypography,
+        typography = if (LocalAppLayout.current.tablet) TabletTypography else AppTypography,
         content = content
     )
 }

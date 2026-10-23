@@ -6,18 +6,24 @@ import org.junit.Test
 class BiliBiliCookieTest {
 
     @Test
+    fun preservesLongAccountIds() {
+        assertEquals(3546387306719500L, parseBilibiliUserIdFromCookie("DedeUserID=3546387306719500;"))
+        assertEquals(0L, parseBilibiliUserIdFromCookie("DedeUserID=-1;"))
+    }
+
+    @Test
     fun parsesDedeUserId() {
         val uid = parseBilibiliUserIdFromCookie(
             "SESSDATA=abc; DedeUserID=12345678; bili_jct=token"
         )
 
-        assertEquals(12345678, uid)
+        assertEquals(12345678L, uid)
     }
 
     @Test
     fun returnsZeroWhenDedeUserIdIsMissing() {
         val uid = parseBilibiliUserIdFromCookie("SESSDATA=abc; bili_jct=token")
 
-        assertEquals(0, uid)
+        assertEquals(0L, uid)
     }
 }

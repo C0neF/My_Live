@@ -31,6 +31,7 @@ import com.mylive.app.ui.orientation.resolveTabletOrientationMode
 import com.mylive.app.ui.layout.LocalAppLayout
 import com.mylive.app.ui.orientation.tabletRequestedOrientation
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 
@@ -54,6 +55,7 @@ internal class LivePlaybackHost internal constructor(
     val playerController: PlayerController?,
     val isInPictureInPicture: Boolean,
     val isFullscreen: Boolean,
+    val videoAspectRatio: Float?,
     private val playbackSession: LivePlaybackSession?,
     private val activity: Activity?,
     private val tabletOrientationMode: TabletOrientationMode?
@@ -242,6 +244,17 @@ internal fun rememberLivePlaybackHost(
     val isFullscreen by remember(playerController) {
         playerController?.state?.map { it.isFullscreen } ?: flowOf(false)
     }.collectAsStateWithLifecycle(initialValue = false)
+    val videoAspectRatio by remember(playerController) {
+        playerController?.state?.map { it.videoAspectRatio }?.distinctUntilChanged() ?: flowOf(null)
+    }.collectAsStateWithLifecycle(initialValue = null)
+
+    LaunchedEffect(autoPipOwner, videoAspectRatio, exiting) {
+        if (exiting) LivePlaybackHostSignals.clearVideoAspectRatio(autoPipOwner)
+        else LivePlaybackHostSignals.setVideoAspectRatio(autoPipOwner, videoAspectRatio)
+    }
+    DisposableEffect(autoPipOwner) {
+        onDispose { LivePlaybackHostSignals.clearVideoAspectRatio(autoPipOwner) }
+    }
 
     var autoFullscreenAppliedRoute by remember { mutableStateOf<Pair<String, String>?>(null) }
     LaunchedEffect(
@@ -251,13 +264,23 @@ internal fun rememberLivePlaybackHost(
         content.routeSiteId,
         content.roomReady,
         isFullscreen,
-        tabletOrientationMode
+        tabletOrientationMode,
+        videoAspectRatio,
+        exiting
     ) {
+        if (exiting) return@LaunchedEffect
         val route = content.routeSiteId to content.routeRoomId
+        // A manual entry before video metadata arrives also consumes this route's auto-entry.
+        // Otherwise backing out during loading would unexpectedly reopen fullscreen later.
+        if (isFullscreen) {
+            autoFullscreenAppliedRoute = route
+            return@LaunchedEffect
+        }
         if (
             shouldApplyLivePlaybackAutoFullscreen(
                 autoFullScreen = preferences.autoFullScreen,
-                tabletOrientationMode = tabletOrientationMode
+                tabletOrientationMode = tabletOrientationMode,
+                videoAspectRatio = videoAspectRatio
             ) &&
             playerController != null &&
             content.roomReady &&
@@ -291,15 +314,19 @@ internal fun rememberLivePlaybackHost(
         isFullscreen,
         controlsLocked,
         restorePortraitAfterFullscreen,
-        tabletOrientationMode
+        tabletOrientationMode,
+        videoAspectRatio,
+        isInPictureInPicture,
+        exiting
     ) {
-        activity?.let {
+        activity?.takeUnless { isInPictureInPicture || exiting }?.let {
             applyLivePlaybackHostWindow(
                 activity = it,
                 fullscreen = isFullscreen,
                 controlsLocked = controlsLocked,
                 restorePortrait = restorePortraitAfterFullscreen,
-                tabletOrientationMode = tabletOrientationMode
+                tabletOrientationMode = tabletOrientationMode,
+                videoAspectRatio = videoAspectRatio
             )
         }
     }
@@ -326,6 +353,7 @@ internal fun rememberLivePlaybackHost(
         playerController,
         isInPictureInPicture,
         isFullscreen,
+        videoAspectRatio,
         playbackSession,
         activity,
         tabletOrientationMode
@@ -334,6 +362,7 @@ internal fun rememberLivePlaybackHost(
             playerController = playerController,
             isInPictureInPicture = isInPictureInPicture,
             isFullscreen = isFullscreen,
+            videoAspectRatio = videoAspectRatio,
             playbackSession = playbackSession,
             activity = activity,
             tabletOrientationMode = tabletOrientationMode
@@ -365,10 +394,16 @@ internal fun livePlaybackHostRequestedOrientation(
     fullscreen: Boolean,
     controlsLocked: Boolean,
     restorePortrait: Boolean = false,
-    tabletOrientationMode: TabletOrientationMode? = null
+    tabletOrientationMode: TabletOrientationMode? = null,
+    videoAspectRatio: Float? = null
 ): Int {
+    val knownRatio = videoAspectRatio?.takeIf { it.isFinite() && it > 0f }
     return when {
         controlsLocked -> ActivityInfo.SCREEN_ORIENTATION_LOCKED
+        // A manual fullscreen tap can precede the first video-size event. Stay in the current
+        // orientation until the source is known, rather than flashing landscape then portrait.
+        fullscreen && (knownRatio == null || knownRatio == 1f) -> ActivityInfo.SCREEN_ORIENTATION_LOCKED
+        fullscreen && isPortraitVideo(knownRatio) -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
         fullscreen -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         tabletOrientationMode != null -> tabletRequestedOrientation(tabletOrientationMode)
         restorePortrait -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
@@ -378,9 +413,11 @@ internal fun livePlaybackHostRequestedOrientation(
 
 internal fun shouldApplyLivePlaybackAutoFullscreen(
     autoFullScreen: Boolean,
-    tabletOrientationMode: TabletOrientationMode?
+    tabletOrientationMode: TabletOrientationMode?,
+    videoAspectRatio: Float? = null
 ): Boolean {
-    return autoFullScreen && tabletOrientationMode != TabletOrientationMode.Portrait
+    return autoFullScreen && videoAspectRatio != null && videoAspectRatio.isFinite() && videoAspectRatio > 0f &&
+        (tabletOrientationMode != TabletOrientationMode.Portrait || isPortraitVideo(videoAspectRatio))
 }
 
 private fun applyLivePlaybackHostWindow(
@@ -388,13 +425,15 @@ private fun applyLivePlaybackHostWindow(
     fullscreen: Boolean,
     controlsLocked: Boolean,
     restorePortrait: Boolean,
-    tabletOrientationMode: TabletOrientationMode?
+    tabletOrientationMode: TabletOrientationMode?,
+    videoAspectRatio: Float?
 ) {
     activity.requestedOrientation = livePlaybackHostRequestedOrientation(
         fullscreen = fullscreen,
         controlsLocked = controlsLocked,
         restorePortrait = restorePortrait,
-        tabletOrientationMode = tabletOrientationMode
+        tabletOrientationMode = tabletOrientationMode,
+        videoAspectRatio = videoAspectRatio
     )
     if (fullscreen) {
         WindowCompat.setDecorFitsSystemWindows(activity.window, false)

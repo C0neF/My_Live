@@ -32,6 +32,24 @@ object LivePlaybackHostSignals {
     val autoPipOnLeave: Boolean
         get() = _autoPipOnLeave.value
 
+    private var videoAspectRatioOwner: Any? = null
+    private val _videoAspectRatio = MutableStateFlow<Float?>(null)
+    val videoAspectRatioFlow: StateFlow<Float?> = _videoAspectRatio.asStateFlow()
+
+    @Synchronized
+    fun setVideoAspectRatio(owner: Any, aspectRatio: Float?) {
+        videoAspectRatioOwner = owner
+        _videoAspectRatio.value = aspectRatio
+    }
+
+    @Synchronized
+    fun clearVideoAspectRatio(owner: Any) {
+        if (videoAspectRatioOwner === owner) {
+            videoAspectRatioOwner = null
+            _videoAspectRatio.value = null
+        }
+    }
+
     /**
      * Bounds of the video surface in window coordinates, used as the picture-in-picture source
      * rect so the system can animate from the actual video instead of cross-fading the whole

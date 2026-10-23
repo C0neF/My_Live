@@ -100,6 +100,7 @@ import com.mylive.app.ui.screen.room.player.DanmakuController
 import com.mylive.app.ui.screen.room.player.rememberLivePlaybackHost
 import com.mylive.app.ui.screen.room.player.shouldFeedLiveDanmakuSurface
 import com.mylive.app.ui.screen.room.player.shouldFeedPipDanmakuSurface
+import com.mylive.app.ui.screen.room.player.playbackContainerAspectRatio
 import com.mylive.app.ui.screen.settings.SettingsViewModel
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -440,6 +441,7 @@ fun LiveRoomScreen(
         } else {
             PortraitLayout(
                 tabletSplit = roomLayout == LiveRoomLayout.Split,
+                videoAspectRatio = playbackHost.videoAspectRatio,
                 uiState = uiState,
                 viewModel = viewModel,
                 accentSiteId = accentSiteId,
@@ -461,6 +463,7 @@ fun LiveRoomScreen(
 @Composable
 private fun PortraitLayout(
     tabletSplit: Boolean,
+    videoAspectRatio: Float?,
     uiState: LiveRoomUiState,
     viewModel: LiveRoomViewModel,
     accentSiteId: String,
@@ -602,16 +605,19 @@ private fun PortraitLayout(
         )
     )
 
+    val playerAspectRatio = playbackContainerAspectRatio(videoAspectRatio, scaleMode)
     AdaptiveLiveRoomLayout(
         splitPane = tabletSplit,
         chatWidthDp = LocalAppLayout.current.liveChatWidthDp,
         limitStackedPlayerHeight = LocalAppLayout.current.tablet,
         modifier = Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding(),
+        videoAspectRatio = playerAspectRatio,
         player = { playerMaxHeight ->
         LiveRoomPlayerArea(
             maximumHeight = playerMaxHeight,
             modifier = if (tabletSplit) Modifier.weight(1f) else Modifier,
-            fillAvailableHeight = tabletSplit
+            fillAvailableHeight = tabletSplit,
+            videoAspectRatio = playerAspectRatio
         ) {
             val currentQualityName = uiState.playQualities.getOrNull(uiState.currentQualityIndex)?.quality ?: "画质"
             PlayerView(
@@ -852,7 +858,7 @@ private fun LandscapeLayout(
     }
 
     val density = LocalDensity.current
-    val panelWidthPx = remember { with(density) { 320.dp.toPx() } }
+    val panelWidthPx = remember(density) { with(density) { 320.dp.toPx() } }
     val panelOffset = remember(panelWidthPx) {
         Animatable(liveRoomInitialSidePanelOffsetPx(panelWidthPx))
     }
@@ -862,11 +868,7 @@ private fun LandscapeLayout(
     val coroutineScope = rememberCoroutineScope()
     val motionPolicy = LocalAppMotionPolicy.current
     val showSidePanel = panelOffset.value < panelWidthPx
-    val panelWidth = remember(panelOffset.value) {
-        with(density) { (panelWidthPx - panelOffset.value).toDp() }
-    }
-
-    BackHandler(enabled = showSidePanel) {
+    val closeSidePanel: () -> Unit = {
         coroutineScope.launch {
             if (motionPolicy.reducedMotion) {
                 panelOffset.snapTo(panelWidthPx)
@@ -893,13 +895,13 @@ private fun LandscapeLayout(
         )
     )
 
-    Row(modifier = Modifier.fillMaxSize()) {
+    ImmersiveLiveRoomLayout(
+        panelFraction = 1f - panelOffset.value / panelWidthPx,
+        onDismissPanel = closeSidePanel,
+        player = { playerModifier ->
         // Player (takes remaining space)
         Box(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxHeight()
-                .background(Color.Black)
+            modifier = playerModifier.background(Color.Black)
         ) {
             val currentQualityName = uiState.playQualities.getOrNull(uiState.currentQualityIndex)?.quality ?: "画质"
             PlayerView(
@@ -987,13 +989,10 @@ private fun LandscapeLayout(
             )
         }
 
-        // Side panel (optional)
-        if (showSidePanel) {
+        },
+        panel = { panelModifier ->
             Box(
-                modifier = Modifier
-                    .width(panelWidth)
-                    .fillMaxHeight()
-                    .clipToBounds()
+                modifier = panelModifier
                     .background(MaterialTheme.colorScheme.surface)
                     .border(
                         width = 1.dp,
@@ -1003,8 +1002,7 @@ private fun LandscapeLayout(
             ) {
                 Column(
                     modifier = Modifier
-                        .requiredWidth(320.dp)
-                        .fillMaxHeight()
+                        .fillMaxSize()
                 ) {
                     LandscapeRoomSidePanelHeader(
                         detail = uiState.detail
@@ -1025,8 +1023,10 @@ private fun LandscapeLayout(
                     }
                 }
             }
-        } // end if (showSidePanel)
-    }
+        }
+    )
+    // Register after the player's fullscreen back handler so the open chat panel closes first.
+    BackHandler(enabled = showSidePanel, onBack = closeSidePanel)
 }
 
 private fun landscapeQuickAccessExtraTabs(

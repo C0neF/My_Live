@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.mylive.app.R
 import com.mylive.app.ui.layout.AppLayoutInfo
+import com.mylive.app.ui.screen.room.player.isPortraitVideo
 
 internal enum class LiveRoomLayout { Immersive, Split, Stacked }
 
@@ -49,6 +50,7 @@ internal fun AdaptiveLiveRoomLayout(
     chatWidthDp: Int,
     limitStackedPlayerHeight: Boolean,
     modifier: Modifier = Modifier,
+    videoAspectRatio: Float? = null,
     player: @Composable ColumnScope.(Dp) -> Unit,
     chat: @Composable (Modifier) -> Unit
 ) {
@@ -56,6 +58,9 @@ internal fun AdaptiveLiveRoomLayout(
         val playerMaxHeight = when {
             splitPane -> maxHeight
             limitStackedPlayerHeight -> maxHeight * 0.52f
+            // Leave room for the anchor header and readable chat even on short phone windows.
+            isPortraitVideo(videoAspectRatio) ->
+                (maxHeight - 240.dp).coerceIn(0.dp, maxHeight * 0.65f)
             else -> Dp.Infinity
         }
         if (splitPane) {
@@ -103,13 +108,15 @@ internal fun LiveRoomPlayerArea(
     maximumHeight: Dp,
     modifier: Modifier = Modifier,
     fillAvailableHeight: Boolean = false,
+    videoAspectRatio: Float? = null,
     content: @Composable () -> Unit
 ) {
     BoxWithConstraints(modifier.fillMaxWidth().testTag("live_room_player")) {
         val playerHeight = if (fillAvailableHeight && maxHeight != Dp.Infinity) {
             maxHeight
         } else {
-            (maxWidth / (16f / 9f)).coerceAtMost(maximumHeight)
+            val aspectRatio = videoAspectRatio?.takeIf { it.isFinite() && it > 0f } ?: (16f / 9f)
+            (maxWidth / aspectRatio).coerceAtMost(maximumHeight)
         }
         Box(Modifier.fillMaxWidth().height(playerHeight).background(Color.Black)) {
             content()

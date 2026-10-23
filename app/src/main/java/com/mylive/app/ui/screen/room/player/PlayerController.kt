@@ -9,6 +9,7 @@ import android.provider.Settings
 import androidx.annotation.OptIn
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Timeline
+import androidx.media3.common.VideoSize
 import androidx.media3.common.Format
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
@@ -44,6 +45,7 @@ data class PlayerState(
     val volume: Float = 1f,
     val brightness: Float = 0.5f,
     val isFullscreen: Boolean = false,
+    val videoAspectRatio: Float? = null,
     val playerGeneration: Long = 0L,
     val firstFrameRendered: Boolean = false,
     val playWhenReady: Boolean = false,
@@ -205,6 +207,17 @@ class PlayerController(
     }
 
     private val analyticsListener = object : AnalyticsListener {
+        override fun onVideoSizeChanged(eventTime: AnalyticsListener.EventTime, videoSize: VideoSize) {
+            if (!isCurrentSourceEvent(eventTime)) return
+            val aspectRatio = playbackVideoAspectRatio(
+                videoSize.width, videoSize.height,
+                videoSize.pixelWidthHeightRatio, videoSize.unappliedRotationDegrees
+            ) ?: return
+            // Renderer disable/rebuffer events report UNKNOWN. Keep the last valid geometry
+            // within this room so quality/line changes do not briefly rotate the window.
+            _state.value = _state.value.copy(videoAspectRatio = aspectRatio)
+        }
+
         override fun onAudioInputFormatChanged(
             eventTime: AnalyticsListener.EventTime,
             format: Format,
@@ -392,8 +405,9 @@ class PlayerController(
     }
 
     fun beginRoomLoad(startedAtMillis: Long) {
+        hasActiveSource = false
         startupTiming.beginRoomLoad(startedAtMillis)
-        _state.value = _state.value.copy(firstFrameRendered = false)
+        _state.value = _state.value.copy(firstFrameRendered = false, videoAspectRatio = null)
     }
 
     fun play(
@@ -646,7 +660,7 @@ class PlayerController(
         hasActiveSource = false
         startupTiming.invalidateSource()
         decoderConfiguredFrameRate = null
-        _state.value = _state.value.copy(firstFrameRendered = false)
+        _state.value = _state.value.copy(firstFrameRendered = false, videoAspectRatio = null)
         cancelEndedRecovery()
         stopStallWatchdog(resetMonitor = true)
         player?.stop()
@@ -657,7 +671,7 @@ class PlayerController(
         hasActiveSource = false
         startupTiming.invalidateSource()
         decoderConfiguredFrameRate = null
-        _state.value = _state.value.copy(firstFrameRendered = false)
+        _state.value = _state.value.copy(firstFrameRendered = false, videoAspectRatio = null)
         cancelEndedRecovery()
         stopStallWatchdog(resetMonitor = true)
         player?.removeListener(playerListener)

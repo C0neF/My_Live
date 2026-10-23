@@ -177,7 +177,9 @@ class LiveRoomPortraitToolbarPolicyTest {
         assertTrue(source.contains("internal fun liveRoomSidePanelOffsetAfterDrag("))
         assertTrue(landscapeSource.contains("Animatable(liveRoomInitialSidePanelOffsetPx(panelWidthPx))"))
         assertTrue(landscapeSource.contains("val showSidePanel = panelOffset.value < panelWidthPx"))
-        assertTrue(landscapeSource.contains("BackHandler(enabled = showSidePanel)"))
+        assertTrue(landscapeSource.contains("BackHandler(enabled = showSidePanel, onBack = closeSidePanel)"))
+        assertTrue(landscapeSource.indexOf("BackHandler(enabled = showSidePanel") >
+            landscapeSource.indexOf("ImmersiveLiveRoomLayout("))
         assertTrue(landscapeSource.contains("liveRoomSidePanelOffsetAfterDrag("))
         assertFalse(source.contains("liveRoomUsePersistentSidePanel"))
         assertFalse(landscapeSource.contains("usePersistentSidePanel"))

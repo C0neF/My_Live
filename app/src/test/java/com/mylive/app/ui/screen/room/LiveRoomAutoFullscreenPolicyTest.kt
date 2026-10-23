@@ -52,18 +52,18 @@ class LiveRoomAutoFullscreenPolicyTest {
     }
 
     @Test
-    fun lockedControlsFreezeOrientationAndFullscreenStaysLandscape() {
+    fun lockedControlsFreezeOrientationAndLandscapeVideoStaysLandscape() {
         assertEquals(
             ActivityInfo.SCREEN_ORIENTATION_LOCKED,
-            livePlaybackHostRequestedOrientation(fullscreen = true, controlsLocked = true)
+            livePlaybackHostRequestedOrientation(videoAspectRatio = 16f / 9f, fullscreen = true, controlsLocked = true)
         )
         assertEquals(
             ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE,
-            livePlaybackHostRequestedOrientation(fullscreen = true, controlsLocked = false)
+            livePlaybackHostRequestedOrientation(videoAspectRatio = 16f / 9f, fullscreen = true, controlsLocked = false)
         )
         assertEquals(
             ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED,
-            livePlaybackHostRequestedOrientation(fullscreen = false, controlsLocked = false)
+            livePlaybackHostRequestedOrientation(videoAspectRatio = 16f / 9f, fullscreen = false, controlsLocked = false)
         )
     }
 
@@ -74,6 +74,7 @@ class LiveRoomAutoFullscreenPolicyTest {
         assertEquals(
             ActivityInfo.SCREEN_ORIENTATION_PORTRAIT,
             livePlaybackHostRequestedOrientation(
+            videoAspectRatio = 16f / 9f,
                 fullscreen = false,
                 controlsLocked = false,
                 restorePortrait = true
@@ -83,6 +84,7 @@ class LiveRoomAutoFullscreenPolicyTest {
         assertEquals(
             ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED,
             livePlaybackHostRequestedOrientation(
+            videoAspectRatio = 16f / 9f,
                 fullscreen = false,
                 controlsLocked = false,
                 restorePortrait = false
@@ -92,6 +94,7 @@ class LiveRoomAutoFullscreenPolicyTest {
         assertEquals(
             ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE,
             livePlaybackHostRequestedOrientation(
+            videoAspectRatio = 16f / 9f,
                 fullscreen = true,
                 controlsLocked = false,
                 restorePortrait = true
@@ -100,6 +103,7 @@ class LiveRoomAutoFullscreenPolicyTest {
         assertEquals(
             ActivityInfo.SCREEN_ORIENTATION_LOCKED,
             livePlaybackHostRequestedOrientation(
+            videoAspectRatio = 16f / 9f,
                 fullscreen = true,
                 controlsLocked = true,
                 restorePortrait = true
@@ -112,6 +116,7 @@ class LiveRoomAutoFullscreenPolicyTest {
         assertEquals(
             ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE,
             livePlaybackHostRequestedOrientation(
+            videoAspectRatio = 16f / 9f,
                 fullscreen = false,
                 controlsLocked = false,
                 restorePortrait = true,
@@ -121,6 +126,7 @@ class LiveRoomAutoFullscreenPolicyTest {
         assertEquals(
             ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT,
             livePlaybackHostRequestedOrientation(
+            videoAspectRatio = 16f / 9f,
                 fullscreen = false,
                 controlsLocked = false,
                 tabletOrientationMode = TabletOrientationMode.Portrait
@@ -132,18 +138,21 @@ class LiveRoomAutoFullscreenPolicyTest {
     fun portraitLockedTabletDoesNotAutoRotateWhenRoomOpens() {
         assertFalse(
             shouldApplyLivePlaybackAutoFullscreen(
+            videoAspectRatio = 16f / 9f,
                 autoFullScreen = true,
                 tabletOrientationMode = TabletOrientationMode.Portrait
             )
         )
         assertTrue(
             shouldApplyLivePlaybackAutoFullscreen(
+            videoAspectRatio = 16f / 9f,
                 autoFullScreen = true,
                 tabletOrientationMode = TabletOrientationMode.Landscape
             )
         )
         assertTrue(
             shouldApplyLivePlaybackAutoFullscreen(
+            videoAspectRatio = 16f / 9f,
                 autoFullScreen = true,
                 tabletOrientationMode = null
             )
@@ -162,17 +171,17 @@ class LiveRoomAutoFullscreenPolicyTest {
         assertTrue(host.contains("restorePortraitAfterFullscreen = true"))
         assertTrue(host.contains("if (restorePortraitAfterFullscreen && !isLandscape) {"))
         assertTrue(host.contains("restorePortrait = restorePortraitAfterFullscreen"))
-        // Rotation itself still never exits fullscreen and never renders a portrait fullscreen.
+        // Sensor rotation itself never exits fullscreen; source geometry chooses its direction.
         assertFalse(host.contains("OrientationEventListener"))
     }
 
     @Test
-    fun fullscreenNeverRendersPortraitAndNeverExitsOnRotation() {
-        // Fullscreen is landscape-only: SENSOR_LANDSCAPE allows the two landscape directions and
+    fun landscapeVideoFullscreenNeverRotatesToPortraitOrExitsOnRotation() {
+        // Landscape video uses SENSOR_LANDSCAPE, allowing the two landscape directions and
         // nothing else, so holding the device upright cannot letterbox the player into a portrait
         // window (the bug reported on the device with auto-rotate turned off).
         val fullscreenOrientation =
-            livePlaybackHostRequestedOrientation(fullscreen = true, controlsLocked = false)
+            livePlaybackHostRequestedOrientation(videoAspectRatio = 16f / 9f, fullscreen = true, controlsLocked = false)
         assertEquals(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE, fullscreenOrientation)
         assertNotEquals(ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR, fullscreenOrientation)
         assertNotEquals(ActivityInfo.SCREEN_ORIENTATION_SENSOR, fullscreenOrientation)
@@ -181,7 +190,7 @@ class LiveRoomAutoFullscreenPolicyTest {
         // Locked controls still freeze the orientation instead of leaving fullscreen.
         assertEquals(
             ActivityInfo.SCREEN_ORIENTATION_LOCKED,
-            livePlaybackHostRequestedOrientation(fullscreen = true, controlsLocked = true)
+            livePlaybackHostRequestedOrientation(videoAspectRatio = 16f / 9f, fullscreen = true, controlsLocked = true)
         )
     }
 

@@ -796,7 +796,8 @@ private fun PlayerBottomBar(
     ) {
         val compact = shouldUseCompactPlayerBottomBar(
             availableWidthDp = maxWidth.value.toInt(),
-            isPortrait = isPortrait
+            isPortrait = isPortrait,
+            isFullscreen = isFullscreen
         )
         val buttonSize = if (compact) 40.dp else 48.dp
         val iconSize = if (compact) 22.dp else 24.dp
@@ -1150,8 +1151,12 @@ private fun Modifier.playerOverflowMenuEdgeFades(
     }
 }
 
-internal fun shouldUseCompactPlayerBottomBar(availableWidthDp: Int, isPortrait: Boolean): Boolean {
-    return !isPortrait && availableWidthDp < 480
+internal fun shouldUseCompactPlayerBottomBar(
+    availableWidthDp: Int,
+    isPortrait: Boolean,
+    isFullscreen: Boolean = false
+): Boolean {
+    return (!isPortrait || isFullscreen) && availableWidthDp < 480
 }
 
 internal fun shouldPlacePlayerFollowActionOnRight(isPortrait: Boolean): Boolean {

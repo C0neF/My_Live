@@ -70,7 +70,6 @@ jobs:
           if (-not (Test-Path (Join-Path $bin 'opengl32.dll'))) { throw 'Mesa opengl32.dll was not extracted' }
           Copy-Item "$bin\*.dll" -Destination "$env:JAVA_HOME\bin" -Force
           "MYLIVE_MESA_BIN=$bin" >> $env:GITHUB_ENV
-          "GALLIUM_DRIVER=llvmpipe" >> $env:GITHUB_ENV
       - name: Read Windows version
         shell: pwsh
         run: |
@@ -78,7 +77,16 @@ jobs:
           if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid Windows version' }
           "WINDOWS_VERSION=$version" >> $env:GITHUB_ENV
       - name: Test shared core and desktop
+        env:
+          GALLIUM_DRIVER: llvmpipe
         run: .\gradlew.bat --no-daemon :desktop:verifyWindows
+      - name: Remove Mesa DLLs before packaging
+        shell: pwsh
+        run: |
+          foreach ($name in 'opengl32.dll','libgallium_wgl.dll','dxil.dll') {
+            $path = Join-Path $env:JAVA_HOME "bin\$name"
+            if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Force }
+          }
       - name: Package Windows app, single EXE and installers
         run: .\gradlew.bat --no-daemon :desktop:packageWindows :desktop:singleFileTest
       - name: Check installer path budget

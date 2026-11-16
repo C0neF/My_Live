@@ -53,8 +53,11 @@ function Start-Bundle([string]$Name, [string]$Cache) {
 function Complete-Bundle($Job) {
     try {
         if (-not $Job.Process.WaitForExit(90000)) {
-            $Job.Process.Kill($true)
+            try { $Job.Process.Kill($true) } catch { }
             if (-not $Job.Process.WaitForExit(10000)) { throw "Unable to stop timed out check: $($Job.Name)" }
+            $Job.Watch.Stop()
+            [IO.File]::WriteAllText((Join-Path $run "$($Job.Name).stdout.log"), $Job.Stdout.GetAwaiter().GetResult())
+            [IO.File]::WriteAllText((Join-Path $run "$($Job.Name).stderr.log"), $Job.Stderr.GetAwaiter().GetResult())
             throw "Single-file check timed out: $($Job.Name)"
         }
         $Job.Watch.Stop()

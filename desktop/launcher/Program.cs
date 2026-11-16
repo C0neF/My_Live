@@ -17,8 +17,10 @@ internal static class Program
             // The host names the extraction directory after this executable. A non-ASCII name
             // lands the JVM on a path that the Windows launcher cannot resolve when the ANSI
             // code page does not contain those characters (JDK-8241461): it exits 2 with
-            // "could not find java.dll". Launch a same-volume copy from an ASCII directory.
+            // "could not find java.dll". Prefer an existing 8.3 path, otherwise a junction
+            // whose own path is ASCII. The caller's working directory is unchanged.
             var application = AsciiLaunchPath(extracted);
+            Console.Error.WriteLine("launching bundled runtime: " + application);
             var start = new ProcessStartInfo(application)
             {
                 UseShellExecute = false,
@@ -44,10 +46,12 @@ internal static class Program
     private static string AsciiLaunchPath(string extractedExecutable)
     {
         if (extractedExecutable.All(static character => character <= 0x7F)) return extractedExecutable;
+        var shortened = ShortPath(extractedExecutable);
+        if (shortened != null && File.Exists(shortened)) return shortened;
         var sourceDir = Path.GetDirectoryName(extractedExecutable) ?? throw new IOException("Application runtime is missing.");
         var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(sourceDir)))[..16];
-        var destination = Path.Combine(AsciiRoot(), hash);
-        var executable = Path.Combine(destination, "MyLive.exe");
+        var link = Path.Combine(AsciiRoot(), hash);
+        var executable = Path.Combine(link, "MyLive.exe");
         using var gate = new Mutex(false, @"Local\MyLiveAscii" + hash);
         try { gate.WaitOne(); }
         catch (AbandonedMutexException) { }
@@ -55,14 +59,13 @@ internal static class Program
         {
             if (!File.Exists(executable))
             {
-                var staging = destination + ".partial";
-                if (Directory.Exists(staging)) Directory.Delete(staging, recursive: true);
-                CopyDirectory(sourceDir, staging);
-                if (Directory.Exists(destination)) Directory.Delete(destination, recursive: true);
-                Directory.Move(staging, destination);
+                if (Directory.Exists(link)) Directory.Delete(link);
+                Directory.CreateDirectory(Path.GetDirectoryName(link)!);
+                CreateJunction(link, sourceDir);
             }
         }
         finally { gate.ReleaseMutex(); }
+        if (!File.Exists(executable)) throw new IOException("Could not create an ASCII path for the bundled runtime.");
         return executable;
     }
 
@@ -77,22 +80,40 @@ internal static class Program
         return Path.Combine(root, "MyLive", "ascii-runtime");
     }
 
-    private static void CopyDirectory(string source, string destination)
+    private static string? ShortPath(string path)
     {
-        Directory.CreateDirectory(destination);
-        foreach (var file in Directory.EnumerateFiles(source))
-        {
-            var info = new FileInfo(file);
-            if ((info.Attributes & FileAttributes.ReparsePoint) != 0) continue;
-            info.CopyTo(Path.Combine(destination, info.Name));
-        }
-        foreach (var directory in Directory.EnumerateDirectories(source))
-        {
-            var info = new DirectoryInfo(directory);
-            if ((info.Attributes & FileAttributes.ReparsePoint) != 0) continue;
-            CopyDirectory(directory, Path.Combine(destination, info.Name));
-        }
+        var buffer = new StringBuilder(1024);
+        var length = GetShortPathNameW(path, buffer, buffer.Capacity);
+        if (length <= 0 || length >= buffer.Capacity) return null;
+        var shortened = buffer.ToString();
+        if (!shortened.All(static character => character <= 0x7F)) return null;
+        if (string.Equals(shortened, path, StringComparison.OrdinalIgnoreCase)) return null;
+        return shortened;
     }
+
+    private static void CreateJunction(string link, string target)
+    {
+        var info = new ProcessStartInfo("cmd.exe")
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardError = true,
+            RedirectStandardOutput = true
+        };
+        info.ArgumentList.Add("/d");
+        info.ArgumentList.Add("/c");
+        info.ArgumentList.Add("mklink");
+        info.ArgumentList.Add("/J");
+        info.ArgumentList.Add(link);
+        info.ArgumentList.Add(target);
+        using var process = Process.Start(info) ?? throw new IOException("Could not create an ASCII path for the bundled runtime.");
+        process.WaitForExit();
+        if (process.ExitCode != 0)
+            throw new IOException("Could not create an ASCII path for the bundled runtime.");
+    }
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true, EntryPoint = "GetShortPathNameW")]
+    private static extern int GetShortPathNameW(string longPath, StringBuilder shortPath, int bufferSize);
 
     [DllImport("user32.dll", EntryPoint = "MessageBoxW", CharSet = CharSet.Unicode)]
     private static extern int MessageBoxW(IntPtr owner, string message, string title, uint type);

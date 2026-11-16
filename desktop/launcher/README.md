@@ -19,9 +19,8 @@ register an installed product, create shortcuts, or move the user's existing pro
 
 The .NET host extracts the image under a directory named after the executable. When that path is
 not ASCII, the Windows JVM launcher fails with `could not find java.dll` on an ANSI code page that
-cannot represent the name (JDK-8241461). The wrapper then starts a copy of the image from an ASCII
-directory and leaves the caller's working directory unchanged, so Unicode media and profile paths
-still work.
+cannot represent the name (JDK-8241461). The wrapper then starts the image through its 8.3 path,
+or an ASCII directory junction, and leaves the caller's working directory unchanged.
 
 The bundle's default cache is `%TEMP%/.net/<executable>/<bundle-id>/`; the native app continues to
 use `%LOCALAPPDATA%/MyLive/` for user data. .NET runtime notices are included in the extracted app's

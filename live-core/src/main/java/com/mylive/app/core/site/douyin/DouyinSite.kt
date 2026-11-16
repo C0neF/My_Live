@@ -124,7 +124,7 @@ private fun resolveLegacyDouyinQualityUrl(
  * - Play quality extraction from live_core_sdk_data.pull_data
  */
 @Singleton
-class DouyinSite internal constructor(
+class DouyinSite(
     private val httpClient: HttpClient,
     private val jsEngineProvider: Provider<JsExecutor>,
     private val okHttpClient: OkHttpClient,

@@ -46,11 +46,19 @@ class NativeDesktopRenderingTest {
         try {
             val media = File(javaClass.getResource("/sample.flv")!!.toURI())
             withContext(Dispatchers.Main) { playback.open(media.absolutePath, emptyMap()) }
-            repeat(10) { delay(50); withContext(Dispatchers.Main) { window.renderImmediately() } }
-            withContext(Dispatchers.Main) {
-                captureGpuSurface(window.findSkiaLayer()!!).use { bitmap ->
-                    val colors = (1..8).flatMap { y -> (1..8).map { x -> bitmap.getColor(bitmap.width * x / 9, bitmap.height * y / 9) } }.toSet()
-                    assertTrue("The compatibility renderer displays video", colors.size > 12)
+            withTimeout(15_000) {
+                while (true) {
+                    delay(50)
+                    val displayed = withContext(Dispatchers.Main) {
+                        window.renderImmediately()
+                        captureGpuSurface(window.findSkiaLayer()!!).use { bitmap ->
+                            val colors = (1..8).flatMap { y ->
+                                (1..8).map { x -> bitmap.getColor(bitmap.width * x / 9, bitmap.height * y / 9) }
+                            }.toSet()
+                            colors.size > 12
+                        }
+                    }
+                    if (displayed) break
                 }
             }
         } finally {

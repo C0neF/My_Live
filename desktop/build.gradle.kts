@@ -41,8 +41,6 @@ kotlin.sourceSets.main { kotlin.srcDir(generateDesktopBuildInfo) }
 
 kotlin {
     jvmToolchain(21)
-    // Compile the real Android LAN sender as a JVM fixture to prove cross-client interoperability.
-    sourceSets.getByName("test").kotlin.srcDir("../app/src/main/java/com/mylive/app/data/sync")
 }
 
 val windowsMpvRuntime by configurations.creating { isTransitive = false }

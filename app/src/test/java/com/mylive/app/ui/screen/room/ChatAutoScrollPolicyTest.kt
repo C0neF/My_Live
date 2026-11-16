@@ -1,5 +1,7 @@
 package com.mylive.app.ui.screen.room
 
+import com.mylive.app.testing.liveRoomUiSource
+
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -154,7 +156,7 @@ class ChatAutoScrollPolicyTest {
 
     @Test
     fun latestButtonUsesExplicitReadableLightThemeColors() {
-        val source = File("src/main/java/com/mylive/app/ui/screen/room/LiveRoomScreen.kt").readText()
+        val source = liveRoomUiSource()
         val latestButtonSource = source.substringAfter("visible = showLatestButton")
             .substringBefore("contentDescription = \"滚动到最新弹幕\"")
 

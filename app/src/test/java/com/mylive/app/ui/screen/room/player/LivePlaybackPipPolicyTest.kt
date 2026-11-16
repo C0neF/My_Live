@@ -1,5 +1,7 @@
 package com.mylive.app.ui.screen.room.player
 
+import com.mylive.app.testing.liveRoomUiSource
+
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -125,9 +127,7 @@ class LivePlaybackPipPolicyTest {
     fun theRoomDeclaresItsPipSurface() {
         // Wiring check: some call site has to actually pass the flag. Kept to a single stable
         // named-argument token instead of slicing the file into branches by brace text.
-        val screen = File(
-            "src/main/java/com/mylive/app/ui/screen/room/LiveRoomScreen.kt"
-        ).readText()
+        val screen = liveRoomUiSource()
         assertTrue(screen.contains("isInPictureInPicture = true"))
     }
 }

@@ -1,5 +1,7 @@
 package com.mylive.app.ui.screen.room.player
 
+import com.mylive.app.testing.liveRoomUiSource
+
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -171,7 +173,7 @@ class LivePlaybackSessionPolicyTest {
         val host = readMainSource(
             "com/mylive/app/ui/screen/room/player/LivePlaybackHost.kt"
         )
-        val screen = File("src/main/java/com/mylive/app/ui/screen/room/LiveRoomScreen.kt").readText()
+        val screen = liveRoomUiSource()
 
         assertTrue(host.contains("LivePlaybackSession.create("))
         assertTrue(host.contains("onPlaybackSourceExhausted = {"))

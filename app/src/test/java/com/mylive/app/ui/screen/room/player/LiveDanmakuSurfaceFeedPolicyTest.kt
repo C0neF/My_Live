@@ -1,5 +1,7 @@
 package com.mylive.app.ui.screen.room.player
 
+import com.mylive.app.testing.liveRoomUiSource
+
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -52,7 +54,7 @@ class LiveDanmakuSurfaceFeedPolicyTest {
 
     @Test
     fun liveRoomUsesSurfaceFeedModuleInsteadOfInlineCollectors() {
-        val screen = File("src/main/java/com/mylive/app/ui/screen/room/LiveRoomScreen.kt").readText()
+        val screen = liveRoomUiSource()
         val feed = File(
             "src/main/java/com/mylive/app/ui/screen/room/player/LiveDanmakuSurfaceFeed.kt"
         ).readText()

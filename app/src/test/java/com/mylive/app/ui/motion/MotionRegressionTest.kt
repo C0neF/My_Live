@@ -1,5 +1,7 @@
 package com.mylive.app.ui.motion
 
+import com.mylive.app.testing.liveRoomUiSource
+
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -62,7 +64,7 @@ class MotionRegressionTest {
 
     @Test
     fun liveRoomStartupIsNotDelayedByRouteAnimation() {
-        val source = readMainSource("com/mylive/app/ui/screen/room/LiveRoomScreen.kt")
+        val source = liveRoomUiSource()
 
         assertFalse(source.contains("delay(700)"))
         assertFalse(source.contains("isTransitionFinished"))
@@ -72,7 +74,7 @@ class MotionRegressionTest {
 
     @Test
     fun liveRoomExitIsOwnedByNavigationLayer() {
-        val source = readMainSource("com/mylive/app/ui/screen/room/LiveRoomScreen.kt")
+        val source = liveRoomUiSource()
 
         assertTrue(source.contains("NavigationExitEffect(navigator = navigator, route = key)"))
         assertTrue(source.contains("val handleBack = navigation.onBack"))
@@ -106,7 +108,7 @@ class MotionRegressionTest {
 
     @Test
     fun liveRoomInteractionTimeDoesNotDriveTopLevelRecomposition() {
-        val source = readMainSource("com/mylive/app/ui/screen/room/LiveRoomScreen.kt")
+        val source = liveRoomUiSource()
 
         assertFalse(source.contains("mutableLongStateOf(System.currentTimeMillis())"))
         assertFalse(source.contains("LaunchedEffect(lastInteractionTime"))
@@ -115,7 +117,7 @@ class MotionRegressionTest {
 
     @Test
     fun liveRoomFullscreenUsesWindowInsetsInsteadOfDeprecatedFlags() {
-        val screen = readMainSource("com/mylive/app/ui/screen/room/LiveRoomScreen.kt")
+        val screen = liveRoomUiSource()
         val host = readMainSource("com/mylive/app/ui/screen/room/player/LivePlaybackHost.kt")
 
         assertFalse(screen.contains("FLAG_FULLSCREEN"))

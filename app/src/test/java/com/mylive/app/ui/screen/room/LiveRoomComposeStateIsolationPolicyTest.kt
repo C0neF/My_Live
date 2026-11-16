@@ -1,5 +1,7 @@
 package com.mylive.app.ui.screen.room
 
+import com.mylive.app.testing.liveRoomUiSource
+
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -9,9 +11,9 @@ class LiveRoomComposeStateIsolationPolicyTest {
 
     @Test
     fun rootDoesNotCollectFullDanmakuMessageList() {
-        val source = File("src/main/java/com/mylive/app/ui/screen/room/LiveRoomScreen.kt").readText()
+        val source = liveRoomUiSource()
         val topLevel = source.substringAfter("fun LiveRoomScreen(")
-            .substringBefore("private fun PortraitLayout(")
+            .substringBefore("internal fun PortraitLayout(")
 
         assertFalse(
             "root LiveRoomScreen must not collect danmakuMessages; ChatPanel owns that scope",
@@ -22,12 +24,12 @@ class LiveRoomComposeStateIsolationPolicyTest {
 
     @Test
     fun rootCollectsFullscreenFlagInsteadOfFullPlayerState() {
-        val source = File("src/main/java/com/mylive/app/ui/screen/room/LiveRoomScreen.kt").readText()
+        val source = liveRoomUiSource()
         val host = File(
             "src/main/java/com/mylive/app/ui/screen/room/player/LivePlaybackHost.kt"
         ).readText()
         val topLevel = source.substringAfter("fun LiveRoomScreen(")
-            .substringBefore("private fun PortraitLayout(")
+            .substringBefore("internal fun PortraitLayout(")
 
         assertTrue(topLevel.contains("val isFullscreen = playbackHost.isFullscreen"))
         assertFalse(

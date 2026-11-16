@@ -1,5 +1,7 @@
 package com.mylive.app.ui.screen.room
 
+import com.mylive.app.testing.liveRoomUiSource
+
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -9,7 +11,7 @@ class RoomSettingsPanelPolicyTest {
 
     @Test
     fun strictDedupeLabelUsesCorrectWording() {
-        val source = File("src/main/java/com/mylive/app/ui/screen/room/LiveRoomScreen.kt").readText()
+        val source = liveRoomUiSource()
 
         assertTrue(source.contains("严格去重模式"))
         assertFalse(source.contains("严父去重模式"))
@@ -17,7 +19,7 @@ class RoomSettingsPanelPolicyTest {
 
     @Test
     fun roomSettingsUsesStyledSliderWrapper() {
-        val source = File("src/main/java/com/mylive/app/ui/screen/room/LiveRoomScreen.kt").readText()
+        val source = liveRoomUiSource()
         val panelSource = source.substringAfter("fun RoomSettingsPanel(")
             .substringBefore("internal fun RoomSettingsSlider(")
 
@@ -34,7 +36,7 @@ class RoomSettingsPanelPolicyTest {
 
     @Test
     fun roomSettingsSliderPersistsOnlyAfterDragFinishes() {
-        val source = File("src/main/java/com/mylive/app/ui/screen/room/LiveRoomScreen.kt").readText()
+        val source = liveRoomUiSource()
         val sliderSource = source.substringAfter("internal fun RoomSettingsSlider(")
 
         assertTrue(sliderSource.contains("onDragEnd = { commitPendingValue() }"))
@@ -44,7 +46,7 @@ class RoomSettingsPanelPolicyTest {
 
     @Test
     fun roomSettingsIncludesPlayerDanmakuControls() {
-        val source = File("src/main/java/com/mylive/app/ui/screen/room/LiveRoomScreen.kt").readText()
+        val source = liveRoomUiSource()
         val panelSource = source.substringAfter("fun RoomSettingsPanel(")
             .substringBefore("internal fun RoomSettingsSlider(")
 
@@ -70,7 +72,7 @@ class RoomSettingsPanelPolicyTest {
 
     @Test
     fun roomSettingsIncludesShieldAndLiveBehaviorControlsWithoutPlayerSc() {
-        val source = File("src/main/java/com/mylive/app/ui/screen/room/LiveRoomScreen.kt").readText()
+        val source = liveRoomUiSource()
         val panelSource = source.substringAfter("fun RoomSettingsPanel(")
             .substringBefore("internal fun RoomSettingsSlider(")
 
@@ -102,7 +104,7 @@ class RoomSettingsPanelPolicyTest {
 
     @Test
     fun roomSettingsIncludesAdvancedDanmakuControlsAndShieldManagerEntry() {
-        val source = File("src/main/java/com/mylive/app/ui/screen/room/LiveRoomScreen.kt").readText()
+        val source = liveRoomUiSource()
         val panelSource = source.substringAfter("fun RoomSettingsPanel(")
             .substringBefore("internal fun RoomSettingsSlider(")
 
@@ -127,7 +129,7 @@ class RoomSettingsPanelPolicyTest {
 
     @Test
     fun roomSettingsUsesCollapsibleSectionsToReduceSliderMisTouches() {
-        val source = File("src/main/java/com/mylive/app/ui/screen/room/LiveRoomScreen.kt").readText()
+        val source = liveRoomUiSource()
         val panelSource = source.substringAfter("fun RoomSettingsPanel(")
             .substringBefore("internal fun RoomSettingsSlider(")
 
@@ -153,7 +155,7 @@ class RoomSettingsPanelPolicyTest {
 
     @Test
     fun roomSettingsCollapsibleSectionsUseOneHeightAnimation() {
-        val source = File("src/main/java/com/mylive/app/ui/screen/room/LiveRoomScreen.kt").readText()
+        val source = liveRoomUiSource()
         val sectionSource = source.substringAfter("private fun LazyListScope.RoomSettingsCollapsibleSection(")
             .substringBefore("@Composable\nprivate fun RoomSettingsSwitchRow(")
 

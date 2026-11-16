@@ -14,12 +14,6 @@
 -dontwarn javax.annotation.**
 -dontwarn kotlin.Unit
 
-# ── Gson ─────────────────────────────────────────────────────────────────────
-# Gson 2.11+ ships its own consumer rules; keep only custom TypeAdapters
--keep class * implements com.google.gson.TypeAdapterFactory
--keep class * implements com.google.gson.JsonSerializer
--keep class * implements com.google.gson.JsonDeserializer
-
 # ── Room ─────────────────────────────────────────────────────────────────────
 # Room 2.8+ ships consumer rules; keep entity/dao annotations for safety
 -keep @androidx.room.Entity class *

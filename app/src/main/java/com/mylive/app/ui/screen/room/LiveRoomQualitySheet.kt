@@ -73,7 +73,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.mylive.app.ui.navigation.Navigator
-import coil.compose.AsyncImage
+import coil3.compose.AsyncImage
 import com.mylive.app.R
 import com.mylive.app.core.common.buildLiveMessageDisplaySpans
 import com.mylive.app.core.common.normalizeLiveMessageDisplaySpans

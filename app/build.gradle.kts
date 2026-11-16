@@ -213,9 +213,6 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.okhttp.logging)
     implementation(libs.kotlinx.serialization.json)
-    // Gson — used by Room Converters. Previously present only transitively via retrofit-gson;
-    // declared directly now that Retrofit has been removed.
-    implementation(libs.gson)
 
     // Media3 ExoPlayer
     implementation(libs.media3.exoplayer)
@@ -231,7 +228,8 @@ dependencies {
     implementation(libs.androidx.webkit)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.timber)
-    implementation(libs.coil.compose)
+    implementation(libs.coil3.compose)
+    implementation(libs.coil3.network.okhttp)
     implementation(libs.work.runtime.ktx)
     implementation(libs.material)
     implementation(libs.nanohttpd)

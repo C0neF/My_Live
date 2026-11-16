@@ -51,17 +51,17 @@ dependencies {
     implementation(compose.desktop.currentOs)
     implementation(compose.material3)
     implementation(compose.materialIconsExtended)
-    implementation("io.coil-kt.coil3:coil-compose:3.3.0")
-    implementation("io.coil-kt.coil3:coil-network-okhttp:3.3.0")
+    implementation(libs.coil3.compose)
+    implementation(libs.coil3.network.okhttp)
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:${libs.versions.coroutines.get()}")
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.jvm.json)
     implementation("com.squareup.okhttp3:okhttp-brotli:${libs.versions.okhttp.get()}")
-    implementation("org.conscrypt:conscrypt-openjdk-uber:2.8.0")
-    implementation("net.java.dev.jna:jna-platform:5.19.1")
-    implementation("com.google.zxing:core:3.5.3")
+    implementation(libs.conscrypt.openjdk)
+    implementation(libs.jna.platform)
+    implementation(libs.zxing.core)
     listOf("base", "graphics", "controls", "media", "web", "swing").forEach { module ->
-        implementation("org.openjfx:javafx-$module:21.0.13:win") { isTransitive = false }
+        implementation("org.openjfx:javafx-$module:${libs.versions.javafx.get()}:win") { isTransitive = false }
     }
     implementation("org.openani.mediamp:mediamp-mpv:${libs.versions.mediamp.get()}") {
         // Upstream publishes its Compose test dependencies in the runtime graph.

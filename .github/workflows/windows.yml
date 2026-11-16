@@ -40,8 +40,8 @@ concurrency:
 
 jobs:
   desktop:
-    # windows-latest is the 2025 image, whose display driver only exposes Microsoft GL 1.1.
-    # Skiko and mpv both need a hardware-accelerated WGL pixel format for the native smoke test.
+    # Hosted runners only expose Microsoft OpenGL 1.1. The native smoke test needs a real WGL
+    # driver, so the Mesa llvmpipe opengl32.dll below is placed where both Skiko and mpv load it.
     runs-on: windows-2022
     timeout-minutes: 60
     steps:
@@ -54,6 +54,23 @@ jobs:
       - uses: actions/setup-dotnet@v6
         with:
           global-json-file: desktop/launcher/global.json
+      - name: Install Mesa llvmpipe OpenGL
+        shell: pwsh
+        run: |
+          $dest = Join-Path $env:RUNNER_TEMP 'mesa'
+          New-Item -ItemType Directory -Force -Path $dest | Out-Null
+          $archive = Join-Path $dest 'mesa.7z'
+          $url = 'https://github.com/pal1000/mesa-dist-win/releases/download/25.2.5/mesa3d-25.2.5-release-msvc.7z'
+          $expected = '24b082cd3b66115a7ddb355e69fa0332dd22c751a392ab61ea3f5c9f6c912b88'
+          Invoke-WebRequest -Uri $url -OutFile $archive
+          $hash = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne $expected) { throw "Mesa SHA-256 mismatch: $hash" }
+          & "$env:ProgramFiles\7-Zip\7z.exe" x $archive "-o$dest" x64/opengl32.dll x64/libgallium_wgl.dll x64/dxil.dll -y
+          $bin = Join-Path $dest 'x64'
+          if (-not (Test-Path (Join-Path $bin 'opengl32.dll'))) { throw 'Mesa opengl32.dll was not extracted' }
+          Copy-Item "$bin\*.dll" -Destination "$env:JAVA_HOME\bin" -Force
+          "MYLIVE_MESA_BIN=$bin" >> $env:GITHUB_ENV
+          "GALLIUM_DRIVER=llvmpipe" >> $env:GITHUB_ENV
       - name: Read Windows version
         shell: pwsh
         run: |

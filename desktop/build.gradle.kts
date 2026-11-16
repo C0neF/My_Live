@@ -248,6 +248,7 @@ val prepareWindowsVideoRuntime by tasks.registering(Sync::class) {
     into(windowsVideoResources)
 }
 
+val mesaOpenGlBin = providers.environmentVariable("MYLIVE_MESA_BIN")
 tasks.register<Test>("nativeSmokeTest") {
     description = "Exercise actual Windows media and embedded web native runtimes"
     group = "verification"
@@ -263,6 +264,17 @@ tasks.register<Test>("nativeSmokeTest") {
     systemProperty("prism.order", "sw")
     systemProperty("java.awt.headless", "false")
     systemProperty("mylive.nativeRuntime", windowsVideoResources.get().dir("windows/mpv").asFile.absolutePath)
+    // mpv loads opengl32.dll from its own directory before System32. Hosted runners only have
+    // Microsoft GL 1.1 there, so CI points MYLIVE_MESA_BIN at a llvmpipe build.
+    val runtimeDirectory = windowsVideoResources.get().dir("windows/mpv").asFile
+    if (mesaOpenGlBin.orNull != null) environment("GALLIUM_DRIVER", "llvmpipe")
+    doFirst {
+        val source = mesaOpenGlBin.orNull?.let(::File)?.takeIf { it.isDirectory } ?: return@doFirst
+        listOf("opengl32.dll", "libgallium_wgl.dll", "dxil.dll").forEach { name ->
+            val dll = File(source, name)
+            if (dll.isFile) dll.copyTo(File(runtimeDirectory, name), overwrite = true)
+        }
+    }
 }
 
 abstract class PrepareThirdPartyNotices : DefaultTask() {

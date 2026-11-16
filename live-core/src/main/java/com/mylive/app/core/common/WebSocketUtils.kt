@@ -114,6 +114,11 @@ class WebSocketUtils(
     @Volatile
     private var lastMessageAtMillis: Long = 0L
 
+    // Heartbeat ticks and OkHttp callbacks both touch the socket. A second idle timeout that
+    // starts before the replacement is assigned will cancel that replacement and then its
+    // onOpen is ignored, so the caller never sees onReady.
+    private val connectionLock = Any()
+
     /**
      * Build the ordered list of URLs to try: primary + backup(s), deduplicated.
      */
@@ -308,20 +313,24 @@ class WebSocketUtils(
      * terminal close to the UI. Recreate it immediately so streams can resume.
      */
     private fun onIdleTimeout() {
-        val idleFor = System.currentTimeMillis() - lastMessageAtMillis
-        if (!shouldReconnectOnIdleTimeout(
-                intentionalClose = intentionalClose,
-                idleTimeoutMillis = connectIdleTimeoutMillis,
-                idleForMillis = idleFor
-            )
-        ) {
-            return
+        val previousSocket = synchronized(connectionLock) {
+            if (status != SocketStatus.CONNECTED) return
+            val idleFor = System.currentTimeMillis() - lastMessageAtMillis
+            if (!shouldReconnectOnIdleTimeout(
+                    intentionalClose = intentionalClose,
+                    idleTimeoutMillis = connectIdleTimeoutMillis,
+                    idleForMillis = idleFor
+                )
+            ) {
+                return
+            }
+            heartBeatTimer?.cancel()
+            heartBeatTimer = null
+            status = SocketStatus.FAILED
+            val previous = webSocket
+            webSocket = null
+            previous
         }
-        heartBeatTimer?.cancel()
-        heartBeatTimer = null
-        status = SocketStatus.FAILED
-        val previousSocket = webSocket
-        webSocket = null
         previousSocket?.cancel()
         callbackReconnect?.invoke()
         doConnect(retry = true)

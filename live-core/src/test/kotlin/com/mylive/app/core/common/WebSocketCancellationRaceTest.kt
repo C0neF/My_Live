@@ -37,4 +37,26 @@ class WebSocketCancellationRaceTest {
             verify(exactly = 1) { oldSocket.cancel() }
         } finally { socket.close() }
     }
+
+    @Test fun overlappingIdleTimeoutsOpenOnlyOneReplacement() {
+        val listeners = mutableListOf<WebSocketListener>()
+        val sockets = mutableListOf<WebSocket>()
+        val client = mockk<OkHttpClient>()
+        every { client.newWebSocket(any(), any()) } answers {
+            listeners.add(secondArg())
+            mockk<WebSocket>(relaxed = true).also { sockets.add(it) }
+        }
+        val socket = WebSocketUtils(client)
+        try {
+            socket.connect("wss://example.test/socket", heartBeatTime = 300_000L, idleTimeoutMillis = 1L)
+            listeners.first().onOpen(sockets.first(), mockk<Response>())
+            WebSocketUtils::class.java.getDeclaredField("lastMessageAtMillis")
+                .apply { isAccessible = true }.setLong(socket, 0L)
+            val idle = WebSocketUtils::class.java.getDeclaredMethod("onIdleTimeout")
+                .apply { isAccessible = true }
+            idle.invoke(socket)
+            idle.invoke(socket)
+            assertEquals(2, listeners.size)
+        } finally { socket.close() }
+    }
 }

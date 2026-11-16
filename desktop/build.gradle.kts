@@ -248,11 +248,31 @@ val prepareWindowsVideoRuntime by tasks.registering(Sync::class) {
     into(windowsVideoResources)
 }
 
-val mesaOpenGlBin = providers.environmentVariable("MYLIVE_MESA_BIN")
+abstract class InstallMesaOpenGl : DefaultTask() {
+    @get:Optional @get:Input abstract val mesaBin: Property<String>
+    @get:Internal abstract val runtimeDirectory: DirectoryProperty
+
+    @TaskAction fun install() {
+        val source = mesaBin.orNull?.takeIf { it.isNotBlank() }?.let(::File)?.takeIf { it.isDirectory } ?: return
+        val runtime = runtimeDirectory.get().asFile
+        listOf("opengl32.dll", "libgallium_wgl.dll", "dxil.dll").forEach { name ->
+            val dll = File(source, name)
+            if (dll.isFile) dll.copyTo(File(runtime, name), overwrite = true)
+        }
+    }
+}
+
+// mpv loads opengl32.dll from its own directory before System32. Hosted runners only have
+// Microsoft GL 1.1 there, so CI points MYLIVE_MESA_BIN at a llvmpipe build.
+val installMesaOpenGl by tasks.registering(InstallMesaOpenGl::class) {
+    dependsOn(prepareWindowsVideoRuntime)
+    mesaBin.set(providers.environmentVariable("MYLIVE_MESA_BIN"))
+    runtimeDirectory.set(windowsVideoResources.map { it.dir("windows/mpv") })
+}
 tasks.register<Test>("nativeSmokeTest") {
     description = "Exercise actual Windows media and embedded web native runtimes"
     group = "verification"
-    dependsOn(prepareWindowsVideoRuntime, tasks.testClasses)
+    dependsOn(installMesaOpenGl, tasks.testClasses)
     testClassesDirs = sourceSets.test.get().output.classesDirs
     classpath = sourceSets.test.get().runtimeClasspath
     include("**/NativePlaybackSmokeTest*")
@@ -264,16 +284,8 @@ tasks.register<Test>("nativeSmokeTest") {
     systemProperty("prism.order", "sw")
     systemProperty("java.awt.headless", "false")
     systemProperty("mylive.nativeRuntime", windowsVideoResources.get().dir("windows/mpv").asFile.absolutePath)
-    // mpv loads opengl32.dll from its own directory before System32. Hosted runners only have
-    // Microsoft GL 1.1 there, so CI points MYLIVE_MESA_BIN at a llvmpipe build.
-    val runtimeDirectory = windowsVideoResources.get().dir("windows/mpv").asFile
-    if (mesaOpenGlBin.orNull != null) environment("GALLIUM_DRIVER", "llvmpipe")
-    doFirst {
-        val source = mesaOpenGlBin.orNull?.let(::File)?.takeIf { it.isDirectory } ?: return@doFirst
-        listOf("opengl32.dll", "libgallium_wgl.dll", "dxil.dll").forEach { name ->
-            val dll = File(source, name)
-            if (dll.isFile) dll.copyTo(File(runtimeDirectory, name), overwrite = true)
-        }
+    if (providers.environmentVariable("MYLIVE_MESA_BIN").orNull != null) {
+        environment("GALLIUM_DRIVER", "llvmpipe")
     }
 }
 

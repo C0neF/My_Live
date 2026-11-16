@@ -53,6 +53,52 @@ class RemoteScriptPolicyTest {
         }
     }
 
+    @Test
+    fun onlyTheDouyuSigningHostIsAllowlisted() {
+        assertEquals(setOf("www.douyu.com"), RemoteScriptPolicy.ALLOWED_SCRIPT_HOSTS)
+        assertTrue(RemoteScriptPolicy.isTrustedScriptSource("https://www.douyu.com/swf_api/homeH5Enc"))
+        assertTrue(RemoteScriptPolicy.isTrustedScriptSource("https://user:token@www.douyu.com:443/a.js"))
+
+        listOf(
+            "https://evil.example/a.js",
+            "https://www.douyu.com.evil.example/a.js",
+            "https://notdouyu.com/a.js",
+            "https://douyu.com/a.js",
+            "https://m.douyu.com/a.js",
+            "https://www.douyu.com.attacker/a.js",
+            "https://127.0.0.1/a.js",
+            "https://[::1]/a.js"
+        ).forEach { url ->
+            assertFalse(url, RemoteScriptPolicy.isTrustedScriptSource(url))
+            assertRejected { RemoteScriptPolicy.requireTrustedRemoteScript(url, script) }
+            assertEquals(null, RemoteScriptPolicy.trustedRemoteScriptOrNull(url, script))
+        }
+    }
+
+    @Test
+    fun optionalSha256PinAcceptsAMatchAndRejectsAMismatch() {
+        val pin = RemoteScriptPolicy.sha256Hex(script)
+        assertEquals(script, RemoteScriptPolicy.requireTrustedRemoteScript(douyuUrl, script, pin.uppercase()))
+        assertEquals(script, RemoteScriptPolicy.trustedRemoteScriptOrNull(douyuUrl, script, "  $pin  "))
+
+        assertRejected { RemoteScriptPolicy.requireTrustedRemoteScript(douyuUrl, script, "0".repeat(64)) }
+        assertEquals(null, RemoteScriptPolicy.trustedRemoteScriptOrNull(douyuUrl, script, "0".repeat(64)))
+        assertRejected { RemoteScriptPolicy.requireTrustedRemoteScript(douyuUrl, script, "not-a-hash") }
+        assertRejected { RemoteScriptPolicy.requireTrustedRemoteScript(douyuUrl, script, pin.dropLast(1)) }
+    }
+
+    @Test
+    fun hashMismatchMessageDoesNotIncludeTheScriptOrThePin() {
+        val pin = "ab".repeat(32)
+        try {
+            RemoteScriptPolicy.requireTrustedRemoteScript(douyuUrl, script, pin)
+            fail("expected UntrustedRemoteScriptException")
+        } catch (expected: UntrustedRemoteScriptException) {
+            assertFalse(expected.message!!.contains(script))
+            assertFalse(expected.message!!.contains(pin))
+        }
+    }
+
     private fun assertRejected(block: () -> Unit) {
         try {
             block()

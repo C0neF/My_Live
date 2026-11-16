@@ -6,7 +6,10 @@ import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.io.IOException
 
 class WebSocketCancellationRaceTest {
@@ -57,6 +60,26 @@ class WebSocketCancellationRaceTest {
             idle.invoke(socket)
             idle.invoke(socket)
             assertEquals(2, listeners.size)
+        } finally { socket.close() }
+    }
+
+    @Test fun synchronousOnOpenBeforeTheSocketIsPublishedStillBecomesReady() {
+        val ready = CountDownLatch(1)
+        val client = mockk<OkHttpClient>()
+        every { client.newWebSocket(any(), any()) } answers {
+            val listener = secondArg<WebSocketListener>()
+            val opened = mockk<WebSocket>(relaxed = true)
+            listener.onOpen(opened, mockk(relaxed = true))
+            opened
+        }
+        val socket = WebSocketUtils(client)
+        try {
+            socket.connect(
+                "wss://example.test/socket",
+                heartBeatTime = 60_000L,
+                onReady = { ready.countDown() }
+            )
+            assertTrue(ready.await(1, TimeUnit.SECONDS))
         } finally { socket.close() }
     }
 }

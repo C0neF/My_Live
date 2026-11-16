@@ -18,6 +18,7 @@ import org.jetbrains.skiko.SkiaLayer
 import org.jetbrains.skiko.GraphicsApi
 import org.json.JSONObject
 import org.junit.Assert.*
+import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.openani.mediamp.InternalMediampApi
 import org.openani.mediamp.mpv.MPVHandle
@@ -60,6 +61,11 @@ class NativeDesktopRenderingTest {
     }
 
     @Test fun hiddenOpenGlWindowDisplaysHardwareDecodedVideo() = runBlocking {
+        assumeTrue(
+            "Hardware decode needs a GPU. GitHub-hosted runners set CI=true and have no D3D device, " +
+                "so this check is skipped there and still runs on a local Windows machine with a GPU.",
+            !System.getenv("CI").equals("true", ignoreCase = true)
+        )
         prepareDesktopMediaRuntime(File(System.getProperty("mylive.nativeRuntime")))
         val reportDirectory = Path.of(System.getProperty("mylive.nativeRenderingReport"))
         Files.createDirectories(reportDirectory)

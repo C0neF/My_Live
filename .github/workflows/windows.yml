@@ -40,7 +40,9 @@ concurrency:
 
 jobs:
   desktop:
-    runs-on: windows-latest
+    # windows-latest is the 2025 image, whose display driver only exposes Microsoft GL 1.1.
+    # Skiko and mpv both need a hardware-accelerated WGL pixel format for the native smoke test.
+    runs-on: windows-2022
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4

@@ -35,7 +35,15 @@ class DouyinFollowPresenceTest {
     private fun createSite(httpClient: HttpClient): DouyinSite {
         val jsEngine = mockk<JsExecutor>()
         coEvery { jsEngine.execute(any(), any(), *anyVararg()) } returns "signature"
-        return DouyinSite(httpClient, Provider { jsEngine }, OkHttpClient()) { "" }
+        return DouyinSite(
+            httpClient,
+            Provider { jsEngine },
+            OkHttpClient(),
+            { "" },
+            object : DouyinTtwidSource {
+                override suspend fun current(forceRefresh: Boolean) = "ttwid=test-fixed"
+            }
+        )
     }
 
     @Test

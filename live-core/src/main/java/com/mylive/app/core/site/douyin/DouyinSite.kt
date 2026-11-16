@@ -124,12 +124,26 @@ private fun resolveLegacyDouyinQualityUrl(
  * - Play quality extraction from live_core_sdk_data.pull_data
  */
 @Singleton
-class DouyinSite @Inject constructor(
+class DouyinSite internal constructor(
     private val httpClient: HttpClient,
     private val jsEngineProvider: Provider<JsExecutor>,
     private val okHttpClient: OkHttpClient,
-    private val accounts: com.mylive.app.core.site.LiveSiteAccountStore
+    private val accounts: com.mylive.app.core.site.LiveSiteAccountStore,
+    private val ttwid: DouyinTtwidSource
 ) : AccountAwareLiveSite {
+
+    @Inject constructor(
+        httpClient: HttpClient,
+        jsEngineProvider: Provider<JsExecutor>,
+        okHttpClient: OkHttpClient,
+        accounts: com.mylive.app.core.site.LiveSiteAccountStore
+    ) : this(
+        httpClient,
+        jsEngineProvider,
+        okHttpClient,
+        accounts,
+        DouyinTtwidProvider(okHttpClient, DEFAULT_USER_AGENT)
+    )
 
     override val id: String = "douyin"
     override val name: String = "抖音直播"
@@ -182,14 +196,6 @@ class DouyinSite @Inject constructor(
         private const val DEFAULT_REFERER = "https://live.douyin.com"
         private const val DEFAULT_AUTHORITY = "live.douyin.com"
 
-        /**
-         * Default ttwid cookie -- only the ttwid field is required to obtain
-         * all quality levels (including Blu-ray). LOGIN_STATUS=1 and other
-         * fields are optional.
-         */
-        private const val DEFAULT_COOKIE =
-            "ttwid=1%7CB1qls3GdnZhUov9o2NxOMxxYS2ff6OSvEWbv0ytbES4%7C1680522049%7C280d802d6d478e3e78d0c807f7c487e7ffec0ae4e5fdd6a0fe74c3c6af149511"
-
         /** Minimum interval between room detail requests (milliseconds). */
         private const val ROOM_DETAIL_THROTTLE_MS = 1200L
 
@@ -233,7 +239,8 @@ class DouyinSite @Inject constructor(
 
     /**
      * Build the base request headers (Authority, Referer, User-Agent, cookie).
-     * If [cookie] is set, uses that; otherwise falls back to [DEFAULT_COOKIE].
+     * A saved account cookie wins. Otherwise a freshly issued `ttwid` is used, with the static
+     * cookie only as the provider's last resort.
      */
     private suspend fun getRequestHeaders(): MutableMap<String, String> {
         updateAccountCookie(accounts.cookieFor(accountKey))
@@ -242,8 +249,13 @@ class DouyinSite @Inject constructor(
             "Referer" to DEFAULT_REFERER,
             "User-Agent" to DEFAULT_USER_AGENT
         )
-        headers["cookie"] = if (cookie.isNotEmpty()) cookie else DEFAULT_COOKIE
+        headers["cookie"] = if (cookie.isNotEmpty()) cookie else ttwid.current()
         return headers
+    }
+
+    /** Douyin answered 401/403 to an anonymous cookie, so the next read must mint a new ttwid. */
+    private fun noteAnonymousCookieRejected(statusCode: Int?) {
+        if (cookie.isEmpty() && statusCode in setOf(401, 403)) ttwid.invalidate()
     }
 
     /**
@@ -308,6 +320,7 @@ class DouyinSite @Inject constructor(
             if (headResp.code == 444) {
                 throw CoreError("", statusCode = 444)
             }
+            noteAnonymousCookieRejected(headResp.code)
 
             val dyCookie = StringBuilder()
             if (baseCookie.isNotEmpty()) {
@@ -1227,6 +1240,7 @@ class DouyinSite @Inject constructor(
                 throw error
             } catch (error: CoreError) {
                 if (error.statusCode == 444) throw error
+                noteAnonymousCookieRejected(error.statusCode)
                 lastError = error
             } catch (error: Exception) {
                 lastError = error

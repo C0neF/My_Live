@@ -86,6 +86,7 @@ import com.mylive.app.ui.emoji.EmojiImage
 import com.mylive.app.ui.screen.room.player.LiveDanmakuSurfaceFeed
 import com.mylive.app.ui.screen.room.player.LivePlaybackHostContent
 import com.mylive.app.ui.screen.room.player.DanmakuConfig
+import com.mylive.app.ui.screen.room.player.shouldPrepareLivePlaybackExit
 import com.mylive.app.data.local.entity.playbackRoomId
 import com.mylive.app.core.model.DanmakuSettingsPolicy
 import com.mylive.app.ui.component.FollowRefreshProgressLine
@@ -233,6 +234,7 @@ fun LiveRoomScreen(
     val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
     val context = LocalContext.current
     val activity = context as? Activity
+    val portraitPlayerResizeState = rememberPortraitPlayerResizeState(key.siteId to key.roomId)
 
     val navigation = navigator.rememberRouteActions()
     val routeActive = navigation.isCurrent
@@ -288,14 +290,16 @@ fun LiveRoomScreen(
             roomReady = uiState.detail != null,
             title = uiState.detail?.title ?: "",
             anchorName = uiState.detail?.userName ?: "",
-            platform = viewModel.siteId
+            platform = viewModel.siteId,
+            initialFullscreen = key.initialFullscreen
         ),
         preferences = liveRoomPreferences,
         controlsLocked = isControlsLocked,
         exiting = !routeActive,
         binding = viewModel,
         settingsRepository = viewModel.settingsRepository,
-        onPlaybackSourceExhausted = viewModel::recoverPlaybackAfterSourceFailure
+        onPlaybackSourceExhausted = viewModel::recoverPlaybackAfterSourceFailure,
+        keepWindowOnDispose = { navigator.backStack.lastOrNull() is Route.LiveRoomDetail }
     )
     val playerController = playbackHost.playerController
     val isInPip = playbackHost.isInPictureInPicture
@@ -320,7 +324,9 @@ fun LiveRoomScreen(
     val lastInteractionTime = remember { AtomicLong(System.currentTimeMillis()) }
 
     NavigationExitEffect(navigator = navigator, route = key) {
-        playbackHost.prepareToLeave()
+        if (shouldPrepareLivePlaybackExit(navigator.backStack.lastOrNull())) {
+            playbackHost.prepareToLeave()
+        }
     }
     val handleBack = navigation.onBack
 
@@ -413,7 +419,7 @@ fun LiveRoomScreen(
                             if (pipDanmakuController === released) pipDanmakuController = null
                         }
                     ),
-                    onFullscreenClick = { playerController?.toggleFullscreen() }
+                    onFullscreenClick = { playbackHost.toggleFullscreen() }
                 ),
                 modifier = Modifier.fillMaxSize()
             )
@@ -428,11 +434,13 @@ fun LiveRoomScreen(
                 settingsViewModel = settingsViewModel,
                 liveRoomPreferences = liveRoomPreferences,
                 onQualityClick = { showQualitySheet = true },
+                isFullscreen = isFullscreen,
+                onToggleFullscreen = playbackHost::toggleFullscreen,
                 routeActive = routeActive,
                 onControlsLockChange = { isControlsLocked = it },
                 onBack = {
                     if (isFullscreen) {
-                        playerController?.toggleFullscreen()
+                        playbackHost.toggleFullscreen()
                     } else {
                         handleBack()
                     }
@@ -442,6 +450,7 @@ fun LiveRoomScreen(
             PortraitLayout(
                 tabletSplit = roomLayout == LiveRoomLayout.Split,
                 videoAspectRatio = playbackHost.videoAspectRatio,
+                playerResizeState = portraitPlayerResizeState,
                 uiState = uiState,
                 viewModel = viewModel,
                 accentSiteId = accentSiteId,
@@ -451,6 +460,8 @@ fun LiveRoomScreen(
                 settingsViewModel = settingsViewModel,
                 liveRoomPreferences = liveRoomPreferences,
                 onQualityClick = { showQualitySheet = true },
+                isFullscreen = isFullscreen,
+                onToggleFullscreen = playbackHost::toggleFullscreen,
                 routeActive = routeActive,
                 onControlsLockChange = { isControlsLocked = it },
                 onBack = handleBack
@@ -464,6 +475,7 @@ fun LiveRoomScreen(
 private fun PortraitLayout(
     tabletSplit: Boolean,
     videoAspectRatio: Float?,
+    playerResizeState: PortraitPlayerResizeState,
     uiState: LiveRoomUiState,
     viewModel: LiveRoomViewModel,
     accentSiteId: String,
@@ -473,6 +485,8 @@ private fun PortraitLayout(
     settingsViewModel: SettingsViewModel,
     liveRoomPreferences: LiveRoomPreferences,
     onQualityClick: () -> Unit,
+    isFullscreen: Boolean = false,
+    onToggleFullscreen: (() -> Unit)? = null,
     routeActive: Boolean = true,
     onControlsLockChange: (Boolean) -> Unit = {},
     onBack: () -> Unit = {}
@@ -569,7 +583,8 @@ private fun PortraitLayout(
                     Route.LiveRoomDetail(
                         roomId = roomId,
                         siteId = siteId,
-                        initialIsFollowing = initialIsFollowing
+                        initialIsFollowing = initialIsFollowing,
+                        initialFullscreen = isFullscreen
                     ),
                     singleTop = true,
                     popUpToRoute = Route.Index::class.java,
@@ -590,6 +605,7 @@ private fun PortraitLayout(
             settingsViewModel = settingsViewModel,
             liveRoomPreferences = liveRoomPreferences,
             superChatSortDesc = superChatSortDesc,
+            isFullscreen = isFullscreen,
             onDismiss = { activeAuxiliaryPanel = null }
         )
     }
@@ -612,6 +628,7 @@ private fun PortraitLayout(
         limitStackedPlayerHeight = LocalAppLayout.current.tablet,
         modifier = Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding(),
         videoAspectRatio = playerAspectRatio,
+        playerResizeState = playerResizeState,
         player = { playerMaxHeight ->
         LiveRoomPlayerArea(
             maximumHeight = playerMaxHeight,
@@ -668,7 +685,7 @@ private fun PortraitLayout(
                             if (danmakuController === released) danmakuController = null
                         }
                     ),
-                    onFullscreenClick = { playerController?.toggleFullscreen() },
+                    onFullscreenClick = { onToggleFullscreen?.invoke() ?: playerController?.toggleFullscreen() },
                     onControlsLockChange = onControlsLockChange
                 ),
                 modifier = Modifier.fillMaxSize()
@@ -697,7 +714,8 @@ private fun PortraitLayout(
             hostName = uiState.detail?.userName ?: "",
             chatTextSize = chatTextSize,
             chatTextGap = chatTextGap,
-            chatBubbleStyle = chatBubbleStyle
+            chatBubbleStyle = chatBubbleStyle,
+            playerResizing = playerResizeState.isResizing
         )
         }
     )
@@ -715,6 +733,7 @@ private fun LiveRoomTabPage(
     chatTextGap: Double,
     chatBubbleStyle: Boolean,
     superChatSortDesc: Boolean,
+    isFullscreen: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     when (tabType) {
@@ -741,6 +760,7 @@ private fun LiveRoomTabPage(
                 navigator = navigator,
                 currentRoomId = viewModel.roomId,
                 currentSiteId = viewModel.siteId,
+                isFullscreen = isFullscreen,
                 modifier = modifier
             )
         }
@@ -769,6 +789,8 @@ private fun LandscapeLayout(
     settingsViewModel: SettingsViewModel,
     liveRoomPreferences: LiveRoomPreferences,
     onQualityClick: () -> Unit,
+    isFullscreen: Boolean = false,
+    onToggleFullscreen: (() -> Unit)? = null,
     routeActive: Boolean = true,
     onControlsLockChange: (Boolean) -> Unit = {},
     onBack: () -> Unit = {}
@@ -845,7 +867,8 @@ private fun LandscapeLayout(
                         Route.LiveRoomDetail(
                             roomId = roomId,
                             siteId = siteId,
-                            initialIsFollowing = initialIsFollowing
+                            initialIsFollowing = initialIsFollowing,
+                            initialFullscreen = isFullscreen
                         ),
                         singleTop = true,
                         popUpToRoute = Route.Index::class.java,
@@ -934,6 +957,7 @@ private fun LandscapeLayout(
                     scaleMode = scaleMode,
                     playerCompatMode = playerCompatMode,
                     chatBubbleStyle = chatBubbleStyle,
+                    fullscreenOverride = isFullscreen,
                     isFollowing = uiState.isFollowing,
                     followEnabled = uiState.detail != null && uiState.isFollowStatusKnown
                 ),
@@ -953,6 +977,7 @@ private fun LandscapeLayout(
                             if (danmakuController === released) danmakuController = null
                         }
                     ),
+                    onFullscreenClick = onToggleFullscreen,
                     onQuickAccessClick = quickAccessAction,
                     onFollowClick = viewModel::toggleFollow,
                     onControlsLockChange = onControlsLockChange,
@@ -1266,6 +1291,7 @@ private fun PortraitAuxiliaryPanelSheet(
     settingsViewModel: SettingsViewModel,
     liveRoomPreferences: LiveRoomPreferences,
     superChatSortDesc: Boolean,
+    isFullscreen: Boolean = false,
     onDismiss: () -> Unit
 ) {
     val windowHeight = with(LocalDensity.current) {
@@ -1354,6 +1380,7 @@ private fun PortraitAuxiliaryPanelSheet(
                             navigator = navigator,
                             currentRoomId = viewModel.roomId,
                             currentSiteId = viewModel.siteId,
+                            isFullscreen = isFullscreen,
                             modifier = Modifier.fillMaxSize()
                         )
                     }
@@ -1474,7 +1501,8 @@ fun ChatPanel(
     hostName: String = "",
     chatTextSize: Double = 14.0,
     chatTextGap: Double = 4.0,
-    chatBubbleStyle: Boolean = false
+    chatBubbleStyle: Boolean = false,
+    playerResizing: Boolean = false
 ) {
     // Collect at the chat leaf so message snapshots do not recompose room chrome.
     val messages by messagesFlow.collectAsStateWithLifecycle()
@@ -1484,6 +1512,7 @@ fun ChatPanel(
     var autoScrollDisabled by remember { mutableStateOf(false) }
     var showLatestButton by remember { mutableStateOf(false) }
     var userTouchingChat by remember { mutableStateOf(false) }
+    var viewportHeightPx by remember { mutableIntStateOf(0) }
     var displayMessages by remember { mutableStateOf<List<DisplayLiveMessage>>(emptyList()) }
     val coroutineScope = rememberCoroutineScope()
     val isAtBottomNow by remember {
@@ -1497,7 +1526,8 @@ fun ChatPanel(
     // size stays constant and a size-keyed effect would stop firing, freezing auto-scroll in
     // busy rooms. Auto-follow is controlled by user scroll state, matching dart_simple_live:
     // once the user scrolls away, new messages show the latest button instead of pulling back.
-    LaunchedEffect(messages.lastOrNull()?.id, messages.size, autoScrollDisabled) {
+    val followViewportHeightPx = if (userTouchingChat) 0 else viewportHeightPx
+    LaunchedEffect(messages.lastOrNull()?.id, messages.size, autoScrollDisabled, userTouchingChat, followViewportHeightPx) {
         val nextDisplayMessages = mergeChatDisplayMessages(
             currentDisplay = displayMessages,
             sourceMessages = messages,
@@ -1515,7 +1545,7 @@ fun ChatPanel(
         }
 
         val currentLastMessageId = messages.lastOrNull()?.id
-        if (shouldAutoScrollChat(
+        if (!userTouchingChat && shouldAutoScrollChat(
                 autoScrollDisabled = autoScrollDisabled,
                 hasMessages = nextDisplayMessages.isNotEmpty()
             )
@@ -1536,8 +1566,11 @@ fun ChatPanel(
 
     LaunchedEffect(
         isAtBottomNow,
-        userTouchingChat
+        userTouchingChat,
+        playerResizing
     ) {
+        // Changing the viewport during a drag is not a request to browse chat history.
+        if (playerResizing) return@LaunchedEffect
         autoScrollDisabled = reduceChatAutoScrollDisabled(
             currentDisabled = autoScrollDisabled,
             isNearBottom = isAtBottomNow,
@@ -1548,7 +1581,7 @@ fun ChatPanel(
         }
     }
 
-    Box(modifier = modifier.fillMaxWidth()) {
+    Box(modifier = modifier.fillMaxWidth().onSizeChanged { viewportHeightPx = it.height }) {
         notice?.let { noticeText ->
             Text(
                 text = noticeText,
@@ -2148,6 +2181,7 @@ fun FollowListPanel(
     currentRoomId: String,
     currentSiteId: String,
     modifier: Modifier = Modifier,
+    isFullscreen: Boolean = false,
     viewModel: FollowViewModel = hiltViewModel()
 ) {
     val follows by viewModel.follows.collectAsStateWithLifecycle()
@@ -2241,7 +2275,8 @@ fun FollowListPanel(
                                 Route.LiveRoomDetail(
                                     roomId = item.playbackRoomId,
                                     siteId = item.siteId,
-                                    initialIsFollowing = true
+                                    initialIsFollowing = true,
+                                    initialFullscreen = isFullscreen
                                 ),
                                 popUpToRoute = Route.LiveRoomDetail::class.java,
                                 inclusive = true

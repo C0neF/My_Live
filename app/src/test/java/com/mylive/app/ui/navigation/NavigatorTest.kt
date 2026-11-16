@@ -60,4 +60,56 @@ class NavigatorTest {
 
         assertEquals(listOf(Route.Index), navigator.backStack.toList())
     }
+
+    @Test
+    fun exitHandlerSeesDestinationBackStackWhenSwitchingRoomsOrGoingBack() {
+        val navigator = Navigator()
+        val roomA = Route.LiveRoomDetail(roomId = "100", siteId = "bilibili")
+        val roomB = Route.LiveRoomDetail(
+            roomId = "200",
+            siteId = "bilibili",
+            initialIsFollowing = true,
+            initialFullscreen = true
+        )
+        navigator.navigate(roomA)
+
+        var topDuringSwitchExit: Any? = null
+        navigator.registerRouteExitHandler(roomA) {
+            topDuringSwitchExit = navigator.backStack.lastOrNull()
+        }
+
+        navigator.navigate(
+            route = roomB,
+            singleTop = true,
+            popUpToRoute = Route.Index::class.java,
+            inclusive = false
+        )
+        assertEquals(roomB, topDuringSwitchExit)
+
+        var topDuringBackExit: Any? = null
+        navigator.registerRouteExitHandler(roomB) {
+            topDuringBackExit = navigator.backStack.lastOrNull()
+        }
+
+        assertTrue(navigator.goBack(expectedTop = roomB))
+        assertEquals(Route.Index, topDuringBackExit)
+    }
+
+    @Test
+    fun liveRoomRoutePreservesInitialFullscreenAcrossStateRestore() {
+        val navigator = Navigator()
+        val fullscreenRoom = Route.LiveRoomDetail(
+            roomId = "888",
+            siteId = "douyu",
+            initialIsFollowing = true,
+            initialFullscreen = true
+        )
+        navigator.navigate(fullscreenRoom)
+
+        val saved = navigator.saveState()
+        val restoredNavigator = Navigator()
+        restoredNavigator.restoreState(saved)
+
+        assertEquals(listOf(Route.Index, fullscreenRoom), restoredNavigator.backStack.toList())
+    }
 }

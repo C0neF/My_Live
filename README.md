@@ -6,11 +6,15 @@
 
 本项目源于 MiMo 赠送的 Token 太多用不完（笑），才决定复刻直播客户端 [Simple Live](https://github.com/xiaoyaocz/dart_simple_live)。在此基础上，完全根据个人的审美标准对 UI 界面与操作逻辑进行了重新设计与重构，旨在打造一个更精致、更符合个人使用习惯的直播聚合体验。
 
-当前版本：**2.1.0（versionCode 29）**，主分支 **main** 已整合 V3 的功能与可靠性修复。更新内容见 [更新日志](CHANGELOG.md)。
+当前版本：**3.0.0（versionCode 30）**，主分支 **main** 已整合 V3 的功能与可靠性修复。更新内容见 [更新日志](CHANGELOG.md)。
 
 功能与验证范围见 [V3 验收记录](docs/v3-progress.md)。
 
+当前分支提供 **Windows x64 3.0.0（KMP + CMP）**，支持直播、弹幕、账号、关注与历史、资料迁移、同步和桌面窗口操作，安装、开发与验收记录见 [桌面端说明](desktop/README.md)。
+
 ## 功能特性
+
+以下为 Android 端功能；Windows 的功能及对应操作见桌面端说明。
 
 - 支持哔哩哔哩、抖音、斗鱼、虎牙等直播平台。
 - 支持直播间浏览、平台分区、直播间搜索和主播搜索。
@@ -48,22 +52,26 @@
 
 ## 下载与安装
 
-请优先从本仓库的 Release 页面下载正式构建版本。
+请优先从本仓库的 Release 页面下载正式构建版本。Android 使用 `vX.Y.Z` 标签和 APK；
+Windows 使用独立的 `windows-vX.Y.Z` 标签，提供单文件 EXE、便携 ZIP 和安装包。
+当前分支的 Windows 3.0.0 为本地发布候选版，发布状态以 Release 页面为准。
 如果你自行编译，请确认来源可信，并注意第三方直播平台接口可能随时变化。
+
+项目使用 **GPL-3.0-or-later**，见 [LICENSE](LICENSE) 和 [NOTICE](NOTICE)。第三方依赖保留各自许可。
 
 ## 构建方式
 
 环境要求：
 
 - Android Studio 或命令行 Android SDK
-- JDK 17 或更高（Gradle 9 的最低要求；CI 使用 JDK 17，工程字节码目标同为 Java 17）
+- JDK 21（Gradle daemon 和 CI 使用 Java 21，Android 与共享核心的字节码目标保留 Java 17）
 - Gradle Wrapper，仓库已内置
 
 常用命令：
 
 ```powershell
 .\gradlew.bat :app:assembleDebug
-.\gradlew.bat :app:testDebugUnitTest
+.\gradlew.bat :live-core:test :app:testDebugUnitTest
 ```
 
 QA 与性能测试构建：

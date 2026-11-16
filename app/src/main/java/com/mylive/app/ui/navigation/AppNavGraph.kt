@@ -1,22 +1,30 @@
 package com.mylive.app.ui.navigation
 
+import android.app.Activity
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.NavEntryDecorator
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
 import androidx.navigation3.ui.NavDisplay
+import com.mylive.app.service.LanSyncService
+import com.mylive.app.service.shouldKeepLanSyncServerRunning
+import com.mylive.app.service.shouldStopLanSyncOnRouteChange
 import com.mylive.app.ui.motion.LocalAppMotionPolicy
 import com.mylive.app.ui.screen.IndexScreen
 import com.mylive.app.ui.screen.category.CategoryDetailScreen
 import com.mylive.app.ui.screen.mine.ParseScreen
 import com.mylive.app.ui.screen.other.HistoryScreen
 import com.mylive.app.ui.screen.room.LiveRoomScreen
+import com.mylive.app.ui.screen.room.player.resetWindowBrightnessToSystem
 import com.mylive.app.ui.screen.search.SearchScreen
 import com.mylive.app.ui.screen.settings.AccountScreen
 import com.mylive.app.ui.screen.settings.AppUpdateScreen
@@ -43,9 +51,38 @@ import com.mylive.app.ui.screen.other.DebugLogScreen
 
 @Composable
 fun AppNavGraph(navigator: Navigator, initialRoute: String? = null) {
+    val context = LocalContext.current
+    val activity = context as? Activity
+    val appContext = context.applicationContext
     val backStack = navigator.backStack
     val currentRoute = backStack.lastOrNull()
+    val onPlaybackPage = currentRoute is Route.LiveRoomDetail
+    val hasPlaybackRouteInStack = backStack.any { it is Route.LiveRoomDetail }
     val motionPolicy = LocalAppMotionPolicy.current
+    val keepLanSyncRunning = shouldKeepLanSyncServerRunning(backStack)
+    val wasLanSyncFlowActive = remember { mutableStateOf(keepLanSyncRunning) }
+
+    LaunchedEffect(onPlaybackPage, hasPlaybackRouteInStack, activity) {
+        if (!onPlaybackPage) {
+            resetWindowBrightnessToSystem(
+                activity = activity,
+                clearPlaybackOverride = !hasPlaybackRouteInStack
+            )
+        }
+    }
+
+    LaunchedEffect(keepLanSyncRunning) {
+        if (
+            shouldStopLanSyncOnRouteChange(
+                keepRunning = keepLanSyncRunning,
+                wasFlowActive = wasLanSyncFlowActive.value,
+                isServiceRunning = LanSyncService.isRunning
+            )
+        ) {
+            LanSyncService.stop(appContext)
+        }
+        wasLanSyncFlowActive.value = keepLanSyncRunning
+    }
 
     // IndexScreen is always present at the bottom layer, never removed from composition
     Box(modifier = Modifier.fillMaxSize()) {
@@ -144,7 +181,11 @@ fun AppNavGraph(navigator: Navigator, initialRoute: String? = null) {
                     LocalSyncScreen(navigator = navigator)
                 }
                 entry<Route.RemoteSyncRoom> { key ->
-                    RemoteSyncRoomScreen(navigator = navigator, roomIdParam = key.roomId)
+                    RemoteSyncRoomScreen(
+                        navigator = navigator,
+                        roomIdParam = key.roomId,
+                        roomKeyParam = key.roomKey
+                    )
                 }
                 entry<Route.DebugLog> {
                     DebugLogScreen(navigator = navigator)
@@ -193,20 +234,27 @@ private fun parseRoute(routeStr: String): Route? {
         return Route.LiveRoomDetail(roomId = roomId, siteId = siteId)
     }
     if (routeStr.startsWith("/remote_sync/room")) {
+        val invite = com.mylive.app.core.common.RemoteSyncCrypto.parseInvite(routeStr)
+        if (invite != null) {
+            return Route.RemoteSyncRoom(roomId = invite.roomId, roomKey = invite.roomKey)
+        }
         val parts = routeStr.removePrefix("/remote_sync/room").split("?")
         val roomPart = parts.firstOrNull() ?: ""
         val remaining = if (roomPart.startsWith("/")) roomPart.removePrefix("/") else roomPart
         var roomId = remaining.split("?").firstOrNull() ?: ""
+        var roomKey = ""
         if (parts.size > 1) {
             val queryParams = parts[1].split("&")
             for (param in queryParams) {
                 val kv = param.split("=")
                 if (kv.size == 2 && kv[0] == "roomId") {
                     roomId = kv[1]
+                } else if (kv.size == 2 && (kv[0] == "key" || kv[0] == "k")) {
+                    roomKey = kv[1]
                 }
             }
         }
-        return Route.RemoteSyncRoom(roomId = roomId)
+        return Route.RemoteSyncRoom(roomId = roomId, roomKey = roomKey)
     }
     return null
 }

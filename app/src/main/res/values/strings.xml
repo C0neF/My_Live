@@ -30,7 +30,7 @@
     <string name="mine_account">账号管理</string>
     <string name="mine_sync">数据同步</string>
     <string name="mine_settings">设置</string>
-    <string name="mine_version">My Live V2.1.1</string>
+    <string name="mine_version">My Live V3.0.0</string>
 
     <!-- Settings -->
     <string name="settings_title">设置</string>

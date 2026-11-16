@@ -1,9 +1,13 @@
 [versions]
 agp = "9.2.1"
-kotlin = "2.2.10"
-ksp = "2.2.10-2.0.2"
-hilt = "2.59.2"
+kotlin = "2.4.21"
+ksp = "2.3.12"
+hilt = "2.60.1"
 composeBom = "2024.10.01"
+composeMultiplatform = "1.10.3"
+mediamp = "0.3.2"
+graalJs = "24.2.2"
+jsonJvm = "20250517"
 room = "2.8.4"
 # Kept in step with lifecycleViewmodelNav3 below: that artifact depends on lifecycle 2.10.0,
 # so pinning a lower number here was resolved away and only made the catalog misleading.
@@ -32,6 +36,7 @@ nav3Core = "1.0.0-alpha01"
 lifecycleViewmodelNav3 = "2.10.0"  # must match `lifecycle`
 
 [libraries]
+jvm-json = { group = "org.json", name = "json", version.ref = "jsonJvm" }
 # Core Android
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycle" }
@@ -112,6 +117,10 @@ androidx-test-rules = { group = "androidx.test", name = "rules", version.ref = "
 room-testing = { group = "androidx.room", name = "room-testing", version.ref = "room" }
 
 [plugins]
+kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+android-kmp-library = { id = "com.android.kotlin.multiplatform.library", version.ref = "agp" }
+compose-multiplatform = { id = "org.jetbrains.compose", version.ref = "composeMultiplatform" }
 android-application = { id = "com.android.application", version.ref = "agp" }
 android-test = { id = "com.android.test", version.ref = "agp" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }

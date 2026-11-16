@@ -17,7 +17,9 @@ class LivePlaybackSession private constructor(
     private val appContext: Context,
     hardwareDecodeEnabled: Boolean,
     forceHttps: Boolean,
-    private val onPlaybackSourceExhausted: (() -> Boolean)?
+    private val onPlaybackSourceExhausted: (() -> Boolean)?,
+    initialFullscreen: Boolean = false,
+    initialBrightnessOverride: Float? = null
 ) : LivePlaybackEngine {
     private data class PlaybackRequest(
         val urls: List<String>,
@@ -45,7 +47,9 @@ class LivePlaybackSession private constructor(
         onPlaybackSourceExhausted = ::requestFreshPlaybackSource,
         onPlaybackReady = sourceRecoveryGate::finishRecovery,
         onPlayerReplaced = PlaybackForegroundService::replacePlayer,
-        onUserPlaybackSelection = sourceRecoveryGate::finishRecovery
+        onUserPlaybackSelection = sourceRecoveryGate::finishRecovery,
+        initialFullscreen = initialFullscreen,
+        initialBrightnessOverride = initialBrightnessOverride
     )
 
     val playerController: PlayerController
@@ -357,14 +361,18 @@ class LivePlaybackSession private constructor(
             context: Context,
             hardwareDecodeEnabled: Boolean,
             forceHttps: Boolean,
-            onPlaybackSourceExhausted: (() -> Boolean)?
+            onPlaybackSourceExhausted: (() -> Boolean)?,
+            initialFullscreen: Boolean = false,
+            initialBrightnessOverride: Float? = null
         ): LivePlaybackSession {
             val appContext = context.applicationContext
             return LivePlaybackSession(
                 appContext = appContext,
                 hardwareDecodeEnabled = hardwareDecodeEnabled,
                 forceHttps = forceHttps,
-                onPlaybackSourceExhausted = onPlaybackSourceExhausted
+                onPlaybackSourceExhausted = onPlaybackSourceExhausted,
+                initialFullscreen = initialFullscreen,
+                initialBrightnessOverride = initialBrightnessOverride
             )
         }
 

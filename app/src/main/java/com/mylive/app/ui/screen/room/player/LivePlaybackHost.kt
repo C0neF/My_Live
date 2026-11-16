@@ -13,6 +13,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -24,9 +25,11 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation3.runtime.NavKey
 import com.mylive.app.core.model.TabletOrientationMode
 import com.mylive.app.data.repository.LiveRoomPreferences
 import com.mylive.app.data.repository.SettingsRepository
+import com.mylive.app.ui.navigation.Route
 import com.mylive.app.ui.orientation.resolveTabletOrientationMode
 import com.mylive.app.ui.layout.LocalAppLayout
 import com.mylive.app.ui.orientation.tabletRequestedOrientation
@@ -41,7 +44,8 @@ internal data class LivePlaybackHostContent(
     val roomReady: Boolean,
     val title: String,
     val anchorName: String,
-    val platform: String
+    val platform: String,
+    val initialFullscreen: Boolean = false
 )
 
 /**
@@ -57,11 +61,16 @@ internal class LivePlaybackHost internal constructor(
     val isFullscreen: Boolean,
     val videoAspectRatio: Float?,
     private val playbackSession: LivePlaybackSession?,
+    private val onTogglePendingFullscreen: (() -> Unit)? = null,
     private val activity: Activity?,
     private val tabletOrientationMode: TabletOrientationMode?
 ) {
     fun toggleFullscreen() {
-        playbackSession?.toggleFullscreen()
+        if (playbackSession != null) {
+            playbackSession.toggleFullscreen()
+        } else {
+            onTogglePendingFullscreen?.invoke()
+        }
     }
 
     fun prepareToLeave() {
@@ -89,7 +98,8 @@ internal fun rememberLivePlaybackHost(
     exiting: Boolean,
     binding: LivePlaybackSessionBinding,
     settingsRepository: SettingsRepository,
-    onPlaybackSourceExhausted: () -> Boolean
+    onPlaybackSourceExhausted: () -> Boolean,
+    keepWindowOnDispose: () -> Boolean = { false }
 ): LivePlaybackHost {
     val context = LocalContext.current
     val activity = context as? Activity
@@ -111,6 +121,10 @@ internal fun rememberLivePlaybackHost(
     val currentContent = rememberUpdatedState(content)
     val currentPreferences = rememberUpdatedState(preferences)
     val currentSourceExhausted = rememberUpdatedState(onPlaybackSourceExhausted)
+    val currentKeepWindowOnDispose = rememberUpdatedState(keepWindowOnDispose)
+    var pendingInitialFullscreen by rememberSaveable(content.routeSiteId, content.routeRoomId) {
+        mutableStateOf(content.initialFullscreen)
+    }
 
     var isInPictureInPicture by remember(componentActivity) {
         mutableStateOf(componentActivity?.isInPictureInPictureMode == true)
@@ -146,7 +160,9 @@ internal fun rememberLivePlaybackHost(
             forceHttps = startupPreferences.playerForceHttps,
             onPlaybackSourceExhausted = {
                 currentSourceExhausted.value()
-            }
+            },
+            initialFullscreen = pendingInitialFullscreen,
+            initialBrightnessOverride = LivePlaybackHostSignals.playbackBrightnessOverride
         )
         if (!lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
             session.pauseForHost(
@@ -241,12 +257,45 @@ internal fun rememberLivePlaybackHost(
         }
     }
 
-    val isFullscreen by remember(playerController) {
-        playerController?.state?.map { it.isFullscreen } ?: flowOf(false)
-    }.collectAsStateWithLifecycle(initialValue = false)
+    val isFullscreen by remember(playerController, pendingInitialFullscreen) {
+        playerController?.state?.map { it.isFullscreen } ?: flowOf(pendingInitialFullscreen)
+    }.collectAsStateWithLifecycle(
+        initialValue = playerController?.state?.value?.isFullscreen ?: pendingInitialFullscreen
+    )
+    LaunchedEffect(isFullscreen) {
+        pendingInitialFullscreen = isFullscreen
+    }
+    val brightnessOverride by remember(playerController) {
+        playerController?.state?.map { it.brightnessOverride }?.distinctUntilChanged()
+            ?: flowOf(LivePlaybackHostSignals.playbackBrightnessOverride)
+    }.collectAsStateWithLifecycle(
+        initialValue = playerController?.state?.value?.brightnessOverride
+            ?: LivePlaybackHostSignals.playbackBrightnessOverride
+    )
     val videoAspectRatio by remember(playerController) {
         playerController?.state?.map { it.videoAspectRatio }?.distinctUntilChanged() ?: flowOf(null)
     }.collectAsStateWithLifecycle(initialValue = null)
+
+    val hostWindowOwner = remember { Any() }
+    DisposableEffect(hostWindowOwner, exiting, activity) {
+        val anyActive = LivePlaybackHostSignals.setWindowHostActive(hostWindowOwner, !exiting)
+        if (exiting && !anyActive && !currentKeepWindowOnDispose.value()) {
+            resetWindowBrightnessToSystem(
+                activity = activity,
+                clearPlaybackOverride = false
+            )
+        }
+        onDispose {
+            LivePlaybackHostSignals.setWindowHostActive(hostWindowOwner, false)
+        }
+    }
+
+    LaunchedEffect(brightnessOverride, exiting, activity) {
+        if (!exiting && brightnessOverride != null) {
+            applyWindowBrightnessOverride(activity, brightnessOverride)
+            LivePlaybackHostSignals.updatePlaybackBrightnessOverride(brightnessOverride)
+        }
+    }
 
     LaunchedEffect(autoPipOwner, videoAspectRatio, exiting) {
         if (exiting) LivePlaybackHostSignals.clearVideoAspectRatio(autoPipOwner)
@@ -292,7 +341,7 @@ internal fun rememberLivePlaybackHost(
         }
     }
 
-    var wasFullscreen by remember { mutableStateOf(false) }
+    var wasFullscreen by remember { mutableStateOf(content.initialFullscreen) }
     var restorePortraitAfterFullscreen by remember { mutableStateOf(false) }
     LaunchedEffect(isFullscreen, tabletOrientationMode) {
         if (isFullscreen) {
@@ -335,13 +384,16 @@ internal fun rememberLivePlaybackHost(
         liveRoomView.keepScreenOn = true
         keepLivePlaybackHostAwake(activity, true)
         onDispose {
-            liveRoomView.keepScreenOn = false
-            keepLivePlaybackHostAwake(activity, false)
-            activity?.let {
-                restoreLivePlaybackHostWindow(
-                    activity = it,
-                    tabletOrientationMode = tabletOrientationMode
-                )
+            val otherHostActive = LivePlaybackHostSignals.setWindowHostActive(hostWindowOwner, false)
+            if (!otherHostActive && !currentKeepWindowOnDispose.value()) {
+                liveRoomView.keepScreenOn = false
+                keepLivePlaybackHostAwake(activity, false)
+                activity?.let {
+                    restoreLivePlaybackHostWindow(
+                        activity = it,
+                        tabletOrientationMode = tabletOrientationMode
+                    )
+                }
             }
         }
     }
@@ -364,6 +416,7 @@ internal fun rememberLivePlaybackHost(
             isFullscreen = isFullscreen,
             videoAspectRatio = videoAspectRatio,
             playbackSession = playbackSession,
+            onTogglePendingFullscreen = { pendingInitialFullscreen = !pendingInitialFullscreen },
             activity = activity,
             tabletOrientationMode = tabletOrientationMode
         )
@@ -449,10 +502,18 @@ private fun applyLivePlaybackHostWindow(
     }
 }
 
+internal fun shouldPrepareLivePlaybackExit(nextTopRoute: NavKey?): Boolean {
+    return nextTopRoute !is Route.LiveRoomDetail
+}
+
 private fun prepareLivePlaybackHostExit(
     activity: Activity,
     tabletOrientationMode: TabletOrientationMode?
 ) {
+    resetWindowBrightnessToSystem(
+        activity = activity,
+        clearPlaybackOverride = true
+    )
     if (tabletOrientationMode != null) {
         activity.requestedOrientation = tabletRequestedOrientation(tabletOrientationMode)
     } else if (
@@ -469,6 +530,10 @@ private fun restoreLivePlaybackHostWindow(
     activity: Activity,
     tabletOrientationMode: TabletOrientationMode?
 ) {
+    resetWindowBrightnessToSystem(
+        activity = activity,
+        clearPlaybackOverride = true
+    )
     activity.requestedOrientation = tabletOrientationMode?.let(::tabletRequestedOrientation)
         ?: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
     WindowCompat.setDecorFitsSystemWindows(activity.window, true)

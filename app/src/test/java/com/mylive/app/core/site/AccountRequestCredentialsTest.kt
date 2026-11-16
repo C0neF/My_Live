@@ -1,7 +1,7 @@
 package com.mylive.app.core.site
 
 import com.mylive.app.core.common.HttpClient
-import com.mylive.app.core.script.JsEngine
+import com.mylive.app.core.script.JsExecutor
 import com.mylive.app.core.site.bilibili.BiliBiliSite
 import com.mylive.app.core.site.douyin.DouyinSite
 import com.mylive.app.data.local.secure.SensitiveCredentialStore
@@ -55,7 +55,7 @@ class AccountRequestCredentialsTest {
             sent.add(thirdArg())
             JSONObject("""{"data":{"data":[{"status":2}]}}""")
         }
-        val js = mockk<JsEngine>()
+        val js = mockk<JsExecutor>()
         coEvery { js.execute(any(), any(), *anyVararg()) } returns "signature"
         val site = DouyinSite(http, Provider { js }, OkHttpClient(), accounts)
         site.getFollowPresence("12345")

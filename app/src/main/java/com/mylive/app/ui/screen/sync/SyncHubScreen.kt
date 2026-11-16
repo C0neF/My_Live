@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.mylive.app.core.common.RemoteSyncCrypto
 import com.mylive.app.ui.navigation.Navigator
 import com.mylive.app.ui.navigation.Route
 import com.mylive.app.R
@@ -33,6 +34,7 @@ fun SyncHubScreen(
 
     if (showJoinRoomDialog) {
         var roomCode by remember { mutableStateOf("") }
+        val parsedInvite = remember(roomCode) { RemoteSyncCrypto.parseInvite(roomCode) }
         AlertDialog(
             onDismissRequest = { showJoinRoomDialog = false },
             title = { Text(stringResource(R.string.sync_join_room_title)) },
@@ -40,11 +42,10 @@ fun SyncHubScreen(
                 OutlinedTextField(
                     value = roomCode,
                     onValueChange = { input ->
-                        val filtered = input.filter { it.isLetterOrDigit() }.take(6).uppercase()
-                        roomCode = filtered
+                        roomCode = input.take(128)
                     },
-                    label = { Text("房间号") },
-                    placeholder = { Text("请输入6位房间号") },
+                    label = { Text("房间配对码") },
+                    placeholder = { Text("粘贴或输入完整配对码（如 ABC123-K7M9P-2X4Q8）") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -52,12 +53,18 @@ fun SyncHubScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        showJoinRoomDialog = false
-                        if (roomCode.length == 6) {
-                            navigation.navigate(Route.RemoteSyncRoom(roomId = roomCode))
+                        val invite = parsedInvite
+                        if (invite != null) {
+                            showJoinRoomDialog = false
+                            navigation.navigate(
+                                Route.RemoteSyncRoom(
+                                    roomId = invite.roomId,
+                                    roomKey = invite.roomKey
+                                )
+                            )
                         }
                     },
-                    enabled = roomCode.length == 6
+                    enabled = parsedInvite != null
                 ) {
                     Text(stringResource(R.string.action_confirm))
                 }

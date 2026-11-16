@@ -26,7 +26,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: "21"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -36,6 +36,8 @@ jobs:
         run: |
           chmod +x ./gradlew
           ./gradlew --no-daemon \
+            :shared-model:jvmTest \
+            :live-core:test \
             :app:testDebugUnitTest \
             :app:assembleDebug \
             :app:assembleQa \

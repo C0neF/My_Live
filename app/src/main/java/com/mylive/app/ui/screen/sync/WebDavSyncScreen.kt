@@ -8,7 +8,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -236,7 +236,7 @@ fun WebDavSyncScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
-    val context = LocalContext.current
+    val resources = LocalResources.current
 
     val handleBack = navigator.rememberRouteActions().onBack
 
@@ -244,13 +244,13 @@ fun WebDavSyncScreen(
         viewModel.message.collect { msg ->
             msg ?: return@collect
             val text = when (msg) {
-                WebDavMessage.Saved -> context.getString(R.string.webdav_saved)
-                WebDavMessage.BackupOk -> context.getString(R.string.webdav_backup_ok)
-                is WebDavMessage.BackupFailed -> context.getString(R.string.webdav_backup_failed, msg.reason)
-                WebDavMessage.RestoreOk -> context.getString(R.string.webdav_restore_ok)
-                is WebDavMessage.RestoreFailed -> context.getString(R.string.webdav_restore_failed, msg.reason)
-                WebDavMessage.ConfigRequired -> context.getString(R.string.webdav_config_required)
-                is WebDavMessage.ConfigInvalid -> context.getString(R.string.webdav_config_invalid, msg.reason)
+                WebDavMessage.Saved -> resources.getString(R.string.webdav_saved)
+                WebDavMessage.BackupOk -> resources.getString(R.string.webdav_backup_ok)
+                is WebDavMessage.BackupFailed -> resources.getString(R.string.webdav_backup_failed, msg.reason)
+                WebDavMessage.RestoreOk -> resources.getString(R.string.webdav_restore_ok)
+                is WebDavMessage.RestoreFailed -> resources.getString(R.string.webdav_restore_failed, msg.reason)
+                WebDavMessage.ConfigRequired -> resources.getString(R.string.webdav_config_required)
+                is WebDavMessage.ConfigInvalid -> resources.getString(R.string.webdav_config_invalid, msg.reason)
             }
             snackbarHostState.showSnackbar(text)
         }

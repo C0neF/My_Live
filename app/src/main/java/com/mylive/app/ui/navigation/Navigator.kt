@@ -46,9 +46,17 @@ class Navigator @Inject constructor() {
      * does not exist on Android 8–14 (minSdk 26) and crashes with NoSuchMethodError at
      * runtime. [removeAt] maps to `List.remove(int)`, available on all API levels.
      */
-    private fun popTop() {
-        dispatchRouteExit(mutableBackStack.last())
-        mutableBackStack.removeAt(mutableBackStack.lastIndex)
+    private fun removeTop(): NavKey {
+        return mutableBackStack.removeAt(mutableBackStack.lastIndex)
+    }
+
+    private fun dispatchExitedRoutes(removedRoutes: List<NavKey>) {
+        if (removedRoutes.isEmpty()) return
+        val remaining = mutableBackStack.toSet()
+        removedRoutes
+            .filter { it !in remaining }
+            .distinct()
+            .forEach(::dispatchRouteExit)
     }
 
     private fun dispatchRouteExit(route: NavKey) {
@@ -65,16 +73,20 @@ class Navigator @Inject constructor() {
         inclusive: Boolean = false
     ) {
         if (route is Route.Index) {
+            val removed = mutableListOf<NavKey>()
             while (mutableBackStack.size > 1) {
-                popTop()
+                removed.add(removeTop())
             }
             if (mutableBackStack.singleOrNull() !is Route.Index) {
+                removed.addAll(mutableBackStack)
                 mutableBackStack.clear()
                 mutableBackStack.add(Route.Index)
             }
+            dispatchExitedRoutes(removed)
             return
         }
 
+        val removed = mutableListOf<NavKey>()
         // Handle popUpTo option
         if (popUpToRoute != null) {
             val index = mutableBackStack.indexOfLast { popUpToRoute.isInstance(it) }
@@ -82,7 +94,7 @@ class Navigator @Inject constructor() {
                 val dropCount = mutableBackStack.size - if (inclusive) index else (index + 1)
                 repeat(dropCount.coerceAtLeast(0)) {
                     if (mutableBackStack.size > 1) {
-                        popTop()
+                        removed.add(removeTop())
                     }
                 }
             }
@@ -91,11 +103,12 @@ class Navigator @Inject constructor() {
         // Handle singleTop option
         if (singleTop && mutableBackStack.lastOrNull()?.javaClass == route.javaClass) {
             // Replace the top element
-            popTop()
+            removed.add(removeTop())
             mutableBackStack.add(route)
         } else {
             mutableBackStack.add(route)
         }
+        dispatchExitedRoutes(removed)
     }
 
     /**
@@ -107,7 +120,8 @@ class Navigator @Inject constructor() {
      */
     internal fun goBack(expectedTop: NavKey): Boolean {
         if (mutableBackStack.size > 1 && mutableBackStack.lastOrNull() == expectedTop) {
-            popTop()
+            val removed = removeTop()
+            dispatchExitedRoutes(listOf(removed))
             return true
         }
         return false

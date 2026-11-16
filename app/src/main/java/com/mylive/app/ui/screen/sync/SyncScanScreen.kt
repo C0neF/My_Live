@@ -124,11 +124,20 @@ private fun handleScanResult(
         return
     }
 
-    // Check if it's a remote sync room ID (fixed length). Must match the length the room
-    // QR is generated with (RemoteSyncService.K_ROOM_ID_LENGTH = 6); hard-coding 8 here made
-    // every scanned room code fall through and be (mis)treated as a device address.
+    // Encrypted Remote Sync Room QR / Invite Code (mylive-room://<roomId>?key=<key> or invite code)
+    val remoteInvite = com.mylive.app.core.common.RemoteSyncCrypto.parseInvite(trimmed)
+    if (remoteInvite != null) {
+        navigator.navigate(
+            Route.RemoteSyncRoom(
+                roomId = remoteInvite.roomId,
+                roomKey = remoteInvite.roomKey
+            )
+        )
+        return
+    }
+
     if (trimmed.length == RemoteSyncService.K_ROOM_ID_LENGTH && trimmed.all { it.isLetterOrDigit() }) {
-        navigator.navigate(Route.RemoteSyncRoom(roomId = trimmed.uppercase()))
+        Toast.makeText(context, "旧版未加密房间二维码已不支持，请更新客户端后重新生成", Toast.LENGTH_LONG).show()
         return
     }
 

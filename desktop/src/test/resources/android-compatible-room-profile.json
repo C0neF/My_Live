@@ -1,0 +1,12 @@
+{
+  "type": "my_live_profile",
+  "schemaVersion": 3,
+  "exportTime": "2026-10-25T00:00:00Z",
+  "followUsers": [
+    {"id":"douyu_9999","siteId":"douyu","roomId":"9999","userName":"Fixture Douyu","face":"","title":"Fixture title","cover":"","addTime":200},
+    {"id":"huya_660000","siteId":"huya","roomId":"660000","userName":"Fixture Huya","face":"","title":"","cover":"","addTime":100}
+  ],
+  "histories": [
+    {"id":"douyu_9999","siteId":"douyu","roomId":"9999","userName":"Fixture Douyu","face":"","title":"Fixture title","cover":"","updateTime":400}
+  ]
+}

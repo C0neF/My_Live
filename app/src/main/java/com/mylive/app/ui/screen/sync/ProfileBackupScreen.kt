@@ -12,6 +12,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -108,6 +109,7 @@ fun ProfileBackupScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
+    val resources = LocalResources.current
     val coroutineScope = rememberCoroutineScope()
 
     val handleBack = navigator.rememberRouteActions().onBack
@@ -115,12 +117,12 @@ fun ProfileBackupScreen(
     LaunchedEffect(uiState.message) {
         val msg = uiState.message ?: return@LaunchedEffect
         val text = when (msg) {
-            is ProfileMessage.ExportOk -> context.getString(R.string.profile_export_ok)
-            is ProfileMessage.ExportFailed -> context.getString(R.string.profile_export_failed, msg.reason)
-            is ProfileMessage.ImportOk -> context.getString(R.string.profile_import_ok)
-            is ProfileMessage.ImportFailed -> context.getString(R.string.profile_import_failed, msg.reason)
-            is ProfileMessage.InvalidJson -> context.getString(R.string.profile_invalid_json)
-            is ProfileMessage.UnsupportedVersion -> context.getString(R.string.profile_unsupported_version)
+            is ProfileMessage.ExportOk -> resources.getString(R.string.profile_export_ok)
+            is ProfileMessage.ExportFailed -> resources.getString(R.string.profile_export_failed, msg.reason)
+            is ProfileMessage.ImportOk -> resources.getString(R.string.profile_import_ok)
+            is ProfileMessage.ImportFailed -> resources.getString(R.string.profile_import_failed, msg.reason)
+            is ProfileMessage.InvalidJson -> resources.getString(R.string.profile_invalid_json)
+            is ProfileMessage.UnsupportedVersion -> resources.getString(R.string.profile_unsupported_version)
         }
         snackbarHostState.showSnackbar(text)
         viewModel.clearMessage()

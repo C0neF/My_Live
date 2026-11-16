@@ -8,7 +8,6 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
@@ -21,7 +20,6 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -82,7 +80,6 @@ fun CategoryScreen(
     val latestSelectedTab by rememberUpdatedState(selectedTab)
     val pagerState = rememberPagerState(initialPage = 0, pageCount = { siteTabs.size })
     val coroutineScope = rememberCoroutineScope()
-    val platformScrollState = rememberScrollState()
 
     LaunchedEffect(refreshSignal) {
         if (refreshSignal > 0) {
@@ -143,12 +140,11 @@ fun CategoryScreen(
             )
         }
 
-        // Platform selector: scrollable tab row + brand underline (same as HomeScreen).
+        // Give every platform the same share of the available width.
         if (siteTabs.isNotEmpty()) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .horizontalScroll(platformScrollState)
                     .padding(horizontal = 12.dp)
                     .padding(bottom = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -158,6 +154,7 @@ fun CategoryScreen(
                         platformId = site.id,
                         name = categoryPlatformDisplayName(site.name),
                         isSelected = selectedTab == siteIndex,
+                        modifier = Modifier.weight(1f),
                         onClick = {
                             coroutineScope.launch {
                                 val targetIndex = siteIndex.coerceIn(0, siteTabs.lastIndex)
@@ -257,52 +254,16 @@ private fun CategoryPlatformTab(
     platformId: String,
     name: String,
     isSelected: Boolean,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
-    val brandColor = categoryPlatformAccentColor(platformId) ?: MaterialTheme.colorScheme.primary
-    val contentColor by animateColorAsState(
-        targetValue = if (isSelected) {
-            MaterialTheme.colorScheme.onSurface
-        } else {
-            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-        },
-        label = "catTabContentColor"
+    com.mylive.shared.ui.PlatformTab(
+        name = name,
+        isSelected = isSelected,
+        accentColor = categoryPlatformAccentColor(platformId) ?: MaterialTheme.colorScheme.primary,
+        modifier = modifier.testTag("category_platform_$platformId"),
+        onClick = onClick
     )
-    val indicatorColor by animateColorAsState(
-        targetValue = if (isSelected) brandColor else Color.Transparent,
-        label = "catTabIndicatorColor"
-    )
-
-    Column(
-        modifier = Modifier
-            .testTag("category_platform_$platformId")
-            .semantics { selected = isSelected }
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onClick
-            )
-            .padding(horizontal = 8.dp, vertical = 6.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text(
-            text = name,
-            color = contentColor,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            style = MaterialTheme.typography.titleMedium.copy(
-                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
-            ),
-            fontSize = 15.sp
-        )
-        Spacer(modifier = Modifier.height(5.dp))
-        Box(
-            modifier = Modifier
-                .height(2.dp)
-                .width(20.dp)
-                .background(indicatorColor, shape = RoundedCornerShape(1.dp))
-        )
-    }
 }
 
 @Composable

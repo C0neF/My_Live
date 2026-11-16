@@ -2,8 +2,11 @@ package com.mylive.app.ui.screen.room.quickaccess
 
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModelStore
+import com.mylive.app.core.model.LiveAnchorItem
 import com.mylive.app.core.model.LiveCategoryResult
 import com.mylive.app.core.model.LiveRoomItem
+import com.mylive.app.core.model.LiveSearchAnchorResult
+import com.mylive.app.core.model.LiveSearchRoomResult
 import com.mylive.app.core.site.LiveSite
 import com.mylive.app.data.local.entity.FollowUserEntity
 import com.mylive.app.data.local.entity.FollowUserTagEntity
@@ -36,6 +39,8 @@ internal class QuickAccessTestFixture {
         every { id } returns "bilibili"
         coEvery { getCategoryRooms(any(), any()) } returns LiveCategoryResult(false, listOf(room("1")))
         coEvery { getRecommendRooms(any()) } returns LiveCategoryResult(false, listOf(room("1")))
+        coEvery { searchAnchors(any(), any()) } returns LiveSearchAnchorResult(false, listOf(LiveAnchorItem("777", "", "UnfollowedAnchor", true)))
+        coEvery { searchRooms(any(), any()) } returns LiveSearchRoomResult(false, emptyList())
     }
     val coordinator = mockk<FollowStatusRefreshCoordinator> {
         every { isRefreshing } returns MutableStateFlow(false)

@@ -44,8 +44,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -105,6 +107,7 @@ internal fun IndexNavigationDock(
 ) {
     if (items.isEmpty()) return
     val height = indexNavigationDockHeight()
+    val hapticFeedback = LocalHapticFeedback.current
     val bottomMargin = indexNavigationDockBottomMargin()
     val scheme = MaterialTheme.colorScheme
     val dark = scheme.surface.luminance() < 0.5f
@@ -137,6 +140,8 @@ internal fun IndexNavigationDock(
             val widthPx = with(density) { maxWidth.toPx() }
             val currentItems by rememberUpdatedState(items)
             val currentOnItemClick by rememberUpdatedState(onItemClick)
+            val currentSelectedIndex by rememberUpdatedState(selectedIndex)
+            val currentHapticFeedback by rememberUpdatedState(hapticFeedback)
             var dragPosition by remember { mutableStateOf<Float?>(null) }
             val interactionSource = remember { MutableInteractionSource() }
             val pressed by interactionSource.collectIsPressedAsState()
@@ -178,18 +183,27 @@ internal fun IndexNavigationDock(
                     .selectableGroup()
                     .pointerInput(geometry, rtl, widthPx) {
                         if (pitchPx <= 0f) return@pointerInput
+                        var hoveredIndex = currentSelectedIndex
+                        fun updateDragPosition(pointerX: Float) {
+                            val x = if (rtl) widthPx - pointerX else pointerX
+                            val position = ((x - startInsetPx) / pitchPx - 0.5f)
+                                .coerceIn(0f, currentItems.lastIndex.toFloat())
+                            dragPosition = position
+                            val index = position.roundToInt()
+                            if (index != hoveredIndex) {
+                                hoveredIndex = index
+                                currentHapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            }
+                        }
                         detectHorizontalDragGestures(
                             onDragStart = { point ->
-                                val x = if (rtl) widthPx - point.x else point.x
-                                dragPosition = ((x - startInsetPx) / pitchPx - 0.5f)
-                                    .coerceIn(0f, currentItems.lastIndex.toFloat())
+                                hoveredIndex = currentSelectedIndex
+                                updateDragPosition(point.x)
                             },
                             onHorizontalDrag = { change, _ ->
                                 change.consume()
                                 // The first delta includes over-slop already present in onDragStart.
-                                val x = if (rtl) widthPx - change.position.x else change.position.x
-                                dragPosition = ((x - startInsetPx) / pitchPx - 0.5f)
-                                    .coerceIn(0f, currentItems.lastIndex.toFloat())
+                                updateDragPosition(change.position.x)
                             },
                             onDragEnd = {
                                 val index = dragPosition?.roundToInt()
@@ -225,7 +239,16 @@ internal fun IndexNavigationDock(
                         selected = selectedIndex == index,
                         activeColor = activeColor,
                         interactionSource = interactionSource,
-                        onClick = { onItemClick(item) },
+                        onClick = {
+                            performBottomTabSwitchHapticIfNeeded(
+                                currentKey = items.getOrNull(selectedIndex)?.key.orEmpty(),
+                                clickedKey = item.key,
+                                useSideNavigation = false
+                            ) {
+                                hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            }
+                            onItemClick(item)
+                        },
                         modifier = Modifier
                             .offset(x = DockPadding + geometry.inset.dp + geometry.pitch.dp * index)
                             .width(geometry.pitch.dp)

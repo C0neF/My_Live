@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.ContextWrapper
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewModelScope
+import com.mylive.app.BuildConfig
 import com.mylive.app.core.common.HttpClient
 import com.mylive.app.update.AppUpdateRepository
 import java.io.File
@@ -302,7 +303,8 @@ class AppUpdateDownloadLifecycleTest {
         const val APK_NAME = "mylive-controlled.apk"
         const val FIRST_CHUNK_SIZE = 4_096
         val APK_BYTES = ByteArray(32_768) { (it % 251).toByte() }
-        val RELEASE_JSON = """[{"tag_name":"v2.99.0","name":"Controlled update","draft":false,"prerelease":false,"assets":[{"name":"$APK_NAME","browser_download_url":"https://update.example.invalid/update.apk","size":${APK_BYTES.size}}]}]"""
+        val CURRENT_MAJOR = BuildConfig.VERSION_NAME.substringBefore('.')
+        val RELEASE_JSON = """[{"tag_name":"v$CURRENT_MAJOR.99.0","name":"Controlled update","draft":false,"prerelease":false,"assets":[{"name":"$APK_NAME","browser_download_url":"https://update.example.invalid/update.apk","size":${APK_BYTES.size}}]}]"""
 
         fun response(request: Request, body: ResponseBody): Response = Response.Builder()
             .request(request)

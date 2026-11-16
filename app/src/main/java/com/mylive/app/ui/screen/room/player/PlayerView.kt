@@ -201,7 +201,11 @@ fun PlayerView(
                 val playerModifier = when (viewState.scaleMode) {
                     3 -> Modifier.aspectRatio(4f / 3f)
                     4 -> Modifier.aspectRatio(16f / 9f)
-                    else -> Modifier.fillMaxSize()
+                    else -> if (!isFullscreen && isPortraitVideo(state.videoAspectRatio)) {
+                        Modifier.aspectRatio(requireNotNull(state.videoAspectRatio))
+                    } else {
+                        Modifier.fillMaxSize()
+                    }
                 }
 
                 key(viewState.playerCompatMode) {
@@ -229,7 +233,7 @@ fun PlayerView(
                         },
                         // Publish the video bounds so the system can animate picture-in-picture
                         // from the actual video rather than cross-fading the whole window.
-                        modifier = playerModifier.onGloballyPositioned { coordinates ->
+                        modifier = playerModifier.testTag("player_native_surface").onGloballyPositioned { coordinates ->
                             val bounds = coordinates.boundsInWindow()
                             LivePlaybackHostSignals.setSourceRectHint(
                                 Rect(
@@ -288,7 +292,8 @@ fun PlayerView(
                         },
                         onDoubleTap = {
                             if (!isLocked) {
-                                playerController?.toggleFullscreen()
+                                actions.onFullscreenClick?.invoke()
+                                    ?: playerController?.toggleFullscreen()
                             }
                         }
                     )
@@ -340,7 +345,10 @@ fun PlayerView(
                                         isVertical = true
                                         if (isLeftSide) {
                                             showBrightnessIndicator = true
-                                            brightnessValue = playerController?.state?.value?.brightness ?: 0.5f
+                                            val act = context as? Activity
+                                            brightnessValue = act?.let(::currentWindowOrSystemBrightness)
+                                                ?: playerController?.state?.value?.brightness
+                                                ?: 0.5f
                                         } else {
                                             showVolumeIndicator = true
                                             gestureStartVolume = playerController?.currentSystemMediaVolume() ?: 1f

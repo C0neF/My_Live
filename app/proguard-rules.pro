@@ -45,7 +45,7 @@
 -keep class fi.iki.elonen.NanoHTTPD$* { *; }
 
 # ── QuickJS ──────────────────────────────────────────────────────────────────
--keep class com.quickjs.** { *; }
+-keep class com.whl.quickjs.** { *; }
 
 # ── Brotli ───────────────────────────────────────────────────────────────────
 -keep class org.brotli.dec.** { *; }

@@ -9,6 +9,11 @@ plugins {
     id("jacoco")
 }
 
+// Keep the Android test entry point covering protocols moved out of :app.
+tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
+    dependsOn(":live-core:test")
+}
+
 val releaseStoreFilePath = providers.environmentVariable("MYLIVE_RELEASE_STORE_FILE").orNull
 val releaseStorePassword = providers.environmentVariable("MYLIVE_RELEASE_STORE_PASSWORD").orNull
 val releaseKeyAlias = providers.environmentVariable("MYLIVE_RELEASE_KEY_ALIAS").orNull
@@ -32,8 +37,8 @@ android {
         applicationId = "com.mylive.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 29
-        versionName = "2.1.0"
+        versionCode = 30
+        versionName = "3.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -169,6 +174,8 @@ ksp {
 }
 
 dependencies {
+    implementation(project(":live-core"))
+    implementation(project(":shared-ui"))
     // Core Android
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

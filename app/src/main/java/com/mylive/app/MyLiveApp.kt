@@ -34,6 +34,14 @@ class MyLiveApp : Application(), Configuration.Provider {
     override fun onCreate() {
         super.onCreate()
         Timber.plant(RuntimeLogTree(logToLogcat = BuildConfig.DEBUG))
+        CoreLog.platformLogger = { level, message ->
+            when (level) {
+                CoreLog.LogLevel.DEBUG -> Timber.d(message)
+                CoreLog.LogLevel.INFO -> Timber.i(message)
+                CoreLog.LogLevel.WARNING -> Timber.w(message)
+                CoreLog.LogLevel.ERROR -> Timber.e(message)
+            }
+        }
         applicationScope.launch {
             combine(
                 settingsRepository.logEnable,

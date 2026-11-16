@@ -1,0 +1,22 @@
+My Live Windows native media runtime
+
+MediaMP 0.3.2 (Apache-2.0):
+https://github.com/open-ani/mediamp/tree/v0.3.2
+Includes the JNI bridge, mpv rendering patches, native build recipes and dependency versions.
+Upstream runtime artifact:
+org.openani.mediamp:mediamp-mpv-runtime-windows-x64:0.3.2
+
+mpv source commit used by that runtime:
+https://github.com/mpv-player/mpv/tree/41f6a645068483470267271e1d09966ca3b9f413
+This binary enables GPL features. See mpv-LICENSE.GPL.txt and the upstream source's copyright notices.
+My Live is licensed under GPL-3.0-or-later. See the project LICENSE and NOTICE.
+
+FFmpeg shared libraries are replaced with an ABI-compatible full LGPL build to support FLV.
+See ffmpeg/SOURCE.txt and ffmpeg/LICENSE.txt for the pinned download, source and license.
+The original runtime also contains libass, libplacebo, dav1d, FreeType, HarfBuzz, Fontconfig,
+FriBidi, zlib, Brotli, OpenSSL and other dependencies. Their build configuration is in the
+MediaMP source above. Retain the upstream notices and applicable source when redistributing.
+
+Public redistribution of the GPL-enabled mpv binary must retain the applicable licenses and
+corresponding source. Release preparation includes source archives, pinned build recipes,
+dependency revisions and checksums; see desktop/RELEASING.md.

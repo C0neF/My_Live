@@ -16,6 +16,11 @@ import java.util.IdentityHashMap
 object LivePlaybackHostSignals {
     private val legacyOwner = Any()
     private val autoPipOwners = Collections.newSetFromMap(IdentityHashMap<Any, Boolean>())
+    private val activeWindowHostOwners = Collections.newSetFromMap(IdentityHashMap<Any, Boolean>())
+
+    @Volatile
+    var playbackBrightnessOverride: Float? = null
+        private set
 
     private val _autoPipOnLeave = MutableStateFlow(false)
 
@@ -75,5 +80,28 @@ object LivePlaybackHostSignals {
 
     fun setSourceRectHint(rect: Rect?) {
         sourceRectHint = rect
+    }
+
+    @Synchronized
+    fun setWindowHostActive(owner: Any, active: Boolean): Boolean {
+        if (active) {
+            activeWindowHostOwners.add(owner)
+        } else {
+            activeWindowHostOwners.remove(owner)
+        }
+        return activeWindowHostOwners.isNotEmpty()
+    }
+
+    @Synchronized
+    fun hasActiveWindowHost(): Boolean = activeWindowHostOwners.isNotEmpty()
+
+    fun updatePlaybackBrightnessOverride(brightness: Float?) {
+        playbackBrightnessOverride = brightness?.coerceIn(0.01f, 1f)
+    }
+
+    @Synchronized
+    internal fun clearPlaybackWindowState() {
+        activeWindowHostOwners.clear()
+        playbackBrightnessOverride = null
     }
 }

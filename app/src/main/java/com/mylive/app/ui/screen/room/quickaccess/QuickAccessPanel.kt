@@ -1,5 +1,6 @@
 package com.mylive.app.ui.screen.room.quickaccess
 
+import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -25,8 +26,10 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
@@ -36,6 +39,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogWindowProvider
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mylive.app.ui.motion.LocalAppMotionPolicy
@@ -123,45 +127,20 @@ fun QuickAccessPanel(
     val coroutineScope = rememberCoroutineScope()
     val motionPolicy = LocalAppMotionPolicy.current
     val focusManager = LocalFocusManager.current
-    val windowHeightDp = with(LocalDensity.current) {
+    val configuration = LocalConfiguration.current
+    val containerHeightDp = with(LocalDensity.current) {
         LocalWindowInfo.current.containerSize.height.toDp().value.toInt()
     }
-    val compact = windowHeightDp < 480
-    val panelHeight = resolveQuickAccessPanelHeightDp(windowHeightDp).dp
-    val headerDirectionThresholdPx = with(LocalDensity.current) { 12.dp.toPx() }
-    var headerVisible by remember { mutableStateOf(true) }
-    var headerAccumulatedDeltaY by remember { mutableFloatStateOf(0f) }
-    val headerNestedScrollConnection = remember(headerDirectionThresholdPx) {
-        object : NestedScrollConnection {
-            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                if (source != NestedScrollSource.UserInput) return Offset.Zero
-                val next = reduceQuickAccessHeaderScroll(
-                    QuickAccessHeaderScrollState(headerVisible, headerAccumulatedDeltaY),
-                    available.y, headerDirectionThresholdPx
-                )
-                headerVisible = next.visible
-                headerAccumulatedDeltaY = next.accumulatedDeltaY
-                return Offset.Zero
-            }
-
-            override fun onPostScroll(
-                consumed: Offset,
-                available: Offset,
-                source: NestedScrollSource
-            ): Offset {
-                // Downward distance left over after the content scrolls means it reached the top.
-                // Include fling updates so the bar also returns after an inertial scroll to the top.
-                if (available.y <= 0f) return Offset.Zero
-                val next = reduceQuickAccessHeaderScroll(
-                    QuickAccessHeaderScrollState(headerVisible, headerAccumulatedDeltaY),
-                    available.y, headerDirectionThresholdPx, reachedTop = true
-                )
-                headerVisible = next.visible
-                headerAccumulatedDeltaY = next.accumulatedDeltaY
-                return Offset.Zero
-            }
-        }
+    val windowHeightDp = if (containerHeightDp > 0 && configuration.screenHeightDp > 0) {
+        minOf(containerHeightDp, configuration.screenHeightDp)
+    } else if (containerHeightDp > 0) {
+        containerHeightDp
+    } else {
+        configuration.screenHeightDp
     }
+    val compact = windowHeightDp < 480 || configuration.screenWidthDp > configuration.screenHeightDp
+    val panelHeight = resolveQuickAccessPanelHeightDp(windowHeightDp).dp
+    var searchingTabKey by remember { mutableStateOf<String?>(null) }
     var tabsInitialized by remember { mutableStateOf(false) }
     LaunchedEffect(orderedKeys, sortStr) {
         if (sortStr == null) return@LaunchedEffect
@@ -171,8 +150,7 @@ fun QuickAccessPanel(
         tabsInitialized = true
         snapshotFlow { pagerState.settledPage }.distinctUntilChanged().collect { page ->
             viewModel.selectTab(orderedKeys[page])
-            headerVisible = true
-            headerAccumulatedDeltaY = 0f
+            searchingTabKey = null
             focusManager.clearFocus()
         }
     }
@@ -218,60 +196,91 @@ fun QuickAccessPanel(
     ModalBottomSheet(
         onDismissRequest = dismissPanel,
         sheetState = sheetState,
-        sheetMaxWidth = if (compact) 560.dp else 640.dp,
+        sheetMaxWidth = if (compact) 620.dp else 640.dp,
+        contentWindowInsets = { WindowInsets(0, 0, 0, 0) },
         dragHandle = {
-            QuickAccessDismissHandle(
-                onDownwardDragStarted = { handleDismissAllowed = true },
-                onDismiss = dismissPanel,
-                onGestureActiveChange = { handleGestureActive = it }
-            )
-        }
-    ) {
-        BackHandler(onBack = dismissPanel)
-        Column(Modifier.fillMaxWidth().height(panelHeight).navigationBarsPadding().imePadding()
-            .roomPanelContentScrollIsolation().testTag("quick_access_panel")) {
-            AnimatedVisibility(
-                visible = headerVisible,
-                enter = if (motionPolicy.reducedMotion) fadeIn(motionPolicy.effectsSpec()) else
-                    expandVertically(motionPolicy.contentSpec(), expandFrom = Alignment.Top) + fadeIn(motionPolicy.effectsSpec()),
-                exit = if (motionPolicy.reducedMotion) fadeOut(motionPolicy.effectsSpec()) else
-                    shrinkVertically(motionPolicy.contentSpec(), shrinkTowards = Alignment.Top) + fadeOut(motionPolicy.effectsSpec())
-            ) {
-                QuickAccessIslandTabBar(
-                    orderedKeys = orderedKeys,
-                    selectedTab = pagerState.currentPage,
-                    extraTabsByKey = extraTabsByKey,
-                    counts = mapOf("follow" to library.follows.size, "history" to library.history.size),
+            CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
+                QuickAccessDismissHandle(
                     compact = compact,
-                    onSelectedTabChange = { index ->
-                        coroutineScope.launch {
-                            focusManager.clearFocus()
-                            if (motionPolicy.reducedMotion) pagerState.scrollToPage(index)
-                            else pagerState.animateScrollToPage(index)
-                        }
-                    }
+                    onDownwardDragStarted = { handleDismissAllowed = true },
+                    onDismiss = dismissPanel,
+                    onGestureActiveChange = { handleGestureActive = it }
                 )
             }
-            actionError?.let { message ->
-                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(message, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error)
-                    IconButton(onClick = viewModel::clearActionError) { Icon(Icons.Default.Close, "关闭提示") }
-                }
+        }
+    ) {
+        val dialogView = LocalView.current
+        SideEffect {
+            (dialogView.parent as? DialogWindowProvider)?.window?.setSoftInputMode(
+                WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
+            )
+        }
+        BackHandler(onBack = {
+            if (searchingTabKey != null) {
+                focusManager.clearFocus()
+                searchingTabKey = null
+            } else {
+                dismissPanel()
             }
-            HorizontalPager(
-                state = pagerState,
-                key = { orderedKeys[it] },
-                modifier = Modifier.fillMaxWidth().weight(1f).nestedScroll(headerNestedScrollConnection)
-            ) { page ->
-                val selectedKey = orderedKeys[page]
-                Box(Modifier.fillMaxSize()) {
-                    when (selectedKey) {
-                        "follow" -> FollowQuickPanel(viewModel, library, isCurrent, navigate)
-                        "history" -> HistoryQuickPanel(viewModel, library, isCurrent, navigate)
-                        "recommendation" -> RecommendationQuickPanel(viewModel, library, currentSiteId,
-                            currentRoomId, currentResolvedRoomId, pagerState.settledPage == page, navigate)
-                        else -> extraTabsByKey[selectedKey]?.content?.invoke()
+        })
+        CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
+            Column(Modifier.fillMaxWidth().height(panelHeight).navigationBarsPadding().imePadding()
+                .roomPanelContentScrollIsolation().testTag("quick_access_panel")) {
+                if (searchingTabKey == null) {
+                    QuickAccessIslandTabBar(
+                        orderedKeys = orderedKeys,
+                        selectedTab = pagerState.currentPage,
+                        extraTabsByKey = extraTabsByKey,
+                        counts = mapOf("follow" to library.follows.size, "history" to library.history.size),
+                        compact = compact,
+                        onSelectedTabChange = { index ->
+                            coroutineScope.launch {
+                                focusManager.clearFocus()
+                                searchingTabKey = null
+                                if (motionPolicy.reducedMotion) pagerState.scrollToPage(index)
+                                else pagerState.animateScrollToPage(index)
+                            }
+                        }
+                    )
+                }
+                actionError?.let { message ->
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(message, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error)
+                        IconButton(onClick = viewModel::clearActionError) { Icon(Icons.Default.Close, "关闭提示") }
+                    }
+                }
+                HorizontalPager(
+                    state = pagerState,
+                    key = { orderedKeys[it] },
+                    userScrollEnabled = searchingTabKey == null,
+                    modifier = Modifier.fillMaxWidth().weight(1f)
+                ) { page ->
+                    val selectedKey = orderedKeys[page]
+                    Box(Modifier.fillMaxSize()) {
+                        when (selectedKey) {
+                            "follow" -> FollowQuickPanel(
+                                viewModel, library, isCurrent, navigate,
+                                compact = compact,
+                                searching = searchingTabKey == "follow",
+                                onSearchingChange = { active ->
+                                    if (!active) focusManager.clearFocus()
+                                    searchingTabKey = if (active) "follow" else null
+                                }
+                            )
+                            "history" -> HistoryQuickPanel(
+                                viewModel, library, isCurrent, navigate,
+                                compact = compact,
+                                searching = searchingTabKey == "history",
+                                onSearchingChange = { active ->
+                                    if (!active) focusManager.clearFocus()
+                                    searchingTabKey = if (active) "history" else null
+                                }
+                            )
+                            "recommendation" -> RecommendationQuickPanel(viewModel, library, currentSiteId,
+                                currentRoomId, currentResolvedRoomId, pagerState.settledPage == page, navigate, compact = compact)
+                            else -> extraTabsByKey[selectedKey]?.content?.invoke()
+                        }
                     }
                 }
             }
@@ -282,23 +291,46 @@ fun QuickAccessPanel(
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
 private fun QuickAccessDismissHandle(
+    compact: Boolean = false,
     onDownwardDragStarted: () -> Unit,
     onDismiss: () -> Unit,
     onGestureActiveChange: (Boolean) -> Unit
 ) {
     Box(
-        Modifier.fillMaxWidth().height(48.dp)
-            .roomPanelDismissHandleGesture(onDownwardDragStarted, onGestureActiveChange).semantics {
-            contentDescription = "下滑关闭快速入口"
-            dismiss { onDismiss(); true }
-        }, contentAlignment = Alignment.Center
+        Modifier.fillMaxWidth()
+            .roomPanelDismissHandleGesture(onDownwardDragStarted, onGestureActiveChange)
+            .padding(
+                start = 24.dp,
+                end = 20.dp,
+                top = if (compact) 10.dp else 12.dp,
+                bottom = if (compact) 4.dp else 6.dp
+            )
+            .height(if (compact) 32.dp else 36.dp)
+            .semantics {
+                contentDescription = "下滑关闭快速入口"
+                dismiss { onDismiss(); true }
+            },
+        contentAlignment = Alignment.Center
     ) {
         BottomSheetDefaults.DragHandle()
-        Text("快速入口", Modifier.align(Alignment.CenterStart).padding(start = 20.dp),
-            style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-        IconButton(onClick = onDismiss, modifier = Modifier.align(Alignment.CenterEnd)
-            .padding(end = 8.dp).testTag("quick_access_close")) {
-            Icon(Icons.Default.Close, "关闭快速入口", modifier = Modifier.size(20.dp))
+        Text(
+            "快速入口",
+            Modifier.align(Alignment.CenterStart),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold
+        )
+        IconButton(
+            onClick = onDismiss,
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .size(if (compact) 30.dp else 34.dp)
+                .background(
+                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
+                    RoundedCornerShape(50)
+                )
+                .testTag("quick_access_close")
+        ) {
+            Icon(Icons.Default.Close, "关闭快速入口", modifier = Modifier.size(16.dp))
         }
     }
 }
@@ -310,9 +342,9 @@ private fun QuickAccessIslandTabBar(
     onSelectedTabChange: (Int) -> Unit
 ) {
     val motion = LocalAppMotionPolicy.current
-    Surface(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+    Surface(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = if (compact) 1.dp else 4.dp),
         shape = RoundedCornerShape(28.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f)) {
-        Row(Modifier.fillMaxWidth().padding(4.dp).selectableGroup(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(Modifier.fillMaxWidth().padding(if (compact) 2.dp else 3.dp).selectableGroup(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             orderedKeys.forEachIndexed { index, key ->
                 val extra = extraTabsByKey[key]
                 val name = extra?.label ?: when (key) { "follow" -> "关注"; "history" -> "历史"; else -> "推荐" }
@@ -325,11 +357,14 @@ private fun QuickAccessIslandTabBar(
                     animationSpec = motion.effectsSpec(), label = "quickTabBackground")
                 val foreground by animateColorAsState(if (selected) accent else MaterialTheme.colorScheme.onSurfaceVariant,
                     animationSpec = motion.effectsSpec(), label = "quickTabForeground")
-                Column(Modifier.weight(1f).height(if (compact) 48.dp else 60.dp).clip(RoundedCornerShape(24.dp))
+                Row(Modifier.weight(1f).height(if (compact) 30.dp else 44.dp).clip(RoundedCornerShape(24.dp))
                     .background(container).selectable(selected, role = Role.Tab, onClick = { onSelectedTabChange(index) })
-                    .testTag("quick_access_tab_$key").padding(horizontal = 3.dp, vertical = 4.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                    if (!compact) Icon(icon, null, Modifier.size(20.dp), tint = foreground)
+                    .testTag("quick_access_tab_$key").padding(horizontal = 6.dp),
+                    horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                    if (!compact) {
+                        Icon(icon, null, Modifier.size(16.dp), tint = foreground)
+                        Spacer(Modifier.width(5.dp))
+                    }
                     Text(label, style = MaterialTheme.typography.labelLarge, color = foreground,
                         fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)

@@ -1,6 +1,8 @@
 package com.mylive.app.service
 
+import android.app.Service
 import com.mylive.app.ui.navigation.Route
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -59,6 +61,54 @@ class LanSyncServerLifetimePolicyTest {
         assertFalse(
             shouldKeepLanSyncServerRunning(
                 listOf(Route.Index, Route.Settings, Route.LiveRoomDetail(roomId = "1"))
+            )
+        )
+    }
+
+    @Test
+    fun serviceDoesNotRequestStickyRestartAfterProcessDeath() {
+        val service = LanSyncService()
+        assertEquals(Service.START_NOT_STICKY, service.onStartCommand(null, 0, 1))
+    }
+
+    @Test
+    fun routeLevelObserverStopsServerWhenLeavingScanOrDeviceViaDeepLink() {
+        // Cold start outside sync flow does not emit spurious stop calls.
+        assertFalse(
+            shouldStopLanSyncOnRouteChange(
+                keepRunning = false,
+                wasFlowActive = false,
+                isServiceRunning = false
+            )
+        )
+
+        // Descending from LocalSync -> SyncScan keeps the server alive.
+        assertFalse(
+            shouldStopLanSyncOnRouteChange(
+                keepRunning = shouldKeepLanSyncServerRunning(listOf(Route.LocalSync, Route.SyncScan)),
+                wasFlowActive = true,
+                isServiceRunning = true
+            )
+        )
+
+        // Deep-link or navigation jump from SyncScan -> LiveRoomDetail stops the server even
+        // though LocalSyncScreen was already disposed earlier.
+        assertTrue(
+            shouldStopLanSyncOnRouteChange(
+                keepRunning = shouldKeepLanSyncServerRunning(
+                    listOf(Route.Index, Route.LiveRoomDetail(roomId = "100"))
+                ),
+                wasFlowActive = true,
+                isServiceRunning = true
+            )
+        )
+
+        // Recreated navigation outside sync flow still stops a lingering service instance.
+        assertTrue(
+            shouldStopLanSyncOnRouteChange(
+                keepRunning = false,
+                wasFlowActive = false,
+                isServiceRunning = true
             )
         )
     }

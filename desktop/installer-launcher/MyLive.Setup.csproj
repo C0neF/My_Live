@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <RuntimeFrameworkVersion>10.0.13</RuntimeFrameworkVersion>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <IncludeAllContentForSelfExtract>true</IncludeAllContentForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <DebugType>embedded</DebugType>
+    <Version>$(DesktopVersion)</Version>
+    <AssemblyName>MyLive-$(Version)</AssemblyName>
+    <Product>MyLive</Product>
+    <Title>MyLive</Title>
+    <ApplicationIcon>$(LauncherIcon)</ApplicationIcon>
+    <ApplicationManifest>../launcher/app.manifest</ApplicationManifest>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RestoreSources>https://api.nuget.org/v3/index.json</RestoreSources>
+  </PropertyGroup>
+  <ItemGroup>
+    <Content Include="$(MsiFile)" Condition="'$(MsiFile)' != ''">
+      <Link>payload/MyLive.msi</Link>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <ExcludeFromSingleFile>false</ExcludeFromSingleFile>
+    </Content>
+  </ItemGroup>
+  <Target Name="ValidateInstaller" BeforeTargets="PrepareForBuild">
+    <Error Condition="'$(DesktopVersion)' == '' Or !Exists('$(MsiFile)')" Text="Build through :desktop:packageWindowsExe with a verified MSI payload." />
+  </Target>
+  <Target Name="BundleDotnetRuntimeNotices" BeforeTargets="_ComputeFilesToBundle">
+    <ItemGroup>
+      <LauncherRuntimePack Include="@(ResolvedRuntimePack->WithMetadataValue('FrameworkName', 'Microsoft.NETCore.App'))" />
+      <DotnetNotice Include="@(LauncherRuntimePack->'%(PackageDirectory)/LICENSE.TXT');@(LauncherRuntimePack->'%(PackageDirectory)/THIRD-PARTY-NOTICES.TXT')" />
+      <ResolvedFileToPublish Include="@(DotnetNotice)">
+        <RelativePath>payload/notices/dotnet/%(Filename)%(Extension)</RelativePath>
+        <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+        <ExcludeFromSingleFile>false</ExcludeFromSingleFile>
+      </ResolvedFileToPublish>
+    </ItemGroup>
+    <Error Condition="!Exists('%(DotnetNotice.Identity)')" Text="Missing .NET runtime notice: %(DotnetNotice.Identity)" />
+  </Target>
+</Project>

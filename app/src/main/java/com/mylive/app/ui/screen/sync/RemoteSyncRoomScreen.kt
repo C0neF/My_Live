@@ -51,6 +51,7 @@ enum class AccountSyncType {
 fun RemoteSyncRoomScreen(
     navigator: Navigator,
     roomIdParam: String = "",
+    roomKeyParam: String = "",
     viewModel: RemoteSyncRoomViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
@@ -59,6 +60,8 @@ fun RemoteSyncRoomScreen(
 
     val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
     val roomId by viewModel.roomId.collectAsStateWithLifecycle()
+    val inviteCode by viewModel.inviteCode.collectAsStateWithLifecycle()
+    val qrPayload by viewModel.qrPayload.collectAsStateWithLifecycle()
     val roomUsers by viewModel.roomUsers.collectAsStateWithLifecycle()
     val countDown by viewModel.countDown.collectAsStateWithLifecycle()
     val loadingState by viewModel.loadingState.collectAsStateWithLifecycle()
@@ -68,7 +71,7 @@ fun RemoteSyncRoomScreen(
     var showQrDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
-        viewModel.initRoom(roomIdParam)
+        viewModel.initRoom(roomIdParam, roomKeyParam)
     }
 
     LaunchedEffect(Unit) {
@@ -163,7 +166,7 @@ fun RemoteSyncRoomScreen(
 
                 item {
                     Text(
-                        text = "房间号",
+                        text = "房间配对码（端到端加密）",
                         style = MaterialTheme.typography.titleSmall,
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
@@ -179,15 +182,15 @@ fun RemoteSyncRoomScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = roomId.ifBlank { "正在生成..." },
-                                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                                text = inviteCode.ifBlank { roomId.ifBlank { "正在生成..." } },
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                                 modifier = Modifier.weight(1f)
                             )
 
-                            if (roomId.isNotEmpty()) {
+                            if (inviteCode.isNotEmpty()) {
                                 IconButton(onClick = {
-                                    copyPlainText(context, "sync room id", roomId)
-                                    Toast.makeText(context, "已复制房间号", Toast.LENGTH_SHORT).show()
+                                    copyPlainText(context, "sync room invite", inviteCode)
+                                    Toast.makeText(context, "已复制房间配对码", Toast.LENGTH_SHORT).show()
                                 }) {
                                     Icon(Icons.Default.ContentCopy, contentDescription = "复制")
                                 }
@@ -375,8 +378,12 @@ fun RemoteSyncRoomScreen(
         )
     }
 
-    if (showQrDialog && roomId.isNotEmpty()) {
-        QrCodeDialog(roomId = roomId, onDismiss = { showQrDialog = false })
+    if (showQrDialog && qrPayload.isNotEmpty()) {
+        QrCodeDialog(
+            inviteCode = inviteCode,
+            qrPayload = qrPayload,
+            onDismiss = { showQrDialog = false }
+        )
     }
 }
 
@@ -464,8 +471,12 @@ fun DeviceUserItem(user: RemoteRoomUser) {
 }
 
 @Composable
-fun QrCodeDialog(roomId: String, onDismiss: () -> Unit) {
-    val bitmap = remember(roomId) { generateQrCode(roomId) }
+fun QrCodeDialog(
+    inviteCode: String,
+    qrPayload: String,
+    onDismiss: () -> Unit
+) {
+    val bitmap = remember(qrPayload) { generateQrCode(qrPayload) }
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
@@ -504,9 +515,10 @@ fun QrCodeDialog(roomId: String, onDismiss: () -> Unit) {
                 Spacer(modifier = Modifier.height(16.dp))
 
                 Text(
-                    text = roomId,
-                    style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.primary
+                    text = inviteCode,
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.primary,
+                    textAlign = TextAlign.Center
                 )
 
                 Spacer(modifier = Modifier.height(8.dp))

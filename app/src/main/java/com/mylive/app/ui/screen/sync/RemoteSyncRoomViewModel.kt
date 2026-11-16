@@ -43,6 +43,12 @@ class RemoteSyncRoomViewModel @Inject constructor(
     private val _roomId = MutableStateFlow("")
     val roomId: StateFlow<String> = _roomId.asStateFlow()
 
+    private val _inviteCode = MutableStateFlow("")
+    val inviteCode: StateFlow<String> = _inviteCode.asStateFlow()
+
+    private val _qrPayload = MutableStateFlow("")
+    val qrPayload: StateFlow<String> = _qrPayload.asStateFlow()
+
     private val _roomUsers = MutableStateFlow<List<RemoteRoomUser>>(emptyList())
     val roomUsers: StateFlow<List<RemoteRoomUser>> = _roomUsers.asStateFlow()
 
@@ -150,9 +156,15 @@ class RemoteSyncRoomViewModel @Inject constructor(
         remoteSyncService.onRoomUserUpdated = { users ->
             _roomUsers.value = users
         }
+
+        remoteSyncService.onSyncError = { msg ->
+            viewModelScope.launch {
+                _toastMessage.emit(msg)
+            }
+        }
     }
 
-    fun initRoom(roomParam: String) {
+    fun initRoom(roomParam: String, roomKeyParam: String = "") {
         viewModelScope.launch {
             _loadingState.value = "连接中..."
             try {
@@ -169,15 +181,25 @@ class RemoteSyncRoomViewModel @Inject constructor(
                     val resp = remoteSyncService.createRoom(serverUrl, proxyUrl, clientInfo)
                     if (resp.isSuccess) {
                         _roomId.value = remoteSyncService.currentRoomId
+                        _inviteCode.value = remoteSyncService.currentInviteCode
+                        _qrPayload.value = remoteSyncService.currentQrPayload
                         startTimer()
                     } else {
                         _toastMessage.emit("创建房间失败: ${resp.message}")
                         _roomDestroyedEvent.emit(Unit)
                     }
                 } else {
-                    val resp = remoteSyncService.joinRoom(serverUrl, proxyUrl, roomParam, clientInfo)
+                    val resp = remoteSyncService.joinRoom(
+                        configuredUrl = serverUrl,
+                        configuredProxyUrl = proxyUrl,
+                        roomId = roomParam,
+                        clientInfo = clientInfo,
+                        roomKey = roomKeyParam
+                    )
                     if (resp.isSuccess) {
                         _roomId.value = remoteSyncService.currentRoomId
+                        _inviteCode.value = remoteSyncService.currentInviteCode
+                        _qrPayload.value = remoteSyncService.currentQrPayload
                         startTimer()
                     } else {
                         _toastMessage.emit("加入房间失败: ${resp.message}")

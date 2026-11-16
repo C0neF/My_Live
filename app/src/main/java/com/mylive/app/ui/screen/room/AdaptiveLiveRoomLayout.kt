@@ -20,8 +20,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
@@ -51,17 +55,37 @@ internal fun AdaptiveLiveRoomLayout(
     limitStackedPlayerHeight: Boolean,
     modifier: Modifier = Modifier,
     videoAspectRatio: Float? = null,
+    playerResizeState: PortraitPlayerResizeState? = null,
     player: @Composable ColumnScope.(Dp) -> Unit,
     chat: @Composable (Modifier) -> Unit
 ) {
     BoxWithConstraints(modifier) {
-        val playerMaxHeight = when {
+        val expandedPlayerMaxHeight = when {
             splitPane -> maxHeight
             limitStackedPlayerHeight -> maxHeight * 0.52f
             // Leave room for the anchor header and readable chat even on short phone windows.
             isPortraitVideo(videoAspectRatio) ->
                 (maxHeight - 240.dp).coerceIn(0.dp, maxHeight * 0.65f)
             else -> Dp.Infinity
+        }
+        val canResizePlayer = !splitPane && isPortraitVideo(videoAspectRatio) && playerResizeState != null
+        var playerMaxHeight = expandedPlayerMaxHeight
+        var chatScrollModifier: Modifier = Modifier
+        if (canResizePlayer) {
+            val resizeState = requireNotNull(playerResizeState)
+            val expandedHeight = (maxWidth / requireNotNull(videoAspectRatio)).coerceAtMost(expandedPlayerMaxHeight)
+            val minimumHeight = 180.dp.coerceAtMost(expandedHeight)
+            playerMaxHeight = minimumHeight + (expandedHeight - minimumHeight) * resizeState.expansionFraction
+            val density = LocalDensity.current
+            val minimumHeightPx = with(density) { minimumHeight.toPx() }
+            val expandedHeightPx = with(density) { expandedHeight.toPx() }
+            val connection = remember(resizeState, minimumHeightPx, expandedHeightPx) {
+                PortraitPlayerResizeConnection(resizeState, minimumHeightPx, expandedHeightPx)
+            }
+            DisposableEffect(connection) {
+                onDispose { resizeState.stopResizing() }
+            }
+            chatScrollModifier = Modifier.nestedScroll(connection)
         }
         if (splitPane) {
             Row(Modifier.fillMaxSize().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -96,7 +120,7 @@ internal fun AdaptiveLiveRoomLayout(
             Column(Modifier.fillMaxSize()) {
                 player(playerMaxHeight)
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                chat(Modifier.weight(1f))
+                chat(Modifier.weight(1f).then(chatScrollModifier))
             }
         }
     }

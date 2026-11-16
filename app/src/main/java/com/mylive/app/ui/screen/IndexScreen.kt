@@ -17,7 +17,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
@@ -26,7 +25,6 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -113,7 +111,6 @@ fun IndexScreen(
         defaultActiveColor = MaterialTheme.colorScheme.primary
     )
     val configuration = LocalConfiguration.current
-    val hapticFeedback = LocalHapticFeedback.current
     val motionPolicy = LocalAppMotionPolicy.current
     val appLayout = LocalAppLayout.current
     val useSideNavigation = appLayout.useNavigationRail
@@ -178,13 +175,6 @@ fun IndexScreen(
     }
 
     fun handleMainTabClick(item: BottomNavItem) {
-        performBottomTabSwitchHapticIfNeeded(
-            currentKey = selectedPageKey,
-            clickedKey = item.key,
-            useSideNavigation = useSideNavigation
-        ) {
-            hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-        }
         val repeatAction = bottomTabRepeatAction(
             currentKey = selectedPageKey,
             clickedKey = item.key,

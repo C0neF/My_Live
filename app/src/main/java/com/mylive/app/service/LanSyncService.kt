@@ -67,6 +67,12 @@ internal fun shouldKeepLanSyncServerRunning(backStack: List<Any>): Boolean =
         route is Route.LocalSync || route is Route.SyncScan || route is Route.SyncDevice
     }
 
+internal fun shouldStopLanSyncOnRouteChange(
+    keepRunning: Boolean,
+    wasFlowActive: Boolean,
+    isServiceRunning: Boolean
+): Boolean = !keepRunning && (wasFlowActive || isServiceRunning)
+
 /**
  * Interfaces the LAN sync server must never bind to or advertise: VPN tunnels, cellular data, and
  * tethering/USB links. Publishing the sync endpoints there exposes them to networks well outside
@@ -309,7 +315,7 @@ class LanSyncService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        return START_STICKY
+        return START_NOT_STICKY
     }
 
     override fun onDestroy() {

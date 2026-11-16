@@ -22,6 +22,11 @@ object NetworkModule {
 
     @Provides
     @Singleton
+    fun provideRemoteSyncService(): com.mylive.app.service.RemoteSyncService =
+        com.mylive.app.service.RemoteSyncService().apply { debugBuild = com.mylive.app.BuildConfig.DEBUG }
+
+    @Provides
+    @Singleton
     fun provideOkHttpClient(): OkHttpClient {
         val builder = OkHttpClient.Builder()
             .connectTimeout(20, TimeUnit.SECONDS)

@@ -1,0 +1,219 @@
+#include <mutex>
+
+#define UTIL_EXTERN
+#include "method_cache.h"
+#include "log.h"
+
+namespace mediampv {
+
+namespace {
+
+std::mutex jni_cache_mutex;
+bool jni_class_cached = false;
+
+bool clear_jni_exception(JNIEnv *env, const void *instance_handle, const char *context) {
+    if (!env || !env->ExceptionCheck()) {
+        return false;
+    }
+
+    // Describe + clear before logging: the log dispatcher makes JNI calls, which must not
+    // run with an exception pending.
+    env->ExceptionDescribe();
+    env->ExceptionClear();
+    LOG(instance_handle, LOG_LEVEL_ERROR, "JNI exception in %s", context);
+    return true;
+}
+
+jclass find_global_class(JNIEnv *env, const void *instance_handle, const char *name) {
+    jclass local_class = env->FindClass(name);
+    // FindClass raises a pending exception (NoClassDefFoundError) on failure. Clear it
+    // UNCONDITIONALLY before returning: the previous `!local_class || clear(...)`
+    // short-circuited past the clear when local_class was null, leaving the exception
+    // pending, and the next JNI call (the following FindClass) with a pending exception
+    // is undefined behavior that can abort the VM.
+    if (clear_jni_exception(env, instance_handle, name) || !local_class) {
+        return nullptr;
+    }
+
+    auto global_class = reinterpret_cast<jclass>(env->NewGlobalRef(local_class));
+    env->DeleteLocalRef(local_class);
+    if (clear_jni_exception(env, instance_handle, name) || !global_class) {
+        return nullptr;
+    }
+
+    return global_class;
+}
+
+jmethodID find_method(
+        JNIEnv *env,
+        const void *instance_handle,
+        jclass clazz,
+        const char *name,
+        const char *signature) {
+    jmethodID method = env->GetMethodID(clazz, name, signature);
+    if (!method) {
+        clear_jni_exception(env, instance_handle, name);
+    }
+    return method;
+}
+
+void delete_global_ref(JNIEnv *env, jclass &clazz) {
+    if (env && clazz) {
+        env->DeleteGlobalRef(clazz);
+        clazz = nullptr;
+    }
+}
+
+} // namespace
+
+void throw_java_exception(
+        JNIEnv *env,
+        const char *class_name,
+        const char *message,
+        const void *instance_handle) {
+    if (!env || env->ExceptionCheck()) {
+        // Never overwrite an exception that is already pending (e.g. an OutOfMemoryError
+        // from a failed JNI allocation); it is more specific and must win.
+        return;
+    }
+    jclass clazz = env->FindClass(class_name);
+    if (!clazz) {
+        // FindClass itself failed and left its own exception pending; there is nothing more
+        // we can do but report it to the log sink.
+        env->ExceptionClear();
+        LOG(instance_handle, LOG_LEVEL_ERROR,
+            "throw_java_exception: cannot resolve %s to report: %s", class_name, message ? message : "");
+        return;
+    }
+    env->ThrowNew(clazz, message ? message : "");
+    env->DeleteLocalRef(clazz);
+}
+
+void throw_illegal_state(JNIEnv *env, const char *message, const void *instance_handle) {
+    throw_java_exception(env, "java/lang/IllegalStateException", message, instance_handle);
+}
+
+void throw_illegal_argument(JNIEnv *env, const char *message, const void *instance_handle) {
+    throw_java_exception(env, "java/lang/IllegalArgumentException", message, instance_handle);
+}
+
+bool jni_cache_classes(JNIEnv *env, const void *instance_handle) {
+    if (!env) {
+        return false;
+    }
+
+    std::lock_guard<std::mutex> guard(jni_cache_mutex);
+    if (jni_class_cached) {
+        return true;
+    }
+
+    jclass event_listener_class = find_global_class(env, instance_handle, "org/openani/mediamp/mpv/EventListener");
+    jclass render_update_listener_class =
+            find_global_class(env, instance_handle, "org/openani/mediamp/mpv/RenderUpdateListener");
+    jclass mpv_log_class = find_global_class(env, instance_handle, "org/openani/mediamp/mpv/MPVLogKt");
+    jclass seekable_input_class = find_global_class(env, instance_handle, "org/openani/mediamp/io/SeekableInput");
+#ifdef __ANDROID__
+    jclass surface_class = find_global_class(env, instance_handle, "android/view/Surface");
+#endif
+    if (!event_listener_class || !render_update_listener_class || !mpv_log_class || !seekable_input_class
+#ifdef __ANDROID__
+        || !surface_class
+#endif
+    ) {
+        // A missing class breaks the entire native<->Kotlin bridge (events, logs, stream
+        // callbacks); surface it loudly instead of silently degrading.
+        LOG(instance_handle, LOG_LEVEL_ERROR,
+            "jni_cache_classes: failed to resolve one or more mediamp JNI classes; "
+            "the native mpv bridge will not function");
+        delete_global_ref(env, event_listener_class);
+        delete_global_ref(env, render_update_listener_class);
+        delete_global_ref(env, mpv_log_class);
+        delete_global_ref(env, seekable_input_class);
+#ifdef __ANDROID__
+        delete_global_ref(env, surface_class);
+#endif
+        return false;
+    }
+
+    jmethodID on_property_change_none =
+            find_method(env, instance_handle, event_listener_class, "onPropertyChange", "(Ljava/lang/String;)V");
+    jmethodID on_property_change_flag =
+            find_method(env, instance_handle, event_listener_class, "onPropertyChange", "(Ljava/lang/String;Z)V");
+    jmethodID on_property_change_int64 =
+            find_method(env, instance_handle, event_listener_class, "onPropertyChange", "(Ljava/lang/String;J)V");
+    jmethodID on_property_change_double =
+            find_method(env, instance_handle, event_listener_class, "onPropertyChange", "(Ljava/lang/String;D)V");
+    jmethodID on_property_change_string =
+            find_method(env, instance_handle, event_listener_class, "onPropertyChange", "(Ljava/lang/String;Ljava/lang/String;)V");
+    jmethodID on_event =
+            find_method(env, instance_handle, event_listener_class, "onEvent", "(I)V");
+    jmethodID on_start_file =
+            find_method(env, instance_handle, event_listener_class, "onStartFile", "(J)V");
+    jmethodID on_end_file =
+            find_method(env, instance_handle, event_listener_class, "onEndFile", "(IIJ)V");
+    jmethodID on_render_update =
+            find_method(env, instance_handle, render_update_listener_class, "onRenderUpdate", "()V");
+    jmethodID on_native_log =
+            env->GetStaticMethodID(mpv_log_class, "onNativeLog", "(JILjava/lang/String;Ljava/lang/String;)V");
+    if (!on_native_log) {
+        clear_jni_exception(env, instance_handle, "onNativeLog");
+    }
+    jmethodID seekable_input_read =
+            find_method(env, instance_handle, seekable_input_class, "read", "([BII)I");
+    jmethodID seekable_input_seek_to =
+            find_method(env, instance_handle, seekable_input_class, "seekTo", "(J)V");
+    jmethodID seekable_input_close =
+            find_method(env, instance_handle, seekable_input_class, "close", "()V");
+
+    if (!on_property_change_none ||
+        !on_property_change_flag ||
+        !on_property_change_int64 ||
+        !on_property_change_double ||
+        !on_property_change_string ||
+        !on_event ||
+        !on_start_file ||
+        !on_end_file ||
+        !on_render_update ||
+        !on_native_log ||
+        !seekable_input_read ||
+        !seekable_input_seek_to ||
+        !seekable_input_close) {
+        LOG(instance_handle, LOG_LEVEL_ERROR,
+            "jni_cache_classes: failed to resolve one or more mediamp JNI methods; "
+            "the native mpv bridge will not function");
+        delete_global_ref(env, event_listener_class);
+        delete_global_ref(env, render_update_listener_class);
+        delete_global_ref(env, mpv_log_class);
+        delete_global_ref(env, seekable_input_class);
+#ifdef __ANDROID__
+        delete_global_ref(env, surface_class);
+#endif
+        return false;
+    }
+
+    jni_mediamp_clazz_EventListener = event_listener_class;
+    jni_mediamp_method_EventListener_onPropertyChange_NONE = on_property_change_none;
+    jni_mediamp_method_EventListener_onPropertyChange_FLAG = on_property_change_flag;
+    jni_mediamp_method_EventListener_onPropertyChange_INT64 = on_property_change_int64;
+    jni_mediamp_method_EventListener_onPropertyChange_DOUBLE = on_property_change_double;
+    jni_mediamp_method_EventListener_onPropertyChange_STRING = on_property_change_string;
+    jni_mediamp_method_EventListener_onEvent = on_event;
+    jni_mediamp_method_EventListener_onStartFile = on_start_file;
+    jni_mediamp_method_EventListener_onEndFile = on_end_file;
+    jni_mediamp_clazz_RenderUpdateListener = render_update_listener_class;
+    jni_mediamp_method_RenderUpdateListener_onRenderUpdate = on_render_update;
+    jni_mediamp_clazz_MPVLogKt = mpv_log_class;
+    jni_mediamp_method_MPVLogKt_onNativeLog = on_native_log;
+    jni_mediamp_clazz_SeekableInput = seekable_input_class;
+    jni_mediamp_method_SeekableInput_read = seekable_input_read;
+    jni_mediamp_method_SeekableInput_seekTo = seekable_input_seek_to;
+    jni_mediamp_method_SeekableInput_close = seekable_input_close;
+#ifdef __ANDROID__
+    jni_mediamp_clazz_android_Surface = surface_class;
+#endif
+
+    jni_class_cached = true;
+    return true;
+}
+    
+} // namespace mediampv

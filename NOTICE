@@ -1,0 +1,24 @@
+My Live
+Copyright (C) 2026 My Live contributors
+
+Except for separately identified third-party material, this project is free software:
+you may redistribute it and/or modify it under the GNU General Public License,
+version 3 or (at your option) any later version (SPDX: GPL-3.0-or-later).
+See LICENSE for the complete terms. This software comes without any warranty.
+
+Third-party components retain their respective copyright notices and licenses.
+The Windows distribution includes GPL-enabled mpv, LGPL FFmpeg, the Apache-2.0
+MediaMP bridge, OpenJDK (GPL-2.0 with the Classpath Exception), and other runtimes.
+Their notices are included in app/resources/notices/, app/resources/mpv/notices/
+and runtime/legal/. The single-file launcher also bundles .NET notices.
+Native source revisions and build instructions: desktop/native-notices/SOURCE.txt.
+
+The project acknowledges Simple Live (https://github.com/xiaoyaocz/dart_simple_live)
+as the inspiration described in README.md. Existing third-party attributions in
+source files and dependency archives remain applicable.
+
+The Windows port changes the application frontend and native player, extracts
+shared Android/JVM platform protocols, and replaces MediaMP's reduced FFmpeg
+DLLs with an ABI-compatible full LGPL build for FLV support. Native dependency
+sources themselves are not modified by My Live; upstream MediaMP includes its
+own mpv patches and build recipes.

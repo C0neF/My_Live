@@ -12,8 +12,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -37,7 +37,7 @@ fun AccountScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
-    val context = LocalContext.current
+    val resources = LocalResources.current
 
     val handleBack = navigator.rememberRouteActions().onBack
 
@@ -45,10 +45,10 @@ fun AccountScreen(
     LaunchedEffect(uiState.message) {
         val msg = uiState.message ?: return@LaunchedEffect
         val text = when (msg) {
-            AccountMessage.BilibiliCookieSaved -> context.getString(R.string.account_bilibili_cookie_saved)
-            AccountMessage.DouyinCookieSaved -> context.getString(R.string.account_douyin_cookie_saved)
-            AccountMessage.BilibiliLoggedOut -> context.getString(R.string.account_bilibili_logged_out)
-            AccountMessage.DouyinLoggedOut -> context.getString(R.string.account_douyin_logged_out)
+            AccountMessage.BilibiliCookieSaved -> resources.getString(R.string.account_bilibili_cookie_saved)
+            AccountMessage.DouyinCookieSaved -> resources.getString(R.string.account_douyin_cookie_saved)
+            AccountMessage.BilibiliLoggedOut -> resources.getString(R.string.account_bilibili_logged_out)
+            AccountMessage.DouyinLoggedOut -> resources.getString(R.string.account_douyin_logged_out)
             is AccountMessage.DouyuNotice -> msg.text
         }
         snackbarHostState.showSnackbar(text)

@@ -10,29 +10,45 @@ import android.media.MediaMuxer
 import android.os.SystemClock
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipe
+import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.mylive.app.MainActivity
+import com.mylive.app.core.model.LiveMessage
+import com.mylive.app.core.model.LiveMessageType
 import com.mylive.app.data.local.datastore.SettingsDataStore
 import com.mylive.app.data.local.secure.AndroidKeystoreCredentialCipher
 import com.mylive.app.data.local.secure.SensitiveCredentialStore
 import com.mylive.app.data.repository.LiveRoomPreferences
 import com.mylive.app.data.repository.SettingsRepository
+import com.mylive.app.ui.screen.room.AdaptiveLiveRoomLayout
+import com.mylive.app.ui.screen.room.ChatPanel
+import com.mylive.app.ui.screen.room.DisplayLiveMessage
+import com.mylive.app.ui.screen.room.LiveRoomPlayerArea
+import com.mylive.app.ui.screen.room.rememberPortraitPlayerResizeState
 import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.RecordedRequest
 import okio.Buffer
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import org.junit.After
 import org.junit.Assert.*
@@ -167,16 +183,57 @@ class PortraitPlaybackAndroidTest {
             compose.activity.requestedOrientation)
     }
 
+    @Test fun draggingPortraitChatScalesTheNativeVideoAndKeepsPlaybackAndSizeAcrossFullscreen() {
+        server.dispatcher = object : Dispatcher() {
+            val body = syntheticVideo("portrait-resize", 144, 256)
+            override fun dispatch(request: RecordedRequest) = MockResponse().setBody(Buffer().write(body))
+        }
+        server.start()
+        renderPlayer(server.url("/portrait.mp4").toString(), embedded = true)
+        waitForFirstFrame()
+        val originalPlayer = host!!.playerController!!.player
+        val nativeBefore = compose.onNodeWithTag("player_native_surface").fetchSemanticsNode().boundsInRoot
+        val chatBefore = compose.onNodeWithTag("resize_chat").fetchSemanticsNode().boundsInRoot
+        assertEquals(9f / 16f, nativeBefore.width / nativeBefore.height, 0.01f)
+        capture("portrait-resize-before")
+        compose.onNodeWithTag("resize_chat").performTouchInput {
+            swipe(Offset(centerX, height * 0.85f), Offset(centerX, height * 0.15f), durationMillis = 800)
+        }
+        compose.waitForIdle()
+        val nativeAfter = compose.onNodeWithTag("player_native_surface").fetchSemanticsNode().boundsInRoot
+        val chatAfter = compose.onNodeWithTag("resize_chat").fetchSemanticsNode().boundsInRoot
+        assertTrue("Chat drag must shrink the actual Android video view", nativeAfter.height < nativeBefore.height - 20f)
+        assertEquals(9f / 16f, nativeAfter.width / nativeAfter.height, 0.01f)
+        assertEquals(nativeBefore.height - nativeAfter.height, chatAfter.height - chatBefore.height, 3f)
+        assertSame(originalPlayer, host!!.playerController!!.player)
+        assertTrue(host!!.playerController!!.state.value.isPlaying)
+        assertNull(host!!.playerController!!.state.value.error)
+        capture("portrait-resize-after")
+        compose.runOnUiThread { host!!.toggleFullscreen() }
+        compose.waitUntil(10_000) { host?.isFullscreen == true }
+        compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        compose.waitUntil(10_000) { host?.isFullscreen == false }
+        compose.waitForIdle()
+        val restored = compose.onNodeWithTag("player_native_surface").fetchSemanticsNode().boundsInRoot
+        assertEquals(nativeAfter.height, restored.height, 3f)
+        assertSame(originalPlayer, host!!.playerController!!.player)
+        assertNull(host!!.playerController!!.state.value.error)
+    }
+
     private fun waitForFirstFrame() {
         compose.waitUntil(20_000) {
             host?.playerController?.state?.value?.firstFrameRendered == true && host?.videoAspectRatio != null
         }
     }
 
-    private fun renderPlayer(initialUrl: String, automaticFullscreen: Boolean = false) {
+    private fun renderPlayer(initialUrl: String, automaticFullscreen: Boolean = false, embedded: Boolean = false) {
         val context = compose.activity.applicationContext
         val store = SettingsDataStore(context)
         val settings = SettingsRepository(store, SensitiveCredentialStore(store, AndroidKeystoreCredentialCipher()))
+        val messages = MutableStateFlow((0 until 100).map {
+            DisplayLiveMessage(it.toLong(), LiveMessage(LiveMessageType.CHAT, "QA", "message-$it"))
+        })
+        val notice = MutableStateFlow<String?>(null)
         val binding = object : LivePlaybackSessionBinding {
             override fun bindPlaybackEngine(engine: LivePlaybackEngine) { playbackEngine = engine }
             override fun unbindPlaybackEngine(engine: LivePlaybackEngine) = Unit
@@ -199,7 +256,30 @@ class PortraitPlaybackAndroidTest {
                             onPlaybackSourceExhausted = { false }
                         )
                         SideEffect { host = playbackHost }
-                        Box(Modifier.fillMaxSize()) {
+                        val resizeState = rememberPortraitPlayerResizeState("fixture")
+                        if (embedded && !playbackHost.isFullscreen) {
+                            AdaptiveLiveRoomLayout(
+                                splitPane = false,
+                                chatWidthDp = 320,
+                                limitStackedPlayerHeight = false,
+                                modifier = Modifier.fillMaxSize(),
+                                videoAspectRatio = playbackHost.videoAspectRatio,
+                                playerResizeState = resizeState,
+                                player = { maximumHeight ->
+                                    LiveRoomPlayerArea(maximumHeight, videoAspectRatio = playbackHost.videoAspectRatio) {
+                                        PlayerView(
+                                            playerController = playbackHost.playerController,
+                                            viewState = PlayerViewUiState(danmakuEnabled = false, fullscreenOverride = false),
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                    }
+                                    Spacer(Modifier.height(64.dp))
+                                },
+                                chat = {
+                                    ChatPanel(messages, notice, it.testTag("resize_chat"), playerResizing = resizeState.isResizing)
+                                }
+                            )
+                        } else Box(Modifier.fillMaxSize()) {
                             PlayerView(
                                 playerController = playbackHost.playerController,
                                 viewState = PlayerViewUiState(danmakuEnabled = false),

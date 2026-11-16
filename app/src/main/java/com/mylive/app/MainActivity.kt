@@ -39,6 +39,7 @@ import com.mylive.app.ui.screen.room.player.LivePlaybackHostSignals
 import com.mylive.app.ui.screen.room.player.playbackPipAspectRatio
 import com.mylive.app.ui.theme.MyLiveTheme
 import com.mylive.app.service.FollowUpdateScheduleCoordinator
+import com.mylive.app.service.LanSyncService
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -148,6 +149,13 @@ class MainActivity : ComponentActivity() {
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putString(NAVIGATION_STATE_KEY, navigator.saveState())
         super.onSaveInstanceState(outState)
+    }
+
+    override fun onDestroy() {
+        if (isFinishing && LanSyncService.isRunning) {
+            LanSyncService.stop(applicationContext)
+        }
+        super.onDestroy()
     }
 
 

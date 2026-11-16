@@ -112,7 +112,7 @@ class LanSyncSecurityPolicyTest {
     fun lanSyncWriteEndpointsRunAsBoundedBackgroundImports() {
         val source = File("src/main/java/com/mylive/app/service/LanSyncService.kt").readText()
         val protocolSource = File(
-            "src/main/java/com/mylive/app/core/sync/LanSyncProtocol.kt"
+            "../live-core/src/main/java/com/mylive/app/core/sync/LanSyncProtocol.kt"
         ).readText()
         val postBlock = source.substringAfter("} else if (method == Method.POST) {")
             .substringBefore("} else {")
@@ -307,7 +307,7 @@ class LanSyncSecurityPolicyTest {
     fun theUnauthenticatedInfoEndpointDoesNotFingerprintTheDevice() {
         val source = File("src/main/java/com/mylive/app/service/LanSyncService.kt").readText()
         val protocolSource = File(
-            "src/main/java/com/mylive/app/core/sync/LanSyncProtocol.kt"
+            "../live-core/src/main/java/com/mylive/app/core/sync/LanSyncProtocol.kt"
         ).readText()
         val infoBlock = source.substringAfter("uri == LanSyncProtocol.INFO_PATH")
             .substringBefore("uri.startsWith(LanSyncProtocol.JOB_PATH_PREFIX)")

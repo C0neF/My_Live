@@ -107,6 +107,23 @@ class DouyinAnonymousCookieRefreshTest {
         assertTrue(issuer.issues >= 2)
     }
 
+    @Test
+    fun searchKeepsLoginCookieWhenHeadPrefetchFails() = runBlocking {
+        val issuer = CountingTtwid()
+        val login = "sessionid=saved;ttwid=saved-ttwid"
+        val searchCookies = mutableListOf<String>()
+        val http = mockk<HttpClient>()
+        coEvery { http.head(any(), any(), any()) } throws CoreError("timeout", statusCode = 0)
+        coEvery { http.getJson(any(), any(), any()) } coAnswers {
+            searchCookies += cookieOf(thirdArg())
+            JSONObject("""{"data":[]}""")
+        }
+        site(http, issuer, login).searchRooms("游戏", 1)
+        assertEquals(listOf(login), searchCookies.map { it.trimEnd(';') })
+        assertEquals(0, issuer.issues)
+        assertEquals(0, issuer.generation)
+    }
+
     private fun cookieOf(headers: Any): String {
         val map = headers as Map<*, *>
         return map.entries.first { it.key.toString().equals("cookie", ignoreCase = true) }.value.toString()
@@ -120,7 +137,7 @@ class DouyinAnonymousCookieRefreshTest {
         .body("".toResponseBody(null))
         .build()
 
-    private fun site(http: HttpClient, ttwid: DouyinTtwidSource): DouyinSite {
+    private fun site(http: HttpClient, ttwid: DouyinTtwidSource, accountCookie: String = ""): DouyinSite {
         val js = object : JsExecutor {
             override suspend fun execute(scriptName: String, functionName: String, vararg args: String) = "sig"
             override suspend fun executeRaw(script: String, functionName: String, vararg args: String) = "sig"
@@ -133,7 +150,7 @@ class DouyinAnonymousCookieRefreshTest {
             ) = "sig"
             override fun loadAssetScript(scriptName: String) = ""
         }
-        return DouyinSite(http, Provider { js }, OkHttpClient(), { "" }, ttwid)
+        return DouyinSite(http, Provider { js }, OkHttpClient(), { accountCookie }, ttwid)
     }
 
     private class CountingTtwid : DouyinTtwidSource {

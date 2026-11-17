@@ -1147,14 +1147,20 @@ class DouyinSite(
 
         val requestUrl = uri.toString()
 
-        // Collect cookies via HEAD request. A rejected anonymous cookie refreshes before the search.
+        // The saved or anonymous cookie is usable even when the HEAD prefetch cannot
+        // reach live.douyin.com. HttpClient reports those timeouts and DNS failures as
+        // CoreError(statusCode = 0). Only an anonymous 401/403 must escape so the
+        // credential can be replaced and the search retried.
         val dyCookie = StringBuilder()
+        fun rememberAvailableCookie() {
+            dyCookie.setLength(0)
+            val savedCookie = requestHeaders["cookie"].orEmpty()
+            if (savedCookie.isNotEmpty()) dyCookie.append(ensureCookieEndsWithSemicolon(savedCookie))
+        }
+        rememberAvailableCookie()
         try {
             val headResp = openAnonymousHead("https://live.douyin.com", requestHeaders)
-            val savedCookie = requestHeaders["cookie"] ?: ""
-            if (savedCookie.isNotEmpty()) {
-                dyCookie.append(ensureCookieEndsWithSemicolon(savedCookie))
-            }
+            rememberAvailableCookie()
             try {
                 if (anonymousCredentialRejected(headResp.code)) {
                     throw CoreError("抖音拒绝了匿名 Cookie", statusCode = headResp.code)
@@ -1169,8 +1175,11 @@ class DouyinSite(
                 headResp.close()
             }
         } catch (e: CoreError) {
-            throw e
+            rememberAvailableCookie()
+            if (anonymousCredentialRejected(e.statusCode) || dyCookie.isEmpty()) throw e
+            logDebug("抖音搜索预取 Cookie 的 HEAD 请求失败，使用已保存 Cookie 继续：$e")
         } catch (e: Exception) {
+            rememberAvailableCookie()
             if (dyCookie.isEmpty()) throw e
             logDebug("抖音搜索预取 Cookie 的 HEAD 请求失败，使用已保存 Cookie 继续：$e")
         }

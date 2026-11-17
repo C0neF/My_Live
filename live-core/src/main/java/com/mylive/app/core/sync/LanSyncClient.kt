@@ -11,6 +11,8 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
+import java.io.ByteArrayOutputStream
+import java.io.InputStream
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -199,9 +201,31 @@ private fun Response.limitedText(): String {
     if (declared > LAN_SYNC_RESPONSE_LIMIT) {
         throw LanSyncProtocolException("响应内容过大")
     }
-    val bytes = content.byteStream().readNBytes(LAN_SYNC_RESPONSE_LIMIT + 1)
+    val bytes = content.byteStream().readAtMost(LAN_SYNC_RESPONSE_LIMIT + 1)
     if (bytes.size > LAN_SYNC_RESPONSE_LIMIT) {
         throw LanSyncProtocolException("响应内容过大")
     }
     return bytes.toString(Charsets.UTF_8)
+}
+
+/**
+ * Reads at most [maxBytes] from this stream.
+ *
+ * The Java 9 bulk read is only on Android API 33, and this client also runs on API 26.
+ * A missing method would throw [NoSuchMethodError], which is an [Error] and would skip the
+ * caller's `catch (Exception)`.
+ */
+internal fun InputStream.readAtMost(maxBytes: Int): ByteArray {
+    require(maxBytes >= 0)
+    if (maxBytes == 0) return ByteArray(0)
+    val output = ByteArrayOutputStream(minOf(maxBytes, 8192))
+    val buffer = ByteArray(minOf(8192, maxBytes))
+    var remaining = maxBytes
+    while (remaining > 0) {
+        val count = read(buffer, 0, minOf(buffer.size, remaining))
+        if (count < 0) break
+        output.write(buffer, 0, count)
+        remaining -= count
+    }
+    return output.toByteArray()
 }

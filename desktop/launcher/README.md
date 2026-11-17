@@ -22,7 +22,8 @@ launcher then converts that path, the working directory, and process arguments w
 page (JDK-8241461). Characters the code page cannot represent become `?`, so startup fails with
 `could not find java.dll` or `InvalidPathException`. The wrapper starts the image, working
 directory, and `--self-check` / `--window-smoke` / `--self-check-media` values through ASCII
-junctions or an ASCII hard link. The caller's files are not moved.
+junctions or an ASCII hard link. Junctions are created with the mount-point API, not `cmd.exe`,
+so a path containing `&` is not split. The caller's files are not moved.
 
 The bundle's default cache is `%TEMP%/.net/<executable>/<bundle-id>/`; the native app continues to
 use `%LOCALAPPDATA%/MyLive/` for user data. .NET runtime notices are included in the extracted app's

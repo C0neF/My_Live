@@ -41,7 +41,8 @@ concurrency:
 jobs:
   desktop:
     # Hosted runners only expose Microsoft OpenGL 1.1. The native smoke test needs a real WGL
-    # driver, so the Mesa llvmpipe opengl32.dll below is placed where both Skiko and mpv load it.
+    # driver, so the Mesa llvmpipe DLLs below are available to that test's private runtime copy.
+    # They are not written into the packaged video resources.
     runs-on: windows-2022
     timeout-minutes: 60
     steps:

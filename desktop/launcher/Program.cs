@@ -98,7 +98,7 @@ internal static class Program
             if (!Directory.Exists(link))
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(link)!);
-                CreateJunction(link, directory);
+                DirectoryJunction.Create(link, directory);
             }
         }
         finally { gate.ReleaseMutex(); }
@@ -126,27 +126,6 @@ internal static class Program
         var shortened = buffer.ToString();
         if (!IsAscii(shortened) || string.Equals(shortened, path, StringComparison.OrdinalIgnoreCase)) return null;
         return shortened;
-    }
-
-    private static void CreateJunction(string link, string target)
-    {
-        var info = new ProcessStartInfo("cmd.exe")
-        {
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            RedirectStandardError = true,
-            RedirectStandardOutput = true
-        };
-        info.ArgumentList.Add("/d");
-        info.ArgumentList.Add("/c");
-        info.ArgumentList.Add("mklink");
-        info.ArgumentList.Add("/J");
-        info.ArgumentList.Add(link);
-        info.ArgumentList.Add(target);
-        using var process = Process.Start(info) ?? throw new IOException("Could not create an ASCII path for the bundled runtime.");
-        process.WaitForExit();
-        if (process.ExitCode != 0)
-            throw new IOException("Could not create an ASCII path for the bundled runtime.");
     }
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true, EntryPoint = "GetShortPathNameW")]

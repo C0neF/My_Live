@@ -1,6 +1,6 @@
 # V3 开发与验收记录
 
-更新日期：2026-10-23。V3 的功能开发、有限范围对抗性审查及计划内设备回归已完成，已合入 main，应用版本更新为 2.1.0 / versionCode 29。更新内容见 [更新日志](../CHANGELOG.md)。原始逐轮调查、设备标识、配置备份、日志和安装包保留在本地忽略目录。
+更新日期：2026-11-17。当前应用版本是 **3.0.0 / versionCode 30**，这一版还没有 Git 标签。2026-10-23 完成的 V3 功能验收已经合入 main，当时的版本是 2.1.0 / versionCode 29。其后的 Windows 桌面端 3.0.0，以及 2026-11-17 合入的安全、同步和 CI 修复，都在 V3 上。更新内容见 [更新日志](../CHANGELOG.md)。原始逐轮调查、设备标识、配置备份、日志和安装包保留在本地忽略目录。
 
 ## 主要改动
 
@@ -10,6 +10,18 @@
 - 平台：B 站请求门控和二维码并发取消、斗鱼弹幕故障转移、抖音旧房间身份和状态语义、虎牙房间身份处理。
 - 数据：关注和标签事务、屏蔽词合并、配置导出/恢复边界、LAN 完整关注同步、WebDAV 路径及权限处理、更新下载生命周期。
 - 工程：独立 QA 和设备隔离包、共享协议测试、Room schema 5、Macrobenchmark、CI 和签名发布流程。
+
+## 2026-11-17 已合入的后续修复
+
+以下来自已合并的 PR #1（`cursor/v3-safety-and-sharing-cb73`，合并提交 `f7b9739`）。这里只记录仓库里已经存在的行为，没有新的发布标签，也不把下面的 2.1.0 设备验收改写成 3.0.0 的结果。
+
+- 抖音匿名请求改为当场签发 ttwid。推荐、分区、搜索和其它匿名请求在 401/403 后刷新。搜索预取 Cookie 的 HEAD 连不上时，继续使用已经拿到的登录或匿名 Cookie。
+- 斗鱼 `homeH5Enc` 远程脚本只接受 `www.douyu.com` 的 HTTPS 来源，并可按 SHA-256 校验。直播播放签名仍走 `DouyuPlaybackSigner`（`websec/getEncryption`），不走这套远程脚本。
+- 局域网同步和 WebDAV 备份抽到共享代码，Android 与 Windows 共用。同步读响应使用 API 26 就能用的长度限制，不再调用 `InputStream.readNBytes`。
+- Android 直播间界面按面板拆分。图片加载改为 Coil 3，并移除 Gson。
+- WebSocket 重连保持单飞；`onOpen` 早于套接字字段赋值到达时仍然记为已连接。
+- Windows CI 跑在 windows-2022，JDK 使用 Temurin 21（`java-version: '21'`）。`setup-java` 不接受把补丁写成 `21.0.12.1+1`。PR #1 把 Mesa llvmpipe 放进测试用的 native runtime，同时也复制到 `JAVA_HOME\bin`，打包前再删除。当前树不再把这些 DLL 写入 JDK 目录，打包时扫描应用镜像里的捆绑 JRE。硬件解码冒烟只在本机有 GPU 时运行；CI 设置了 `CI=true` 时跳过。
+- 单文件启动器把非 ASCII 的程序路径、工作目录和自检参数转成 ASCII junction 或硬链接后再交给捆绑 JVM，避免 JDK-8241461 把字符变成 `?` 后报告找不到 `java.dll`。路径里的 `&` 用挂载点 API 创建目录联接，不经过 `cmd.exe`。
 
 ## 已验证结果
 

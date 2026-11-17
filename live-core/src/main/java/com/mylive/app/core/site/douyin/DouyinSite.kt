@@ -327,18 +327,17 @@ class DouyinSite(
 
         requestHeaders["Referer"] = "https://live.douyin.com/$webRid"
 
+        // The saved or anonymous cookie is usable even when this HEAD cannot reach
+        // live.douyin.com. HttpClient reports timeouts and DNS failures as
+        // CoreError(statusCode = 0). Only an anonymous 401/403 must escape so
+        // withFreshAnonymousCredential can replace the ttwid and retry. This matches
+        // the searchRooms prefetch.
         val headResp = try {
             openAnonymousHead("https://live.douyin.com/$webRid", requestHeaders)
         } catch (e: CoreError) {
-            throw e
+            return continueWithExistingWebCookie(cacheKey, requestHeaders, baseCookie, e) ?: throw e
         } catch (e: Exception) {
-            if (baseCookie.isNotEmpty()) {
-                logDebug("获取直播间 Web Cookie 的 HEAD 请求失败，使用已保存 Cookie 继续：$e")
-                webCookieCache[cacheKey] = baseCookie
-                webCookieCacheAt[cacheKey] = System.currentTimeMillis()
-                return baseCookie
-            }
-            throw e
+            return continueWithExistingWebCookie(cacheKey, requestHeaders, baseCookie, e) ?: throw e
         }
 
         try {
@@ -370,6 +369,26 @@ class DouyinSite(
         } finally {
             headResp.close()
         }
+    }
+
+    /**
+     * Returns the cookie already in hand when the room-page HEAD cannot connect.
+     * Null means the caller must still fail: there is no cookie, or Douyin rejected
+     * an anonymous credential and the caller has to mint a new ttwid.
+     */
+    private fun continueWithExistingWebCookie(
+        cacheKey: String,
+        requestHeaders: Map<String, String>,
+        baseCookie: String,
+        error: Exception
+    ): String? {
+        if (error is CoreError && anonymousCredentialRejected(error.statusCode)) return null
+        val available = requestHeaders["cookie"].orEmpty().ifEmpty { baseCookie }
+        if (available.isEmpty()) return null
+        logDebug("获取直播间 Web Cookie 的 HEAD 请求失败，使用已保存 Cookie 继续：$error")
+        webCookieCache[cacheKey] = available
+        webCookieCacheAt[cacheKey] = System.currentTimeMillis()
+        return available
     }
 
     /**

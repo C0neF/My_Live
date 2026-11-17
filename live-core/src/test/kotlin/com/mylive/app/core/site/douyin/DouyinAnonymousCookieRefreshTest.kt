@@ -124,6 +124,54 @@ class DouyinAnonymousCookieRefreshTest {
         assertEquals(0, issuer.generation)
     }
 
+    @Test
+    fun htmlRoomDetailKeepsLoginCookieWhenHeadPrefetchFails() = runBlocking {
+        val issuer = CountingTtwid()
+        val login = "sessionid=saved;ttwid=saved-ttwid"
+        val pageCookies = mutableListOf<String>()
+        val http = mockk<HttpClient>()
+        coEvery { http.getJson(any(), any(), any()) } throws CoreError("api down", statusCode = 500)
+        coEvery { http.head(any(), any(), any()) } throws CoreError("timeout", statusCode = 0)
+        coEvery { http.getText(any(), any(), any()) } coAnswers {
+            pageCookies += cookieOf(thirdArg())
+            douyinRoomHtml("kept-room")
+        }
+        val detail = site(http, issuer, login).getRoomDetail("123456")
+        assertEquals("kept-room", detail.title)
+        assertTrue(detail.status)
+        assertEquals(listOf(login), pageCookies.map { it.trimEnd(';') })
+        assertEquals(0, issuer.issues)
+        assertEquals(0, issuer.generation)
+    }
+
+    @Test
+    fun htmlRoomDetailRefreshesAnonymousCookieWhenHeadIsRejected() = runBlocking {
+        val issuer = CountingTtwid()
+        val pageCookies = mutableListOf<String>()
+        val http = mockk<HttpClient>()
+        coEvery { http.getJson(any(), any(), any()) } throws CoreError("api down", statusCode = 500)
+        coEvery { http.head(any(), any(), any()) } coAnswers {
+            val cookie = cookieOf(thirdArg())
+            if (cookie == "ttwid=gen-0") throw CoreError("rejected", statusCode = 401)
+            response(200)
+        }
+        coEvery { http.getText(any(), any(), any()) } coAnswers {
+            pageCookies += cookieOf(thirdArg())
+            douyinRoomHtml("refreshed-room")
+        }
+        val detail = site(http, issuer).getRoomDetail("123456")
+        assertEquals("refreshed-room", detail.title)
+        assertEquals(listOf("ttwid=gen-1"), pageCookies.map { it.trimEnd(';') })
+        assertTrue(issuer.generation >= 1)
+    }
+
+    private fun douyinRoomHtml(title: String): String {
+        val json = """
+            {"state":{"appStore":{},"roomStore":{"roomInfo":{"room":{"id_str":"99","status":2,"title":"$title","owner":{"nickname":"anchor","signature":"hi","avatar_thumb":{"url_list":["https://img.example/a"]}},"cover":{"url_list":["https://img.example/c"]},"room_view_stats":{"display_value":7}},"anchor":{}}},"userStore":{"odin":{"user_unique_id":"42"}}}}
+        """.trim()
+        return json.replace("\"", "\\\"") + "]\\n"
+    }
+
     private fun cookieOf(headers: Any): String {
         val map = headers as Map<*, *>
         return map.entries.first { it.key.toString().equals("cookie", ignoreCase = true) }.value.toString()

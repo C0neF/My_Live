@@ -41,8 +41,9 @@ concurrency:
 jobs:
   desktop:
     # Hosted runners only expose Microsoft OpenGL 1.1. The native smoke test needs a real WGL
-    # driver, so the Mesa llvmpipe DLLs below are available to that test's private runtime copy.
-    # They are not written into the packaged video resources.
+    # driver, so MYLIVE_MESA_BIN points at llvmpipe. Gradle copies those DLLs only into the
+    # private nativeTestRuntime (mpv directory plus a Mesa-only directory for SetDllDirectory).
+    # They are not copied into JAVA_HOME. Packaging scans the app image, including the bundled JRE.
     runs-on: windows-2022
     timeout-minutes: 60
     steps:
@@ -69,7 +70,6 @@ jobs:
           & "$env:ProgramFiles\7-Zip\7z.exe" x $archive "-o$dest" x64/opengl32.dll x64/libgallium_wgl.dll x64/dxil.dll -y
           $bin = Join-Path $dest 'x64'
           if (-not (Test-Path (Join-Path $bin 'opengl32.dll'))) { throw 'Mesa opengl32.dll was not extracted' }
-          Copy-Item "$bin\*.dll" -Destination "$env:JAVA_HOME\bin" -Force
           "MYLIVE_MESA_BIN=$bin" >> $env:GITHUB_ENV
       - name: Read Windows version
         shell: pwsh
@@ -81,13 +81,6 @@ jobs:
         env:
           GALLIUM_DRIVER: llvmpipe
         run: .\gradlew.bat --no-daemon :desktop:verifyWindows
-      - name: Remove Mesa DLLs before packaging
-        shell: pwsh
-        run: |
-          foreach ($name in 'opengl32.dll','libgallium_wgl.dll','dxil.dll') {
-            $path = Join-Path $env:JAVA_HOME "bin\$name"
-            if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Force }
-          }
       - name: Package Windows app, single EXE and installers
         run: .\gradlew.bat --no-daemon :desktop:packageWindows :desktop:singleFileTest
       - name: Check installer path budget

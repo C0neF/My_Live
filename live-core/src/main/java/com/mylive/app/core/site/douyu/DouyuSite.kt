@@ -134,6 +134,12 @@ class DouyuSite @Inject constructor(
     private val httpClient: HttpClient,
     private val okHttpClient: OkHttpClient,
     private val accountSession: DouyuAccountSession,
+    /**
+     * Signs live playback through `websec/getEncryption`.
+     * [DouyuSign] is the older homeH5Enc path and is not called from this class.
+     * It remains so a caller that still has that remote script is screened by
+     * [com.mylive.app.core.script.RemoteScriptPolicy] before QuickJS evaluates it.
+     */
     private val playbackSigner: DouyuPlaybackSigner
 ) : LiveSite {
 

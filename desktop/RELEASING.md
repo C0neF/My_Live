@@ -9,17 +9,17 @@ Windows 版本独立于 Android，由 `desktop/version.properties` 控制。稳�
 ## 构建与验收
 
 需要 Windows x64、完整 JDK 21、Android SDK、.NET SDK（见 launcher/global.json）及 PowerShell 7。
-CI 固定 Temurin 21.0.12.1+1，本地可通过 `-PdesktopJdk=绝对路径` 指定相同 JDK。
+CI 使用 Temurin 21（`java-version: '21'`）。`setup-java` 不接受 `21.0.12.1+1` 这种补丁钉死。本地可通过 `-PdesktopJdk=绝对路径` 指定 JDK 21。
 
 ```powershell
 .\gradlew.bat :desktop:verifyWindows :desktop:packageWindows :desktop:singleFileTest -PdesktopJdk=C:/Jdk21
 .\desktop\release\Test-PackagePaths.ps1 -ImageDirectory desktop/build/compose/binaries/main/app/MyLive
 .\desktop\release\Start-InstallerSandbox.ps1 `
-  -Msi desktop/build/compose/binaries/main/msi/MyLive-2.1.1.msi `
-  -SetupExe desktop/build/compose/binaries/main/exe/MyLive-2.1.1.exe `
+  -Msi desktop/build/compose/binaries/main/msi/MyLive-3.0.0.msi `
+  -SetupExe desktop/build/compose/binaries/main/exe/MyLive-3.0.0.exe `
   -Media desktop/src/test/resources/sample.flv `
   -AppJar desktop/build/libs/desktop.jar `
-  -ReportDirectory build/installer-acceptance -ExpectedVersion 2.1.1
+  -ReportDirectory build/installer-acceptance -ExpectedVersion 3.0.0
 ```
 
 Sandbox 启动器立即返回结果目录。在该目录查看 `installer-verification.json`，只有
@@ -55,10 +55,10 @@ FFmpeg 静态依赖的仓库和修订列在源码索引中，下载与构建由�
 JVM 依赖目录、许可、JDK 和 .NET 运行库许可均保留在应用镜像内。
 
 ```powershell
-.\desktop\release\Collect-NativeSources.ps1 -CacheDirectory build/native-sources -OutputFile build/MyLive-Native-Sources-2.1.1.zip
+.\desktop\release\Collect-NativeSources.ps1 -CacheDirectory build/native-sources -OutputFile build/MyLive-Native-Sources-3.0.0.zip
 .\desktop\release\New-ReleaseBundle.ps1 -OutputDirectory build/windows-candidate `
   -InstallerReceipt build/installer-acceptance/本次运行/results/installer-verification.json `
-  -NativeSources build/MyLive-Native-Sources-2.1.1.zip
+  -NativeSources build/MyLive-Native-Sources-3.0.0.zip
 ```
 
 交付脚本拒绝混用已有输出目录，校验验收记录对应的 EXE、MSI 和应用 JAR，随后生成源码快照、

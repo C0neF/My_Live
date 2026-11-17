@@ -17,8 +17,12 @@ import org.jetbrains.skia.Surface
 import org.jetbrains.skiko.SkiaLayer
 import org.jetbrains.skiko.GraphicsApi
 import org.json.JSONObject
+import com.sun.jna.Native
+import com.sun.jna.win32.StdCallLibrary
+import com.sun.jna.win32.W32APIOptions
 import org.junit.Assert.*
 import org.junit.Assume.assumeTrue
+import org.junit.BeforeClass
 import org.junit.Test
 import org.openani.mediamp.InternalMediampApi
 import org.openani.mediamp.mpv.MPVHandle
@@ -31,6 +35,25 @@ import java.nio.file.Path
 /** Exercises the real GPU and video surface without ever showing or focusing a window. */
 @OptIn(InternalMediampApi::class, ExperimentalComposeUiApi::class)
 class NativeDesktopRenderingTest {
+    companion object {
+        /**
+         * Hosted runners only have Microsoft OpenGL 1.1. CI puts llvmpipe in a Mesa-only
+         * directory and this process searches there before System32. The DLLs stay out of
+         * JAVA_HOME so jpackage cannot copy them into the bundled JRE.
+         * A local run without that directory keeps the machine's GPU driver.
+         */
+        @JvmStatic
+        @BeforeClass
+        fun preferMesaDriverWhenPresent() {
+            val driver = System.getProperty("mylive.mesaDriver")?.let(::File) ?: return
+            if (!System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) return
+            if (!File(driver, "opengl32.dll").isFile) return
+            check(TestKernel32.INSTANCE.SetDllDirectory(driver.absolutePath)) {
+                "Could not add the test OpenGL directory to the DLL search path: ${driver.absolutePath}"
+            }
+        }
+    }
+
     @Test fun legacyReadbackSurfaceRemainsAvailable() = runBlocking {
         prepareDesktopMediaRuntime(File(System.getProperty("mylive.nativeRuntime")))
         val previous = System.getProperty("mylive.video.upload")
@@ -219,5 +242,17 @@ class NativeDesktopRenderingTest {
             allocN32Pixels(surface.width, surface.height)
             assertTrue("Read the actual GPU render target", surface.readPixels(this, 0, 0))
         }
+    }
+}
+
+interface TestKernel32 : StdCallLibrary {
+    fun SetDllDirectory(path: String?): Boolean
+
+    companion object {
+        val INSTANCE: TestKernel32 = Native.load(
+            "kernel32",
+            TestKernel32::class.java,
+            W32APIOptions.DEFAULT_OPTIONS
+        )
     }
 }

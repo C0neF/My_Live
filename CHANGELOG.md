@@ -2,8 +2,11 @@
 
 ## 3.0.0 — 2026-11-12
 
-本轮更新 Windows 桌面端，优化浏览、播放、聊天和启动路径。
+本轮更新 Windows 桌面端，优化浏览、播放、聊天和启动路径。3.0.0 / versionCode 30 尚未打标签。2026-11-17 合入 V3 的 PR #1，以及随后的房间详情 Cookie 与打包检查，都记在这一版里。
 
+- 2026-11-17：抖音房间详情的 HTML 回退在 HEAD 预取超时或 DNS 失败（`CoreError` statusCode 为 0，或其它非 401/403 失败）时，继续使用已经拿到的登录或匿名 Cookie。匿名 Cookie 被 401/403 拒绝时仍然刷新并重试。搜索预取在 PR #1 里已经是这个行为。
+- 2026-11-17：Windows CI 不再把 Mesa llvmpipe 复制进 `JAVA_HOME\bin`。冒烟测试只使用 `nativeTestRuntime`：mpv 目录供播放运行库加载，另一个只含 Mesa 的目录由测试进程用 `SetDllDirectory` 交给 Skiko。打包后扫描应用镜像，包括捆绑 JRE 的 `runtime/bin`。硬件解码冒烟仍然只在 `CI=true` 时跳过。
+- 2026-11-17：PR #1 已合入的行为：抖音匿名 ttwid 当场签发，并在推荐、分区、搜索等匿名请求收到 401/403 后刷新；搜索 HEAD 连不上时保留已有 Cookie。斗鱼 `homeH5Enc` 脚本限制为 `www.douyu.com` 的 HTTPS，并可校验 SHA-256；播放签名仍用 `DouyuPlaybackSigner`。局域网同步与 WebDAV 备份改为共享实现，Android 侧不再调用 API 33 的 `readNBytes`。直播间界面拆分，图片加载改为 Coil 3 并移除 Gson。WebSocket 重连单飞，并接受提前到达的 `onOpen`。Windows 工作流在推送到 V3 时运行，托管环境为 windows-2022 与 Temurin 21。单文件启动器把非 ASCII 路径转成 ASCII junction 或硬链接，含 `&` 的目录联接不再经过 `cmd.exe`。
 - 2026-11-13：Windows OpenGL 使用标准 WGL pbuffer 在 GPU 内传递视频画面，减少每帧回读、复制和上传；补齐暂停后重建窗口及多窗口的纹理生命周期。不支持该扩展时继续走原回读路径。单文件目录只保留 `3.0.0/MyLive/MyLive.exe`，更新直接覆盖，旧输出移入回收站。
 - 2026-11-13：窗口、托盘、侧栏和单文件名称统一为 MyLive；搜索输入框的图标增加左侧间距。
 - 播放器增加独立的全区域模式（F10），保留系统窗口，右侧边缘悬停展开实时聊天，移开后收起；全屏继续使用 F11，两个模式分别控制。

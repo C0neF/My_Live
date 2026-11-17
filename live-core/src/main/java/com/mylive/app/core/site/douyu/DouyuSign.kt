@@ -4,15 +4,14 @@ import com.mylive.app.core.script.JsExecutor
 import com.mylive.app.core.script.RemoteScriptPolicy
 
 /**
- * Douyu signing helper.
- * Combines a bundled CryptoJS library (loaded from assets/scripts/cryptojs.js)
- * with room-specific JS from the homeH5Enc API, executes the signing function
- * [ub98484234] via [JsExecutor], and returns the signed parameters as a query-string-style value.
+ * Legacy Douyu homeH5Enc signing helper. Live playback does not call this object;
+ * [DouyuPlaybackSigner] signs those requests through `websec/getEncryption`.
  *
-     * The room-specific part is remote code, so it is screened by [RemoteScriptPolicy] (allowlisted
-     * HTTPS host, non-empty, size-bounded, optional SHA-256 pin) before evaluation. A rejected
-     * script is not passed to [JsExecutor]; [getSign] returns null so the caller can fall back.
-     */
+ * This stays for a caller that still has the room script from homeH5Enc. That script
+ * is remote code, so [getSign] screens it with [RemoteScriptPolicy] (allowlisted HTTPS
+ * host, non-empty, size-bounded, optional SHA-256 pin) before [JsExecutor] evaluates
+ * [ub98484234]. A rejected script is not passed to the engine; [getSign] returns null.
+ */
 object DouyuSign {
 
     private const val CRYPTOJS_SCRIPT = "cryptojs.js"

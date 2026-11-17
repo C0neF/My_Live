@@ -11,12 +11,23 @@ class MesaPackagingPolicyTest {
         val gradle = File("build.gradle.kts").readText()
         val install = gradle.substringAfter("val installMesaOpenGl").substringBefore("tasks.register<Test>(\"nativeSmokeTest\")")
         assertTrue(install.contains("nativeTestRuntime"))
+        assertTrue(install.contains("jvmDriverDirectory.set(nativeTestRuntime.map { it.dir(\"mesa\") })"))
         assertFalse(install.contains("windowsVideoResources"))
+        assertFalse(install.contains("JAVA_HOME"))
         val smoke = gradle.substringAfter("tasks.register<Test>(\"nativeSmokeTest\")").substringBefore("abstract class RejectMesaFromPackagedResources")
         assertTrue(smoke.contains("nativeTestRuntime.get().dir(\"windows/mpv\")"))
+        assertTrue(smoke.contains("mylive.mesaDriver"))
         assertFalse(smoke.contains("windowsVideoResources.get()"))
         val packaged = gradle.substringAfter("val prepareDesktopResources").substringBefore("val rejectMesaFromPackagedResources")
         assertTrue(packaged.contains("exclude(mesaDriverDlls)"))
+        val bundled = gradle.substringAfter("val rejectMesaFromBundledRuntime").substringBefore("abstract class PrepareThirdPartyNotices")
+        assertTrue(bundled.contains("compose/binaries/main/app/MyLive"))
+        assertTrue(bundled.contains("requireBundledRuntime.set(true)"))
+        assertTrue(gradle.contains("dependsOn(\"createDistributable\", rejectMesaFromBundledRuntime)"))
+        val workflow = File("../.github/workflows/windows.yml").readText()
+        assertTrue(workflow.contains("MYLIVE_MESA_BIN=\$bin"))
+        assertFalse(workflow.contains("JAVA_HOME\\bin"))
+        assertFalse(workflow.contains("Remove Mesa DLLs"))
     }
 
     @Test

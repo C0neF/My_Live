@@ -251,13 +251,17 @@ val prepareWindowsVideoRuntime by tasks.registering(Sync::class) {
 abstract class InstallMesaOpenGl : DefaultTask() {
     @get:Optional @get:Input abstract val mesaBin: Property<String>
     @get:Internal abstract val runtimeDirectory: DirectoryProperty
+    @get:Internal abstract val jvmDriverDirectory: DirectoryProperty
 
     @TaskAction fun install() {
         val source = mesaBin.orNull?.takeIf { it.isNotBlank() }?.let(::File)?.takeIf { it.isDirectory } ?: return
-        val runtime = runtimeDirectory.get().asFile
-        listOf("opengl32.dll", "libgallium_wgl.dll", "dxil.dll").forEach { name ->
-            val dll = File(source, name)
-            if (dll.isFile) dll.copyTo(File(runtime, name), overwrite = true)
+        listOf(runtimeDirectory, jvmDriverDirectory).forEach { directory ->
+            val runtime = directory.get().asFile
+            runtime.mkdirs()
+            listOf("opengl32.dll", "libgallium_wgl.dll", "dxil.dll").forEach { name ->
+                val dll = File(source, name)
+                if (dll.isFile) dll.copyTo(File(runtime, name), overwrite = true)
+            }
         }
     }
 }
@@ -275,7 +279,10 @@ val prepareNativeTestRuntime by tasks.registering(Sync::class) {
 val installMesaOpenGl by tasks.registering(InstallMesaOpenGl::class) {
     dependsOn(prepareNativeTestRuntime)
     mesaBin.set(providers.environmentVariable("MYLIVE_MESA_BIN"))
+    // mpv loads opengl32.dll from its own directory. A second Mesa-only directory is
+    // for the test JVM. Neither directory is the JDK jpackage bundles.
     runtimeDirectory.set(nativeTestRuntime.map { it.dir("windows/mpv") })
+    jvmDriverDirectory.set(nativeTestRuntime.map { it.dir("mesa") })
 }
 tasks.register<Test>("nativeSmokeTest") {
     description = "Exercise actual Windows media and embedded web native runtimes"
@@ -292,6 +299,9 @@ tasks.register<Test>("nativeSmokeTest") {
     systemProperty("prism.order", "sw")
     systemProperty("java.awt.headless", "false")
     systemProperty("mylive.nativeRuntime", nativeTestRuntime.get().dir("windows/mpv").asFile.absolutePath)
+    // Mesa-only directory. The rendering test adds it with SetDllDirectory so Skiko
+    // loads llvmpipe without copying those DLLs next to java.exe.
+    systemProperty("mylive.mesaDriver", nativeTestRuntime.get().dir("mesa").asFile.absolutePath)
     if (providers.environmentVariable("MYLIVE_MESA_BIN").orNull != null) {
         environment("GALLIUM_DRIVER", "llvmpipe")
     }
@@ -299,14 +309,27 @@ tasks.register<Test>("nativeSmokeTest") {
 
 abstract class RejectMesaFromPackagedResources : DefaultTask() {
     @get:InputDirectory abstract val resources: DirectoryProperty
+    @get:Input abstract val label: Property<String>
+    @get:Input abstract val requireBundledRuntime: Property<Boolean>
+
+    init {
+        label.convention("packaged resources")
+        requireBundledRuntime.convention(false)
+    }
 
     @TaskAction fun check() {
+        val root = resources.get().asFile
+        if (requireBundledRuntime.get()) {
+            check(File(root, "runtime/bin").isDirectory) {
+                "Packaged JRE is missing; cannot prove Mesa was left out of the bundle: $root"
+            }
+        }
         val forbidden = setOf("opengl32.dll", "libgallium_wgl.dll", "dxil.dll")
-        val leaked = resources.get().asFile.walkTopDown()
+        val leaked = root.walkTopDown()
             .filter { it.isFile && it.name in forbidden }
             .map { it.invariantSeparatorsPath }
             .toList()
-        check(leaked.isEmpty()) { "Mesa test DLLs must not ship in desktop resources: $leaked" }
+        check(leaked.isEmpty()) { "Mesa test DLLs must not ship in ${label.get()}: $leaked" }
     }
 }
 
@@ -369,6 +392,14 @@ val prepareDesktopResources by tasks.registering(Sync::class) {
 val rejectMesaFromPackagedResources by tasks.registering(RejectMesaFromPackagedResources::class) {
     dependsOn(prepareDesktopResources)
     resources.set(desktopResources)
+    label.set("desktop resources")
+    requireBundledRuntime.set(false)
+}
+val rejectMesaFromBundledRuntime by tasks.registering(RejectMesaFromPackagedResources::class) {
+    dependsOn("createDistributable")
+    resources.set(layout.buildDirectory.dir("compose/binaries/main/app/MyLive"))
+    label.set("the packaged app image")
+    requireBundledRuntime.set(true)
 }
 tasks.matching { it.name == "prepareAppResources" }.configureEach {
     dependsOn(prepareDesktopResources, rejectMesaFromPackagedResources, generateWindowsIcon)
@@ -428,7 +459,7 @@ listOf("Msi" to "msi").forEach { (suffix, format) ->
     val installerTask = tasks.register<Exec>("packageWindows$suffix") {
         group = "distribution"
         description = "Build the $format installer with standard MSI upgrade detection"
-        dependsOn("createDistributable", ":unzipWix", generateWindowsIcon)
+        dependsOn("createDistributable", ":unzipWix", generateWindowsIcon, rejectMesaFromBundledRuntime)
         val image = layout.buildDirectory.dir("compose/binaries/main/app/MyLive").get().asFile
         val destination = layout.buildDirectory.dir("compose/binaries/main/$format").get().asFile
         val installer = File(destination, "MyLive-$windowsVersion.$format")
@@ -467,7 +498,7 @@ listOf("Msi" to "msi").forEach { (suffix, format) ->
 val windowsSetup = tasks.register<Exec>("packageWindowsExe") {
     group = "distribution"
     description = "Wrap the exact verified MSI in a self-contained installer launcher"
-    dependsOn("packageWindowsMsi", generateWindowsIcon)
+    dependsOn("packageWindowsMsi", generateWindowsIcon, rejectMesaFromBundledRuntime)
     val msi = layout.buildDirectory.file("compose/binaries/main/msi/MyLive-$windowsVersion.msi").get().asFile
     val output = layout.buildDirectory.dir("compose/binaries/main/exe").get().asFile
     val executable = File(output, "MyLive-$windowsVersion.exe")
@@ -487,7 +518,7 @@ tasks.matching { it.name == "packageExe" }.configureEach {
 }
 val portableZip by tasks.registering(Zip::class) {
     group = "distribution"
-    dependsOn("createDistributable")
+    dependsOn("createDistributable", rejectMesaFromBundledRuntime)
     from(layout.buildDirectory.dir("compose/binaries/main/app"))
     archiveFileName.set("MyLive-Windows-x64-$windowsVersion.zip")
     destinationDirectory.set(layout.buildDirectory.dir("compose/binaries/main/zip"))
@@ -497,7 +528,7 @@ val portableZip by tasks.registering(Zip::class) {
 tasks.register("packageWindows") {
     group = "distribution"
     description = "Build portable ZIP, single-file EXE, MSI and EXE installers"
-    dependsOn(portableZip, "packageSingleFile", "packageWindowsMsi", "packageWindowsExe")
+    dependsOn(portableZip, "packageSingleFile", "packageWindowsMsi", "packageWindowsExe", rejectMesaFromBundledRuntime)
 }
 
 val singleFileDirectory = layout.buildDirectory.dir("compose/binaries/main/single-file/$windowsVersion/MyLive")
@@ -505,7 +536,7 @@ val singleFileExecutable = singleFileDirectory.map { it.file("MyLive.exe") }
 tasks.register<Exec>("packageSingleFile") {
     group = "distribution"
     description = "Build a self-contained, self-extracting Windows EXE requiring no installation"
-    dependsOn("createDistributable", generateWindowsIcon)
+    dependsOn("createDistributable", generateWindowsIcon, rejectMesaFromBundledRuntime)
     val image = layout.buildDirectory.dir("compose/binaries/main/app/MyLive").get().asFile
     val icon = windowsIcon.get().asFile
     val output = singleFileDirectory.get().asFile

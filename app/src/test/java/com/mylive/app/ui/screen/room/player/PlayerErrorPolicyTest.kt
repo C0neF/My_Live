@@ -1,5 +1,7 @@
 package com.mylive.app.ui.screen.room.player
 
+import com.mylive.app.testing.playerViewSource
+
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -54,12 +56,12 @@ class PlayerErrorPolicyTest {
 
     @Test
     fun playerErrorOverlayIsConstrainedAndDoesNotCoverControlsWithRawText() {
-        val source = File("src/main/java/com/mylive/app/ui/screen/room/player/PlayerView.kt").readText()
+        val source = playerViewSource()
         val errorSource = source.substringAfter("// Error state")
             .substringBefore("// Line switcher bottom sheet")
 
         assertTrue(errorSource.contains("PlayerErrorOverlay("))
-        assertTrue(source.contains("private fun PlayerErrorOverlay("))
+        assertTrue(source.contains("internal fun PlayerErrorOverlay("))
         assertTrue(source.contains("widthIn(max = 320.dp)"))
         assertTrue(source.contains("maxLines = 3"))
         assertTrue(source.contains("TextOverflow.Ellipsis"))

@@ -1,6 +1,7 @@
 package com.mylive.desktop
 
 import com.mylive.app.core.common.MAX_IMPORTED_JSON_BYTES
+import com.mylive.app.core.sync.ProfileBackupFormat
 import com.mylive.app.core.common.readUtf8TextWithinLimit
 import org.json.JSONArray
 import org.json.JSONObject
@@ -28,10 +29,12 @@ object RoomProfileCodec {
         require(tokener.nextClean() == '\u0000') { "备份内容不是有效的 JSON" }
         if (root is JSONArray) return RoomProfileImport(mergeSavedRooms(rows(root, false, now)), emptyList())
         require(root is JSONObject) { "请选择 Android 导出的 JSON 备份" }
-        if (root.has("type")) require(root.get("type") == "my_live_profile") { "备份类型不支持" }
+        if (root.has("type")) require(root.get("type") == ProfileBackupFormat.TYPE) { "备份类型不支持" }
         if (root.has("type") || root.has("schemaVersion")) {
             val version = root.opt("schemaVersion")
-            require(version is Number && version.toDouble() in 1.0..3.0 && version.toDouble() % 1.0 == 0.0) {
+            require(version is Number && version.toDouble() in
+                ProfileBackupFormat.MIN_SCHEMA_VERSION.toDouble()..ProfileBackupFormat.SCHEMA_VERSION.toDouble() &&
+                version.toDouble() % 1.0 == 0.0) {
                 "备份版本不支持，请使用版本 1–3 的资料备份"
             }
         }
@@ -73,7 +76,7 @@ object RoomProfileCodec {
                 if (room.liveStatus != 0) put("liveStatus", room.liveStatus)
                 if (room.lastCheckedAt != 0L) put("lastCheckedAt", room.lastCheckedAt)
             }
-        val root = JSONObject().put("type", "my_live_profile").put("schemaVersion", 3)
+        val root = JSONObject().put("type", ProfileBackupFormat.TYPE).put("schemaVersion", ProfileBackupFormat.SCHEMA_VERSION)
             .put("exportTime", Instant.now().toString())
             .put("followUsers", JSONArray().apply { state.follows.forEach { put(row(it, false)) } })
             .put("histories", JSONArray().apply { state.history.forEach { put(row(it, true)) } })

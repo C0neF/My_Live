@@ -1,5 +1,7 @@
 package com.mylive.app.ui.screen.room
 
+import com.mylive.app.testing.liveRoomUiSource
+
 import com.mylive.app.ui.screen.room.player.shouldResumeLivePlaybackOnForeground
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -53,9 +55,9 @@ class LiveRoomLifecyclePolicyTest {
 
     @Test
     fun topLevelLiveRoomDoesNotKeepUnreachableQuickAccessPanelState() {
-        val source = File("src/main/java/com/mylive/app/ui/screen/room/LiveRoomScreen.kt").readText()
+        val source = liveRoomUiSource()
         val topLevelScreen = source.substringAfter("fun LiveRoomScreen(")
-            .substringBefore("private fun PortraitLayout(")
+            .substringBefore("internal fun PortraitLayout(")
 
         assertFalse(topLevelScreen.contains("var showQuickAccess"))
         assertFalse(topLevelScreen.contains("if (showQuickAccess)"))

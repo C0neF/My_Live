@@ -4,6 +4,7 @@ import com.mylive.app.core.common.LanSyncAuth
 import com.mylive.app.core.common.LanSyncAuthException
 import com.mylive.app.core.common.LanSyncCrypto
 import com.mylive.app.core.common.LanSyncReplayGuard
+import com.mylive.app.core.sync.LanSyncClient
 import com.mylive.app.core.sync.LanSyncImportType
 import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient

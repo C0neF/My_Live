@@ -1,14 +1,16 @@
 package com.mylive.desktop
 
 import com.mylive.app.core.common.MAX_IMPORTED_JSON_BYTES
+import com.mylive.app.core.sync.WebDavBackup
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import okhttp3.*
+import okhttp3.Credentials
+import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import org.json.JSONObject
 import java.nio.file.Files
 import java.nio.file.Path
@@ -22,11 +24,7 @@ internal fun desktopWebDavUrl(server: String): HttpUrl {
     val url = server.trim().toHttpUrl()
     require(url.isHttps || url.host in setOf("127.0.0.1", "localhost", "::1")) { "WebDAV 地址需要使用 HTTPS" }
     require(url.username.isEmpty() && url.password.isEmpty() && url.query == null && url.fragment == null) { "请单独填写账号和密码，地址不要包含查询参数" }
-    val directory = url.encodedPath.trimEnd('/')
-    return url.newBuilder().apply {
-        if (url.host == "dav.jianguoyun.com" && directory in setOf("", "/dav")) encodedPath("/dav/MyLive/").addPathSegment("mylive_profile_backup.json")
-        else if (!url.encodedPath.endsWith(".json", true)) encodedPath(directory.ifEmpty { "/" }).addPathSegment("mylive_profile_backup.json")
-    }.build()
+    return WebDavBackup.resolveBackupUrl(url)
 }
 
 class DesktopWebDav(
@@ -60,15 +58,15 @@ class DesktopWebDav(
     suspend fun backup(config: DesktopWebDavConfig, state: DesktopLibraryState) {
         val url = desktopWebDavUrl(config.server)
         val payload = withContext(Dispatchers.IO) { RoomProfileCodec.export(state) }
-        suspend fun put() = http.desktopHttp(request(url, config).put(payload.toRequestBody("application/json; charset=utf-8".toMediaType())).build()) { it.code }
-        val first = put()
-        if (first in 200..299) return
-        if (first !in setOf(403, 404, 409) || url.pathSegments.size <= 1) error("上传失败（HTTP $first）")
-        val parent = url.newBuilder().removePathSegment(url.pathSegments.lastIndex).addPathSegment("").build()
-        val created = http.desktopHttp(request(parent, config).method("MKCOL", ByteArray(0).toRequestBody(null)).build()) { it.code }
-        check(created in 200..299 || created == 405) { "创建备份目录失败（HTTP $created）" }
-        val retry = put()
-        check(retry in 200..299) { "上传失败（HTTP $retry）" }
+        try {
+            withContext(Dispatchers.IO) {
+                WebDavBackup.upload(http, url.toString(), config.user, config.password, payload)
+            }
+        } catch (failure: java.io.IOException) {
+            val httpCode = failure.message?.substringAfter("HTTP ")?.substringBefore(':')?.trim()
+            if (httpCode != null && httpCode.all(Char::isDigit)) error("上传失败（HTTP $httpCode）")
+            error(failure.message ?: "上传失败")
+        }
     }
     suspend fun preview(config: DesktopWebDavConfig): RoomProfileImport {
         val text = http.desktopHttp(request(desktopWebDavUrl(config.server), config).get().build()) { response ->

@@ -1,12 +1,7 @@
-package com.mylive.app.data.sync
+package com.mylive.app.core.sync
 
 import com.mylive.app.core.common.LanSyncAuth
 import com.mylive.app.core.common.LanSyncCrypto
-import com.mylive.app.core.sync.LanSyncImportType
-import com.mylive.app.core.sync.LanSyncJobState
-import com.mylive.app.core.sync.LanSyncPeerInfo
-import com.mylive.app.core.sync.LanSyncProtocol
-import com.mylive.app.core.sync.LanSyncProtocolException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -15,16 +10,30 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
+import java.io.ByteArrayOutputStream
+import java.io.InputStream
 import javax.inject.Inject
 import javax.inject.Singleton
 
 private const val LAN_SYNC_JOB_TIMEOUT_MS = 30_000L
 private const val LAN_SYNC_JOB_POLL_INTERVAL_MS = 300L
+private const val LAN_SYNC_RESPONSE_LIMIT = 64 * 1024
 
+/**
+ * HTTP client for the LAN sync protocol. Shared by the Android app and the Windows desktop
+ * client so the wire format, proof headers and job polling stay one implementation.
+ */
 @Singleton
 class LanSyncClient @Inject constructor(
-    private val httpClient: OkHttpClient
+    httpClient: OkHttpClient
 ) {
+    // An authenticated call must not follow a redirect onto another host.
+    private val httpClient = httpClient.newBuilder()
+        .followRedirects(false)
+        .followSslRedirects(false)
+        .build()
+
     /**
      * Authenticates the peer and negotiates the wire protocol before any import
      * can be sent.
@@ -66,9 +75,7 @@ class LanSyncClient @Inject constructor(
             .addHeader(LanSyncAuth.HEADER_NAME, proof.headerValue)
             .build()
         return httpClient.newCall(request).execute().use { response ->
-            // Read the body once, up front: it carries the peer's own rejection reason, which is
-            // the only way to tell a wrong pairing code apart from a clock skew.
-            val body = response.body?.string().orEmpty()
+            val body = response.limitedText()
             if (response.code == 401) {
                 throw LanSyncProtocol.unauthorizedException(body)
             }
@@ -126,14 +133,25 @@ class LanSyncPeer internal constructor(
             val acceptedJob = LanSyncProtocol.decodeImportResponse(
                 statusCode = response.code,
                 isSuccessful = response.isSuccessful,
-                body = response.body?.string()
+                body = response.limitedText()
             )
             if (acceptedJob != null) {
-                val jobUrl = response.request.url.resolve(acceptedJob.jobUrl)
-                    ?: throw LanSyncProtocolException("invalid sync job url")
-                pollJob(jobUrl)
+                pollJob(resolveJobUrl(acceptedJob.jobUrl))
             }
         }
+    }
+
+    private fun resolveJobUrl(jobUrl: String): HttpUrl {
+        val resolved = baseUrl.resolve(jobUrl)
+            ?: throw LanSyncProtocolException("invalid sync job url")
+        if (resolved.scheme != baseUrl.scheme ||
+            resolved.host != baseUrl.host ||
+            resolved.port != baseUrl.port ||
+            !resolved.encodedPath.startsWith(LanSyncProtocol.JOB_PATH_PREFIX)
+        ) {
+            throw LanSyncProtocolException("invalid sync job url")
+        }
+        return resolved
     }
 
     private suspend fun pollJob(jobUrl: HttpUrl) {
@@ -153,7 +171,7 @@ class LanSyncPeer internal constructor(
                 .build()
 
             httpClient.newCall(request).execute().use { response ->
-                val body = response.body?.string().orEmpty()
+                val body = response.limitedText()
                 if (response.code == 401) {
                     throw LanSyncProtocol.unauthorizedException(body)
                 }
@@ -175,4 +193,39 @@ class LanSyncPeer internal constructor(
             delay(LAN_SYNC_JOB_POLL_INTERVAL_MS)
         }
     }
+}
+
+private fun Response.limitedText(): String {
+    val content = body ?: return ""
+    val declared = content.contentLength()
+    if (declared > LAN_SYNC_RESPONSE_LIMIT) {
+        throw LanSyncProtocolException("响应内容过大")
+    }
+    val bytes = content.byteStream().readAtMost(LAN_SYNC_RESPONSE_LIMIT + 1)
+    if (bytes.size > LAN_SYNC_RESPONSE_LIMIT) {
+        throw LanSyncProtocolException("响应内容过大")
+    }
+    return bytes.toString(Charsets.UTF_8)
+}
+
+/**
+ * Reads at most [maxBytes] from this stream.
+ *
+ * The Java 9 bulk read is only on Android API 33, and this client also runs on API 26.
+ * A missing method would throw [NoSuchMethodError], which is an [Error] and would skip the
+ * caller's `catch (Exception)`.
+ */
+internal fun InputStream.readAtMost(maxBytes: Int): ByteArray {
+    require(maxBytes >= 0)
+    if (maxBytes == 0) return ByteArray(0)
+    val output = ByteArrayOutputStream(minOf(maxBytes, 8192))
+    val buffer = ByteArray(minOf(8192, maxBytes))
+    var remaining = maxBytes
+    while (remaining > 0) {
+        val count = read(buffer, 0, minOf(buffer.size, remaining))
+        if (count < 0) break
+        output.write(buffer, 0, count)
+        remaining -= count
+    }
+    return output.toByteArray()
 }

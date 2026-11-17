@@ -1,5 +1,7 @@
 package com.mylive.app.ui.screen.room.player
 
+import com.mylive.app.testing.playerViewSource
+
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -9,8 +11,8 @@ class PlayerGestureIndicatorPolicyTest {
 
     @Test
     fun gestureIndicatorUsesStableWidthForThreeDigitPercent() {
-        val source = File("src/main/java/com/mylive/app/ui/screen/room/player/PlayerView.kt").readText()
-        val indicatorSource = source.substringAfter("private fun IndicatorOverlay(")
+        val source = playerViewSource()
+        val indicatorSource = source.substringAfter("internal fun IndicatorOverlay(")
 
         assertTrue(indicatorSource.contains(".width(72.dp)"))
         assertTrue(indicatorSource.contains(".fillMaxWidth()"))
@@ -20,7 +22,7 @@ class PlayerGestureIndicatorPolicyTest {
 
     @Test
     fun volumeAndBrightnessGestureIndicatorsAppearAtPlayerCenter() {
-        val source = File("src/main/java/com/mylive/app/ui/screen/room/player/PlayerView.kt").readText()
+        val source = playerViewSource()
         val gestureIndicatorSource = source.substringAfter("// Volume indicator overlay")
             .substringBefore("// Controls overlay")
 
@@ -31,7 +33,7 @@ class PlayerGestureIndicatorPolicyTest {
 
     @Test
     fun systemVolumeGestureUsesReferenceScalingAndFivePercentSteps() {
-        val source = File("src/main/java/com/mylive/app/ui/screen/room/player/PlayerView.kt").readText()
+        val source = playerViewSource()
         val policySource = source.substringAfter("internal fun systemVolumeForVerticalDrag(")
             .substringBefore("@kotlin.OptIn")
 
@@ -44,7 +46,7 @@ class PlayerGestureIndicatorPolicyTest {
 
     @Test
     fun volumeGestureAppliesSystemVolumeFromGestureStart() {
-        val source = File("src/main/java/com/mylive/app/ui/screen/room/player/PlayerView.kt").readText()
+        val source = playerViewSource()
         val gestureSource = source.substringAfter("var gestureStartVolume")
             .substringBefore("} else if (isHorizontal)")
 
@@ -56,7 +58,7 @@ class PlayerGestureIndicatorPolicyTest {
 
     @Test
     fun verticalGestureStartsOnlyInTheMiddleOfThePlayer() {
-        val source = File("src/main/java/com/mylive/app/ui/screen/room/player/PlayerView.kt").readText()
+        val source = playerViewSource()
 
         assertTrue(source.contains("size.height * 0.25f"))
         assertTrue(source.contains("size.height * 0.75f"))
@@ -64,7 +66,7 @@ class PlayerGestureIndicatorPolicyTest {
 
     @Test
     fun systemVolumeGestureThrottlesNativeUpdatesButKeepsIndicatorResponsive() {
-        val source = File("src/main/java/com/mylive/app/ui/screen/room/player/PlayerView.kt").readText()
+        val source = playerViewSource()
 
         assertTrue(source.contains("SystemVolumeGestureThrottleMs = 200L"))
         assertTrue(source.contains("SystemClock.uptimeMillis()"))

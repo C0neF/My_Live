@@ -124,12 +124,26 @@ private fun resolveLegacyDouyinQualityUrl(
  * - Play quality extraction from live_core_sdk_data.pull_data
  */
 @Singleton
-class DouyinSite @Inject constructor(
+class DouyinSite(
     private val httpClient: HttpClient,
     private val jsEngineProvider: Provider<JsExecutor>,
     private val okHttpClient: OkHttpClient,
-    private val accounts: com.mylive.app.core.site.LiveSiteAccountStore
+    private val accounts: com.mylive.app.core.site.LiveSiteAccountStore,
+    private val ttwid: DouyinTtwidSource
 ) : AccountAwareLiveSite {
+
+    @Inject constructor(
+        httpClient: HttpClient,
+        jsEngineProvider: Provider<JsExecutor>,
+        okHttpClient: OkHttpClient,
+        accounts: com.mylive.app.core.site.LiveSiteAccountStore
+    ) : this(
+        httpClient,
+        jsEngineProvider,
+        okHttpClient,
+        accounts,
+        DouyinTtwidProvider(okHttpClient, DEFAULT_USER_AGENT)
+    )
 
     override val id: String = "douyin"
     override val name: String = "抖音直播"
@@ -182,14 +196,6 @@ class DouyinSite @Inject constructor(
         private const val DEFAULT_REFERER = "https://live.douyin.com"
         private const val DEFAULT_AUTHORITY = "live.douyin.com"
 
-        /**
-         * Default ttwid cookie -- only the ttwid field is required to obtain
-         * all quality levels (including Blu-ray). LOGIN_STATUS=1 and other
-         * fields are optional.
-         */
-        private const val DEFAULT_COOKIE =
-            "ttwid=1%7CB1qls3GdnZhUov9o2NxOMxxYS2ff6OSvEWbv0ytbES4%7C1680522049%7C280d802d6d478e3e78d0c807f7c487e7ffec0ae4e5fdd6a0fe74c3c6af149511"
-
         /** Minimum interval between room detail requests (milliseconds). */
         private const val ROOM_DETAIL_THROTTLE_MS = 1200L
 
@@ -233,7 +239,8 @@ class DouyinSite @Inject constructor(
 
     /**
      * Build the base request headers (Authority, Referer, User-Agent, cookie).
-     * If [cookie] is set, uses that; otherwise falls back to [DEFAULT_COOKIE].
+     * A saved account cookie wins. Otherwise a freshly issued `ttwid` is used, with the static
+     * cookie only as the provider's last resort.
      */
     private suspend fun getRequestHeaders(): MutableMap<String, String> {
         updateAccountCookie(accounts.cookieFor(accountKey))
@@ -242,8 +249,39 @@ class DouyinSite @Inject constructor(
             "Referer" to DEFAULT_REFERER,
             "User-Agent" to DEFAULT_USER_AGENT
         )
-        headers["cookie"] = if (cookie.isNotEmpty()) cookie else DEFAULT_COOKIE
+        headers["cookie"] = if (cookie.isNotEmpty()) cookie else ttwid.current()
         return headers
+    }
+
+    /** Douyin answered 401/403 to an anonymous cookie, so the next read must mint a new ttwid. */
+    private fun noteAnonymousCookieRejected(statusCode: Int?) {
+        if (anonymousCredentialRejected(statusCode)) ttwid.invalidate()
+    }
+
+    private fun anonymousCredentialRejected(statusCode: Int?): Boolean =
+        cookie.isEmpty() && statusCode in setOf(401, 403)
+
+    /**
+     * Runs [block] with the anonymous cookie. A 401/403 drops that cookie and retries once
+     * with a newly issued ttwid. A saved account cookie is left alone.
+     * If the retry is rejected too, the new value is also dropped so the following request
+     * does not keep using it until the cache expires.
+     */
+    private suspend inline fun <T> withFreshAnonymousCredential(
+        block: suspend (MutableMap<String, String>) -> T
+    ): T {
+        try {
+            return block(getRequestHeaders())
+        } catch (error: CoreError) {
+            if (!anonymousCredentialRejected(error.statusCode)) throw error
+            ttwid.invalidate()
+            try {
+                return block(getRequestHeaders())
+            } catch (retry: CoreError) {
+                noteAnonymousCookieRejected(retry.statusCode)
+                throw retry
+            }
+        }
     }
 
     /**
@@ -290,10 +328,9 @@ class DouyinSite @Inject constructor(
         requestHeaders["Referer"] = "https://live.douyin.com/$webRid"
 
         val headResp = try {
-            httpClient.head(
-                "https://live.douyin.com/$webRid",
-                header = requestHeaders
-            )
+            openAnonymousHead("https://live.douyin.com/$webRid", requestHeaders)
+        } catch (e: CoreError) {
+            throw e
         } catch (e: Exception) {
             if (baseCookie.isNotEmpty()) {
                 logDebug("获取直播间 Web Cookie 的 HEAD 请求失败，使用已保存 Cookie 继续：$e")
@@ -308,10 +345,12 @@ class DouyinSite @Inject constructor(
             if (headResp.code == 444) {
                 throw CoreError("", statusCode = 444)
             }
+            noteAnonymousCookieRejected(headResp.code)
 
+            val currentCookie = requestHeaders["cookie"] ?: baseCookie
             val dyCookie = StringBuilder()
-            if (baseCookie.isNotEmpty()) {
-                dyCookie.append(ensureCookieEndsWithSemicolon(baseCookie))
+            if (currentCookie.isNotEmpty()) {
+                dyCookie.append(ensureCookieEndsWithSemicolon(currentCookie))
             }
 
             headResp.headers("set-cookie").forEach { element ->
@@ -324,12 +363,37 @@ class DouyinSite @Inject constructor(
                 }
             }
             val result = dyCookie.toString()
-            webCookieCache[cacheKey] = result
-            webCookieCacheAt[cacheKey] = System.currentTimeMillis()
+            val storedKey = "$webRid|${currentCookie.hashCode()}"
+            webCookieCache[storedKey] = result
+            webCookieCacheAt[storedKey] = System.currentTimeMillis()
             return result
         } finally {
             headResp.close()
         }
+    }
+
+    /**
+     * HEAD that retries once when Douyin rejects the anonymous cookie.
+     * [headers] is replaced with the refreshed cookie so the caller keeps using it.
+     */
+    private suspend fun openAnonymousHead(url: String, headers: MutableMap<String, String>): okhttp3.Response {
+        val first = httpClient.head(url, header = headers)
+        if (!anonymousCredentialRejected(first.code)) return first
+        first.close()
+        ttwid.invalidate()
+        val referer = headers["Referer"]
+        val refreshed = getRequestHeaders()
+        headers.clear()
+        headers.putAll(refreshed)
+        if (referer != null) headers["Referer"] = referer
+        val second = httpClient.head(url, header = headers)
+        if (anonymousCredentialRejected(second.code)) {
+            val rejected = second.code
+            second.close()
+            ttwid.invalidate()
+            throw CoreError("抖音拒绝了匿名 Cookie", statusCode = rejected)
+        }
+        return second
     }
 
     /**
@@ -398,11 +462,13 @@ class DouyinSite @Inject constructor(
      */
     override suspend fun getCategories(): List<LiveCategory> {
         val categories = mutableListOf<LiveCategory>()
-        val result = httpClient.getText(
-            "https://live.douyin.com/",
-            queryParameters = emptyMap(),
-            header = getRequestHeaders()
-        )
+        val result = withFreshAnonymousCredential { headers ->
+            httpClient.getText(
+                "https://live.douyin.com/",
+                queryParameters = emptyMap(),
+                header = headers
+            )
+        }
 
         val renderDataJson = extractCategoryRenderData(result)
         val categoryData = renderDataJson.optJSONArray("categoryData") ?: return categories
@@ -536,7 +602,9 @@ class DouyinSite @Inject constructor(
         }
 
         val requestUrl = douyinSign.getAbogusUrl(uri.toString(), DEFAULT_USER_AGENT)
-        val result = httpClient.getJson(requestUrl, header = getRequestHeaders()) as JSONObject
+        val result = withFreshAnonymousCredential { headers ->
+            httpClient.getJson(requestUrl, header = headers) as JSONObject
+        }
 
         val dataArray = result.optJSONObject("data")?.optJSONArray("data") ?: JSONArray()
         val hasMore = dataArray.length() >= 15
@@ -559,7 +627,9 @@ class DouyinSite @Inject constructor(
         }
 
         val requestUrl = douyinSign.getAbogusUrl(uri.toString(), DEFAULT_USER_AGENT)
-        val result = httpClient.getJson(requestUrl, header = getRequestHeaders()) as JSONObject
+        val result = withFreshAnonymousCredential { headers ->
+            httpClient.getJson(requestUrl, header = headers) as JSONObject
+        }
 
         val dataArray = result.optJSONObject("data")?.optJSONArray("data") ?: JSONArray()
         val hasMore = dataArray.length() >= 15
@@ -681,18 +751,20 @@ class DouyinSite @Inject constructor(
      * Fetch raw room data by roomId from the `webcast.amemv.com` reflow API.
      */
     private suspend fun getRoomDataByRoomId(roomId: String): JSONObject {
-        return httpClient.getJson(
-            "https://webcast.amemv.com/webcast/room/reflow/info/",
-            queryParameters = mapOf(
-                "type_id" to "0",
-                "live_id" to "1",
-                "room_id" to roomId,
-                "sec_user_id" to "",
-                "version_code" to "99.99.99",
-                "app_id" to "6383"
-            ),
-            header = getRequestHeaders()
-        ) as JSONObject
+        return withFreshAnonymousCredential { headers ->
+            httpClient.getJson(
+                "https://webcast.amemv.com/webcast/room/reflow/info/",
+                queryParameters = mapOf(
+                    "type_id" to "0",
+                    "live_id" to "1",
+                    "room_id" to roomId,
+                    "sec_user_id" to "",
+                    "version_code" to "99.99.99",
+                    "app_id" to "6383"
+                ),
+                header = headers
+            ) as JSONObject
+        }
     }
 
     // ── Room detail by webRid ───────────────────────────────────────────────
@@ -785,8 +857,7 @@ class DouyinSite @Inject constructor(
     private suspend fun getRoomDataByApi(
         webRid: String,
         allowEmptyRoomList: Boolean = false
-    ): JSONObject {
-        val requestHeaders = getRequestHeaders()
+    ): JSONObject = withFreshAnonymousCredential { requestHeaders ->
         requestHeaders["Referer"] = "https://live.douyin.com/$webRid"
 
         val uri = URI("https://live.douyin.com/webcast/room/web/enter/").let { base ->
@@ -824,7 +895,7 @@ class DouyinSite @Inject constructor(
             throw CoreError("抖音直播间数据为空，可能是房间不存在、未开播或被风控限制")
         }
 
-        return data
+        data
     }
 
     /**
@@ -898,7 +969,7 @@ class DouyinSite @Inject constructor(
      * Fetch the raw HTML page for a Douyin live room and extract the embedded
      * render data JSON.
      */
-    private suspend fun getRoomDataByHtml(webRid: String): JSONObject {
+    private suspend fun getRoomDataByHtml(webRid: String): JSONObject = withFreshAnonymousCredential {
         val dyCookie = getWebCookie(webRid)
         val result = httpClient.getText(
             "https://live.douyin.com/$webRid",
@@ -1033,7 +1104,8 @@ class DouyinSite @Inject constructor(
      * Performs a HEAD request to `live.douyin.com` first to collect cookies,
      * then queries the search API.
      */
-    override suspend fun searchRooms(keyword: String, page: Int): LiveSearchRoomResult {
+    override suspend fun searchRooms(keyword: String, page: Int): LiveSearchRoomResult =
+        withFreshAnonymousCredential { requestHeaders ->
         val uri = URI("https://www.douyin.com/aweme/v1/web/live/search/").let { base ->
             val params = linkedMapOf(
                 "device_platform" to "webapp",
@@ -1074,18 +1146,25 @@ class DouyinSite @Inject constructor(
         }
 
         val requestUrl = uri.toString()
-        val requestHeaders = getRequestHeaders()
 
-        // Collect cookies via HEAD request
+        // The saved or anonymous cookie is usable even when the HEAD prefetch cannot
+        // reach live.douyin.com. HttpClient reports those timeouts and DNS failures as
+        // CoreError(statusCode = 0). Only an anonymous 401/403 must escape so the
+        // credential can be replaced and the search retried.
         val dyCookie = StringBuilder()
-        val savedCookie = requestHeaders["cookie"] ?: ""
-        if (savedCookie.isNotEmpty()) {
-            dyCookie.append(ensureCookieEndsWithSemicolon(savedCookie))
+        fun rememberAvailableCookie() {
+            dyCookie.setLength(0)
+            val savedCookie = requestHeaders["cookie"].orEmpty()
+            if (savedCookie.isNotEmpty()) dyCookie.append(ensureCookieEndsWithSemicolon(savedCookie))
         }
-
+        rememberAvailableCookie()
         try {
-            val headResp = httpClient.head("https://live.douyin.com", header = requestHeaders)
+            val headResp = openAnonymousHead("https://live.douyin.com", requestHeaders)
+            rememberAvailableCookie()
             try {
+                if (anonymousCredentialRejected(headResp.code)) {
+                    throw CoreError("抖音拒绝了匿名 Cookie", statusCode = headResp.code)
+                }
                 headResp.headers("set-cookie").forEach { element ->
                     val cookiePart = element.split(";")[0]
                     if (cookiePart.contains("ttwid") || cookiePart.contains("__ac_nonce")) {
@@ -1095,7 +1174,12 @@ class DouyinSite @Inject constructor(
             } finally {
                 headResp.close()
             }
+        } catch (e: CoreError) {
+            rememberAvailableCookie()
+            if (anonymousCredentialRejected(e.statusCode) || dyCookie.isEmpty()) throw e
+            logDebug("抖音搜索预取 Cookie 的 HEAD 请求失败，使用已保存 Cookie 继续：$e")
         } catch (e: Exception) {
+            rememberAvailableCookie()
             if (dyCookie.isEmpty()) throw e
             logDebug("抖音搜索预取 Cookie 的 HEAD 请求失败，使用已保存 Cookie 继续：$e")
         }
@@ -1159,8 +1243,8 @@ class DouyinSite @Inject constructor(
             }
         }
 
-        return LiveSearchRoomResult(hasMore = items.size >= 10, items = items)
-    }
+        LiveSearchRoomResult(hasMore = items.size >= 10, items = items)
+        }
 
     /**
      * Search for anchors (streamers) by keyword.
@@ -1227,6 +1311,7 @@ class DouyinSite @Inject constructor(
                 throw error
             } catch (error: CoreError) {
                 if (error.statusCode == 444) throw error
+                noteAnonymousCookieRejected(error.statusCode)
                 lastError = error
             } catch (error: Exception) {
                 lastError = error

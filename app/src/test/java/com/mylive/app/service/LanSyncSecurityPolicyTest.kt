@@ -36,7 +36,7 @@ class LanSyncSecurityPolicyTest {
     @Test
     fun thePairingCodeIsNeverPutOnTheWireByEitherSide() {
         val receiveSource = File("src/main/java/com/mylive/app/service/LanSyncService.kt").readText()
-        val sendSource = File("src/main/java/com/mylive/app/data/sync/LanSyncClient.kt").readText()
+        val sendSource = File("../live-core/src/main/java/com/mylive/app/core/sync/LanSyncClient.kt").readText()
         val authBlock = receiveSource.substringAfter("private fun authorizeRequest(")
             .substringBefore("private fun openSealedSyncBody(")
 
@@ -263,7 +263,7 @@ class LanSyncSecurityPolicyTest {
 
     @Test
     fun lanSyncBodiesAreSealedBeforeTheyLeaveTheDeviceAndUnsealedBodiesAreRejected() {
-        val sendSource = File("src/main/java/com/mylive/app/data/sync/LanSyncClient.kt").readText()
+        val sendSource = File("../live-core/src/main/java/com/mylive/app/core/sync/LanSyncClient.kt").readText()
         val receiveSource = File("src/main/java/com/mylive/app/service/LanSyncService.kt").readText()
 
         // Sender seals every payload against the signed request context and refuses to send while

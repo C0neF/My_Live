@@ -25,7 +25,7 @@ import com.mylive.app.data.repository.FollowRepository
 import com.mylive.app.data.repository.HistoryRepository
 import com.mylive.app.data.repository.ProfileBackupManager
 import com.mylive.app.data.repository.ShieldRepository
-import com.mylive.app.data.sync.LanSyncClient
+import com.mylive.app.core.sync.LanSyncClient
 import com.mylive.app.ui.component.settings.SettingsMenu
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow

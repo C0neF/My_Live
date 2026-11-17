@@ -114,6 +114,13 @@ class WebSocketUtils(
     @Volatile
     private var lastMessageAtMillis: Long = 0L
 
+    // Heartbeat ticks and OkHttp callbacks both touch the socket. The attempt id is published
+    // before newWebSocket returns, because OkHttp can deliver onOpen on another thread before
+    // the assignment `webSocket = newWebSocket(...)` runs. Comparing only the field drops that
+    // onOpen, so the replacement connects on the server and the caller never sees onReady.
+    private val connectionLock = Any()
+    private var socketEpoch = 0L
+
     /**
      * Build the ordered list of URLs to try: primary + backup(s), deduplicated.
      */
@@ -194,7 +201,12 @@ class WebSocketUtils(
     }
 
     private fun doConnectCurrentUrl() {
-        closeInternal()
+        val (attempt, previous) = synchronized(connectionLock) {
+            val previous = retireSocketLocked()
+            status = SocketStatus.CONNECTING
+            socketEpoch to previous
+        }
+        previous?.cancel()
 
         val wsUrl = connectUrls.getOrNull(currentUrlIndex)
         if (wsUrl == null) {
@@ -203,80 +215,119 @@ class WebSocketUtils(
         }
 
         try {
-            status = SocketStatus.CONNECTING
             val requestBuilder = Request.Builder().url(wsUrl)
             connectHeaders?.forEach { (key, value) ->
                 requestBuilder.addHeader(key, value)
             }
 
-            webSocket = connectSocketClient.newWebSocket(requestBuilder.build(), object : WebSocketListener() {
-                override fun onOpen(webSocket: WebSocket, response: Response) {
-                    if (webSocket !== this@WebSocketUtils.webSocket) return
-                    onReady()
+            val created = connectSocketClient.newWebSocket(
+                requestBuilder.build(),
+                AttemptListener(attempt)
+            )
+            synchronized(connectionLock) {
+                if (socketEpoch != attempt) {
+                    created.cancel()
+                } else if (webSocket == null) {
+                    webSocket = created
                 }
-
-                override fun onMessage(webSocket: WebSocket, text: String) {
-                    if (webSocket !== this@WebSocketUtils.webSocket) return
-                    receiveMessage(text)
-                }
-
-                override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
-                    if (webSocket !== this@WebSocketUtils.webSocket) return
-                    receiveMessage(bytes.toByteArray())
-                }
-
-                override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                    if (webSocket !== this@WebSocketUtils.webSocket) return
-                    onError(t)
-                }
-
-                override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
-                    if (webSocket !== this@WebSocketUtils.webSocket) return
-                    heartBeatTimer?.cancel()
-                    heartBeatTimer = null
-                    status = SocketStatus.CLOSED
-                    // OkHttp waits for our Close frame before delivering onClosed. A peer
-                    // may send an empty Close (reported as 1005), which cannot be echoed.
-                    webSocket.close(if (code == 1005) 1000 else code, reason)
-                }
-
-                override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                    if (webSocket !== this@WebSocketUtils.webSocket) return
-                    onDone()
-                }
-            })
+            }
         } catch (e: Throwable) {
-            webSocket?.cancel()
-            webSocket = null
+            synchronized(connectionLock) {
+                if (socketEpoch == attempt) {
+                    webSocket?.cancel()
+                    webSocket = null
+                }
+            }
             onError(e)
+        }
+    }
+
+    /** Drops the current socket. Caller must hold [connectionLock] and cancel the returned socket outside it. */
+    private fun retireSocketLocked(): WebSocket? {
+        socketEpoch++
+        heartBeatTimer?.cancel()
+        heartBeatTimer = null
+        val previous = webSocket
+        webSocket = null
+        return previous
+    }
+
+    private inner class AttemptListener(private val attempt: Long) : WebSocketListener() {
+        private fun accept(socket: WebSocket): Boolean = synchronized(connectionLock) {
+            if (socketEpoch != attempt || intentionalClose) return false
+            if (webSocket == null) webSocket = socket
+            webSocket === socket
+        }
+
+        override fun onOpen(webSocket: WebSocket, response: Response) {
+            if (!accept(webSocket)) return
+            onReady(attempt)
+        }
+
+        override fun onMessage(webSocket: WebSocket, text: String) {
+            if (!accept(webSocket)) return
+            receiveMessage(text)
+        }
+
+        override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
+            if (!accept(webSocket)) return
+            receiveMessage(bytes.toByteArray())
+        }
+
+        override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+            if (!accept(webSocket)) return
+            onError(t)
+        }
+
+        override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+            if (!accept(webSocket)) return
+            heartBeatTimer?.cancel()
+            heartBeatTimer = null
+            status = SocketStatus.CLOSED
+            // OkHttp waits for our Close frame before delivering onClosed. A peer
+            // may send an empty Close (reported as 1005), which cannot be echoed.
+            webSocket.close(if (code == 1005) 1000 else code, reason)
+        }
+
+        override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+            if (!accept(webSocket)) return
+            onDone()
         }
     }
 
     /**
      * Called when the WebSocket connection is established.
      */
-    private fun onReady() {
-        status = SocketStatus.CONNECTED
-        currentUrlIndex = 0
-        lastMessageAtMillis = System.currentTimeMillis()
-        // Cancel reconnect timer on successful connection to prevent repeated reconnect attempts
-        reconnectTimer?.cancel()
-        reconnectTimer = null
-        reconnectTime = 0
+    private fun onReady(attempt: Long) {
+        val startHeartbeat = synchronized(connectionLock) {
+            if (socketEpoch != attempt) return
+            status = SocketStatus.CONNECTED
+            currentUrlIndex = 0
+            lastMessageAtMillis = System.currentTimeMillis()
+            reconnectTimer?.cancel()
+            reconnectTimer = null
+            reconnectTime = 0
+            true
+        }
+        if (!startHeartbeat) return
         callbackReady?.invoke()
-        initHeartBeat()
+        initHeartBeat(attempt)
     }
 
     /**
      * Start the periodic heartbeat timer.
      */
-    private fun initHeartBeat() {
-        heartBeatTimer?.cancel()
-        heartBeatTimer = Timer("ws-heartbeat", true).apply {
-            schedule(object : TimerTask() {
-                override fun run() {
-                    if (status == SocketStatus.CONNECTED) {
-                        val idleFor = System.currentTimeMillis() - lastMessageAtMillis
+    private fun initHeartBeat(attempt: Long) {
+        synchronized(connectionLock) {
+            if (socketEpoch != attempt || status != SocketStatus.CONNECTED) return
+            heartBeatTimer?.cancel()
+            heartBeatTimer = Timer("ws-heartbeat", true).apply {
+                schedule(object : TimerTask() {
+                    override fun run() {
+                        val idleFor = synchronized(connectionLock) {
+                            if (socketEpoch != attempt || status != SocketStatus.CONNECTED) return
+                            System.currentTimeMillis() - lastMessageAtMillis
+                        }
                         if (
                             shouldReconnectOnIdleTimeout(
                                 intentionalClose = intentionalClose,
@@ -287,10 +338,10 @@ class WebSocketUtils(
                             onIdleTimeout()
                             return
                         }
+                        callbackHeartBeat?.invoke()
                     }
-                    callbackHeartBeat?.invoke()
-                }
-            }, connectHeartBeatTime, connectHeartBeatTime)
+                }, connectHeartBeatTime, connectHeartBeatTime)
+            }
         }
     }
 
@@ -308,21 +359,21 @@ class WebSocketUtils(
      * terminal close to the UI. Recreate it immediately so streams can resume.
      */
     private fun onIdleTimeout() {
-        val idleFor = System.currentTimeMillis() - lastMessageAtMillis
-        if (!shouldReconnectOnIdleTimeout(
-                intentionalClose = intentionalClose,
-                idleTimeoutMillis = connectIdleTimeoutMillis,
-                idleForMillis = idleFor
-            )
-        ) {
-            return
+        synchronized(connectionLock) {
+            if (status != SocketStatus.CONNECTED) return
+            val idleFor = System.currentTimeMillis() - lastMessageAtMillis
+            if (!shouldReconnectOnIdleTimeout(
+                    intentionalClose = intentionalClose,
+                    idleTimeoutMillis = connectIdleTimeoutMillis,
+                    idleForMillis = idleFor
+                )
+            ) {
+                return
+            }
+            heartBeatTimer?.cancel()
+            heartBeatTimer = null
+            status = SocketStatus.FAILED
         }
-        heartBeatTimer?.cancel()
-        heartBeatTimer = null
-        status = SocketStatus.FAILED
-        val previousSocket = webSocket
-        webSocket = null
-        previousSocket?.cancel()
         callbackReconnect?.invoke()
         doConnect(retry = true)
     }
@@ -389,30 +440,15 @@ class WebSocketUtils(
      * This is a user-initiated close; no reconnect will be attempted.
      */
     fun close() {
-        // Cancel timers BEFORE setting status to prevent race conditions
-        // where a timer callback fires between status change and timer cancellation
-        heartBeatTimer?.cancel()
-        heartBeatTimer = null
-        reconnectTimer?.cancel()
-        reconnectTimer = null
-        reconnectTime = 0
-        intentionalClose = true
-        status = SocketStatus.CLOSED
-        val previousSocket = webSocket
-        webSocket = null
-        previousSocket?.close(1000, "Client closed")
-    }
-
-    /**
-     * Internal close that cancels timers but does not set CLOSED status
-     * (used before reconnect attempts).
-     */
-    private fun closeInternal() {
-        heartBeatTimer?.cancel()
-        heartBeatTimer = null
-        val previousSocket = webSocket
-        webSocket = null
-        previousSocket?.cancel()
+        val previous = synchronized(connectionLock) {
+            reconnectTimer?.cancel()
+            reconnectTimer = null
+            reconnectTime = 0
+            intentionalClose = true
+            status = SocketStatus.CLOSED
+            retireSocketLocked()
+        }
+        previous?.close(1000, "Client closed")
     }
 
     /**

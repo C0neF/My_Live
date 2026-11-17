@@ -18,7 +18,14 @@ New-Item -ItemType Directory -Path $ReportDirectory -Force | Out-Null
 $report = Join-Path $ReportDirectory 'installer-verification.json'
 @{ passed = $false; status = 'running' } | ConvertTo-Json | Set-Content -LiteralPath $report -Encoding UTF8
 $run = Join-Path $env:TEMP ('MyLive-Installer-QA-' + [Guid]::NewGuid().ToString('N'))
-$installDirectory = Join-Path $run '中文 空格 & 路径'
+# The installed executable is the JVM launcher. On an ANSI code page that cannot
+# represent Chinese, that launcher exits with "could not find java.dll" (JDK-8241461).
+# Keep the Chinese directory when the code page can round-trip it; otherwise keep the
+# space and ampersand, which are the other characters this path is here to exercise.
+$unicodeInstallName = '中文 空格 & 路径'
+$ansi = [Text.Encoding]::GetEncoding(0)
+$unicodeInstallPath = $ansi.GetString($ansi.GetBytes($unicodeInstallName)) -ceq $unicodeInstallName
+$installDirectory = Join-Path $run $(if ($unicodeInstallPath) { $unicodeInstallName } else { 'space & path' })
 New-Item -ItemType Directory -Path $run -Force | Out-Null
 $installer = New-Object -ComObject WindowsInstaller.Installer
 
@@ -172,7 +179,7 @@ try {
     if ((Get-FileHash -LiteralPath $Msi -Algorithm SHA256).Hash -ne $sourceHash) { throw 'Original MSI was modified.' }
     @{ passed = $true; version = $ExpectedVersion; checks = $checks; perUser = $true;
         upgradeFixture = 'same payload, baseline installer version 0.0.1'; profilePreserved = $true;
-        originalMsiUnchanged = $true; unicodeInstallPath = $true; msiSha256 = $sourceHash;
+        originalMsiUnchanged = $true; unicodeInstallPath = $unicodeInstallPath; msiSha256 = $sourceHash;
         setupExeSha256 = (Get-FileHash -LiteralPath $SetupExe -Algorithm SHA256).Hash;
         applicationJarSha256 = $ExpectedApplicationJarSha256; nativeSourceLockSha256 = $ExpectedNativeSourceLockSha256 } |
         ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $report -Encoding UTF8

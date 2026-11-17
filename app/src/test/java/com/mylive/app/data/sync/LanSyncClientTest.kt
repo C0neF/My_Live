@@ -1,6 +1,7 @@
 package com.mylive.app.data.sync
 
 import com.mylive.app.core.common.LanSyncAuth
+import com.mylive.app.core.sync.LanSyncClient
 import com.mylive.app.core.sync.LanSyncImportType
 import com.mylive.app.core.sync.LanSyncProtocol
 import kotlinx.coroutines.runBlocking

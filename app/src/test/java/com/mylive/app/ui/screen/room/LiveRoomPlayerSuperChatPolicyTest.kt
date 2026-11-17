@@ -1,5 +1,7 @@
 package com.mylive.app.ui.screen.room
 
+import com.mylive.app.testing.liveRoomUiSource
+
 import org.junit.Assert.assertFalse
 import org.junit.Test
 import java.io.File
@@ -8,7 +10,7 @@ class LiveRoomPlayerSuperChatPolicyTest {
 
     @Test
     fun liveRoomPlayerDoesNotRenderSuperChatOverlay() {
-        val source = File("src/main/java/com/mylive/app/ui/screen/room/LiveRoomScreen.kt").readText()
+        val source = liveRoomUiSource()
 
         assertFalse(source.contains("PlayerSuperChatOverlay("))
         assertFalse(source.contains("playerShowSuperChat"))

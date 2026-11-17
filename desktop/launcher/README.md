@@ -17,6 +17,14 @@ The launcher passes each argument through `ProcessStartInfo.ArgumentList`, prese
 working directory, waits for the JVM app and propagates its exit code. It does not invoke a shell,
 register an installed product, create shortcuts, or move the user's existing profile.
 
+The .NET host extracts the image under a directory named after the executable. The Windows JVM
+launcher then converts that path, the working directory, and process arguments with the ANSI code
+page (JDK-8241461). Characters the code page cannot represent become `?`, so startup fails with
+`could not find java.dll` or `InvalidPathException`. The wrapper starts the image, working
+directory, and `--self-check` / `--window-smoke` / `--self-check-media` values through ASCII
+junctions or an ASCII hard link. Junctions are created with the mount-point API, not `cmd.exe`,
+so a path containing `&` is not split. The caller's files are not moved.
+
 The bundle's default cache is `%TEMP%/.net/<executable>/<bundle-id>/`; the native app continues to
 use `%LOCALAPPDATA%/MyLive/` for user data. .NET runtime notices are included in the extracted app's
 `app/resources/notices/dotnet/`, alongside the existing JVM/native notices.

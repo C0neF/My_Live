@@ -18,14 +18,17 @@ coroutines = "1.9.0"
 okhttp = "4.12.0"
 datastore = "1.1.1"
 media3 = "1.4.1"
-coil = "2.7.0"
+coil = "3.3.0"
 timber = "5.0.1"
 work = "2.9.1"
 serialization = "1.9.0"
 benchmark = "1.4.1"
 profileInstaller = "1.4.1"
 uiautomator = "2.3.0"
-gson = "2.11.0"
+conscrypt = "2.8.0"
+jna = "5.19.1"
+zxingCore = "3.5.3"
+javafx = "21.0.13"
 lucideIcons = "2.2.1"
 phosphorIcon = "1.0.0"
 androidxTestRules = "1.6.1"
@@ -75,7 +78,6 @@ datastore-preferences = { group = "androidx.datastore", name = "datastore-prefer
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
 okhttp-logging = { group = "com.squareup.okhttp3", name = "logging-interceptor", version.ref = "okhttp" }
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "serialization" }
-gson = { group = "com.google.code.gson", name = "gson", version.ref = "gson" }
 
 # Media3
 media3-exoplayer = { group = "androidx.media3", name = "media3-exoplayer", version.ref = "media3" }
@@ -92,7 +94,11 @@ zxing = { group = "com.journeyapps", name = "zxing-android-embedded", version = 
 androidx-webkit = { group = "androidx.webkit", name = "webkit", version = "1.12.1" }
 kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
 timber = { group = "com.jakewharton.timber", name = "timber", version.ref = "timber" }
-coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coil" }
+coil3-compose = { group = "io.coil-kt.coil3", name = "coil-compose", version.ref = "coil" }
+coil3-network-okhttp = { group = "io.coil-kt.coil3", name = "coil-network-okhttp", version.ref = "coil" }
+conscrypt-openjdk = { group = "org.conscrypt", name = "conscrypt-openjdk-uber", version.ref = "conscrypt" }
+jna-platform = { group = "net.java.dev.jna", name = "jna-platform", version.ref = "jna" }
+zxing-core = { group = "com.google.zxing", name = "core", version.ref = "zxingCore" }
 work-runtime-ktx = { group = "androidx.work", name = "work-runtime-ktx", version.ref = "work" }
 material = { group = "com.google.android.material", name = "material", version = "1.12.0" }
 nanohttpd = { group = "org.nanohttpd", name = "nanohttpd", version = "2.3.1" }

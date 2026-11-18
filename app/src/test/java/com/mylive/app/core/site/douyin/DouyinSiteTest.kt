@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.mylive.app.core.common.HttpClient
 import com.mylive.app.core.script.JsEngine
+import com.mylive.app.core.script.JsExecutor
 import okhttp3.OkHttpClient
 import kotlinx.coroutines.runBlocking
 import org.junit.Test
@@ -20,7 +21,7 @@ class DouyinSiteTest {
     fun testDouyinSiteDetail() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val jsEngine = JsEngine(context)
-        val jsEngineProvider = Provider { jsEngine }
+        val jsEngineProvider = Provider<JsExecutor> { jsEngine }
         val okHttpClient = OkHttpClient()
         val httpClient = HttpClient(okHttpClient)
         val douyinSite = DouyinSite(httpClient, jsEngineProvider, okHttpClient) { "" }

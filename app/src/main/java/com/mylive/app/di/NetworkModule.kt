@@ -22,16 +22,23 @@ object NetworkModule {
 
     @Provides
     @Singleton
+    fun provideRemoteSyncService(): com.mylive.app.service.RemoteSyncService =
+        com.mylive.app.service.RemoteSyncService().apply { debugBuild = com.mylive.app.BuildConfig.DEBUG }
+
+    @Provides
+    @Singleton
     fun provideOkHttpClient(): OkHttpClient {
         val builder = OkHttpClient.Builder()
             .connectTimeout(20, TimeUnit.SECONDS)
             .readTimeout(20, TimeUnit.SECONDS)
             .writeTimeout(20, TimeUnit.SECONDS)
 
-        // Brotli decompression interceptor
+        // Brotli decompression interceptor (skip bodyless HEAD / 204 / 304 responses)
         builder.addInterceptor(Interceptor { chain ->
-            val response = chain.proceed(chain.request())
-            if (response.header("Content-Encoding") == "br") {
+            val request = chain.request()
+            val response = chain.proceed(request)
+            val hasBody = request.method != "HEAD" && response.code != 204 && response.code != 304
+            if (hasBody && response.header("Content-Encoding").equals("br", ignoreCase = true)) {
                 val body = response.body ?: return@Interceptor response
                 response.newBuilder()
                     .removeHeader("Content-Encoding")
@@ -51,13 +58,20 @@ object NetworkModule {
 private class BrotliResponseBody(
     private val compressedBody: ResponseBody
 ) : ResponseBody() {
-    private val decompressedSource: BufferedSource by lazy {
-        BrotliInputStream(compressedBody.byteStream()).source().buffer()
-    }
+    private var initializedSource: BufferedSource? = null
 
     override fun contentType(): MediaType? = compressedBody.contentType()
 
     override fun contentLength() = -1L
 
-    override fun source(): BufferedSource = decompressedSource
+    override fun source(): BufferedSource {
+        return initializedSource ?: BrotliInputStream(compressedBody.byteStream()).source().buffer().also {
+            initializedSource = it
+        }
+    }
+
+    override fun close() {
+        runCatching { initializedSource?.close() }
+        compressedBody.close()
+    }
 }

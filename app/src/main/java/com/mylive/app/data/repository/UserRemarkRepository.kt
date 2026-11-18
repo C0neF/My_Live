@@ -33,17 +33,16 @@ class UserRemarkRepository @Inject constructor(
      * Set a user's remark. If remark is blank, removes the entry.
      */
     suspend fun setRemark(siteId: String, userName: String, remark: String) {
-        val json = settingsRepository.userRemarksJson.first()
-        val remarks = parseRemarksJson(json).toMutableMap()
         val key = buildKey(siteId, userName)
-
-        if (remark.isBlank()) {
-            remarks.remove(key)
-        } else {
-            remarks[key] = remark.trim()
+        settingsRepository.updateUserRemarksJson { currentJson ->
+            val remarks = parseRemarksJson(currentJson).toMutableMap()
+            if (remark.isBlank()) {
+                remarks.remove(key)
+            } else {
+                remarks[key] = remark.trim()
+            }
+            remarksToJson(remarks)
         }
-
-        settingsRepository.setUserRemarksJson(remarksToJson(remarks))
     }
 
     private fun buildKey(siteId: String, userName: String): String =

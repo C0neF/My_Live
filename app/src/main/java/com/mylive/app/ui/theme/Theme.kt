@@ -1,20 +1,30 @@
 package com.mylive.app.ui.theme
 
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.unit.dp
 import com.mylive.app.ui.layout.LocalAppLayout
 
-// Every neutral M3 role is set explicitly so the fixed palette fully replaces the
-// Material defaults (which would otherwise leak a tinted gray for surfaceVariant /
-// onSurfaceVariant / outlineVariant — roles the app reads in hundreds of places).
+private val LegacyDefaultSeed = Color(0xFF3498DB)
+
+private val AppShapes = Shapes(
+    extraSmall = RoundedCornerShape(8.dp),
+    small = RoundedCornerShape(10.dp),
+    medium = RoundedCornerShape(14.dp),
+    large = RoundedCornerShape(18.dp),
+    extraLarge = RoundedCornerShape(24.dp)
+)
+
 private val DarkColorScheme = darkColorScheme(
     primary = DarkAccent,
-    onPrimary = Color.Black,
+    onPrimary = Color.White,
     primaryContainer = DarkElevated,
     onPrimaryContainer = DarkInk,
     secondary = DarkMuted,
@@ -22,7 +32,7 @@ private val DarkColorScheme = darkColorScheme(
     secondaryContainer = DarkElevated,
     onSecondaryContainer = DarkInk,
     tertiary = DarkAccent,
-    onTertiary = Color.Black,
+    onTertiary = Color.White,
     tertiaryContainer = DarkElevated,
     onTertiaryContainer = DarkInk,
     background = DarkBg,
@@ -31,6 +41,11 @@ private val DarkColorScheme = darkColorScheme(
     onSurface = DarkInk,
     surfaceVariant = DarkElevated,
     onSurfaceVariant = DarkMuted,
+    surfaceContainerLowest = DarkBg,
+    surfaceContainerLow = DarkSurface,
+    surfaceContainer = DarkElevated,
+    surfaceContainerHigh = Color(0xFF343438),
+    surfaceContainerHighest = Color(0xFF3E3E42),
     outline = DarkHairlineStrong,
     outlineVariant = DarkHairline,
     error = DangerDark,
@@ -56,6 +71,11 @@ private val LightColorScheme = lightColorScheme(
     onSurface = LightInk,
     surfaceVariant = LightSurface,
     onSurfaceVariant = LightMuted,
+    surfaceContainerLowest = Color.White,
+    surfaceContainerLow = Color.White,
+    surfaceContainer = LightSurface,
+    surfaceContainerHigh = Color(0xFFE5E5EA),
+    surfaceContainerHighest = Color(0xFFD8D8DF),
     outline = LightHairlineStrong,
     outlineVariant = LightHairline,
     error = DangerLight,
@@ -69,18 +89,23 @@ fun MyLiveTheme(
     content: @Composable () -> Unit
 ) {
     val base = if (darkTheme) DarkColorScheme else LightColorScheme
-    // The accent follows the user's seed; pick legible on-color from its luminance
-    // so button/label text stays readable for any chosen color.
-    val onSeed = if (seedColor.luminance() > 0.5f) Color.Black else Color.White
+    val effectiveAccent = if (seedColor == LegacyDefaultSeed || seedColor == LightAccent) {
+        if (darkTheme) DarkAccent else LightAccent
+    } else {
+        seedColor
+    }
+    val onSeed = if (effectiveAccent.luminance() > 0.55f) Color.Black else Color.White
     val colorScheme = base.copy(
-        primary = seedColor,
+        primary = effectiveAccent,
         onPrimary = onSeed,
-        onPrimaryContainer = seedColor,
+        primaryContainer = effectiveAccent.copy(alpha = if (darkTheme) 0.16f else 0.10f),
+        onPrimaryContainer = effectiveAccent,
     )
 
     MaterialTheme(
         colorScheme = colorScheme,
         typography = if (LocalAppLayout.current.tablet) TabletTypography else AppTypography,
+        shapes = AppShapes,
         content = content
     )
 }

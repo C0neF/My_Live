@@ -5,7 +5,7 @@ import com.mylive.app.core.common.LanSyncCrypto
 import com.mylive.app.core.sync.LanSyncProtocol
 import com.mylive.app.data.local.entity.FollowUserEntity
 import com.mylive.app.data.repository.ProfileBackupManager
-import com.mylive.app.data.sync.LanSyncClient
+import com.mylive.app.core.sync.LanSyncClient
 import com.mylive.app.service.decodeFollowsForLanSync
 import com.mylive.app.testing.ReviewRoomFixture
 import io.mockk.mockk

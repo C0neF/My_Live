@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.mutablePreferencesOf
 import androidx.room.withTransaction
 import com.mylive.app.core.common.MAX_IMPORTED_JSON_BYTES
+import com.mylive.app.core.sync.ProfileBackupFormat
 import com.mylive.app.data.local.AppDatabase
 import com.mylive.app.data.local.datastore.SettingsDataStore
 import com.mylive.app.data.local.entity.FollowUserEntity
@@ -667,7 +668,7 @@ class ProfileBackupManager @Inject constructor(
         StringSettingEntry(key, defaultValue)
 
     companion object {
-        const val PROFILE_TYPE = "my_live_profile"
-        const val SCHEMA_VERSION = 3
+        const val PROFILE_TYPE = ProfileBackupFormat.TYPE
+        const val SCHEMA_VERSION = ProfileBackupFormat.SCHEMA_VERSION
     }
 }

@@ -76,6 +76,8 @@ class QuickAccessPanelLayoutPolicyTest {
         assertEquals(588, resolveQuickAccessPanelHeightDp(screenHeightDp = 800))
         assertEquals(456, resolveQuickAccessPanelHeightDp(screenHeightDp = 600))
         assertEquals(220, resolveQuickAccessPanelHeightDp(screenHeightDp = 300))
+        assertTrue(panelSource.contains("contentWindowInsets = { WindowInsets(0, 0, 0, 0) }"))
+        assertTrue(panelSource.contains("SOFT_INPUT_ADJUST_NOTHING"))
         assertTrue(panelSource.contains(".height(panelHeight)"))
         assertTrue(pagerSource.contains(".weight(1f)"))
         assertFalse(pagerSource.contains(".heightIn(min = 300.dp, max = 500.dp)"))

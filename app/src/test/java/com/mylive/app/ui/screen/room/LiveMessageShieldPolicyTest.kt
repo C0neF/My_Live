@@ -125,6 +125,18 @@ class LiveMessageShieldPolicyTest {
         assertFalse(shouldShieldLiveMessage(chat(userName = "坏用户", message = "广告"), "bilibili", config))
     }
 
+    @Test
+    fun pathologicalRegexStopsWithinStepBudget() {
+        val config = LiveMessageShieldConfig(
+            shieldValues = listOf("keyword:/(a+)+$/"),
+            shieldEnabled = true,
+            keywordShieldEnabled = true,
+            userShieldEnabled = true
+        )
+
+        assertFalse(shouldShieldLiveMessage(chat(message = "a".repeat(48) + "!"), "bilibili", config))
+    }
+
     private fun chat(
         userName: String = "Alice",
         message: String = "你好"

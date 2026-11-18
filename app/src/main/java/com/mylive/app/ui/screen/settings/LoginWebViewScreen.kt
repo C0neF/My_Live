@@ -82,10 +82,19 @@ fun LoginWebViewScreen(
         ) {
             AndroidView(
                 factory = { context ->
-                    // Clear previous cookies to ensure a fresh login
+                    // Clear previous Bilibili cookies to ensure a fresh login without affecting other sites
                     val cookieManager = CookieManager.getInstance()
-                    cookieManager.removeAllCookies(null)
-                    cookieManager.flush()
+                    clearWebViewDomainCookies(
+                        cookieManager = cookieManager,
+                        origins = listOf(
+                            "https://passport.bilibili.com",
+                            "https://www.bilibili.com",
+                            "https://m.bilibili.com",
+                            "https://live.bilibili.com",
+                            "https://bilibili.com"
+                        ),
+                        rootDomain = "bilibili.com"
+                    )
 
                     WebView(context).apply {
                         settings.javaScriptEnabled = true
@@ -150,4 +159,35 @@ fun LoginWebViewScreen(
             )
         }
     }
+}
+
+internal fun clearWebViewDomainCookies(
+    cookieManager: CookieManager,
+    origins: List<String>,
+    rootDomain: String
+) {
+    for (origin in origins) {
+        val raw = cookieManager.getCookie(origin).orEmpty()
+        if (raw.isEmpty()) continue
+        val host = origin.removePrefix("https://").removePrefix("http://").substringBefore("/")
+        for (pair in raw.split(";")) {
+            val name = pair.substringBefore("=").trim()
+            if (name.isEmpty()) continue
+            cookieManager.setCookie(
+                origin,
+                "$name=; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Path=/"
+            )
+            cookieManager.setCookie(
+                "https://$rootDomain",
+                "$name=; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Domain=.$rootDomain; Path=/"
+            )
+            if (host.isNotEmpty() && host != rootDomain) {
+                cookieManager.setCookie(
+                    origin,
+                    "$name=; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Domain=$host; Path=/"
+                )
+            }
+        }
+    }
+    cookieManager.flush()
 }

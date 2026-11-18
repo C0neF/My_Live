@@ -94,6 +94,37 @@ class ProfileBackupFileExportTest {
         compose.onNodeWithText(application.getString(R.string.profile_export_ok)).assertDoesNotExist()
     }
 
+    @Test fun importReadFailureReportsImportFailedInsteadOfInvalidJson() {
+        every { resolver.openInputStream(uri) } throws IOException("boom")
+        val context = object : ContextWrapper(application) {
+            override fun getContentResolver(): ContentResolver = resolver
+        }
+        val navigator = Navigator().apply { navigate(Route.ProfileBackup) }
+        compose.setContent {
+            CompositionLocalProvider(
+                LocalContext provides context,
+                LocalLifecycleOwner provides owner,
+                LocalActivityResultRegistryOwner provides resultOwner
+            ) {
+                MyLiveTheme { ProfileBackupScreen(navigator, viewModel) }
+            }
+        }
+        settleUi()
+        compose.onNodeWithText(application.getString(R.string.profile_import)).performClick()
+        compose.waitUntil(5_000) {
+            shadowOf(Looper.getMainLooper()).idle()
+            compose.runOnUiThread { effects.scheduler.runCurrent() }
+            viewModel.uiState.value.message != null && !viewModel.uiState.value.isImporting
+        }
+        settleUi()
+
+        assertTrue(
+            "Import read failure must report ImportFailed, got ${viewModel.uiState.value.message}",
+            viewModel.uiState.value.message is ProfileMessage.ImportFailed
+        )
+        compose.onNodeWithText(application.getString(R.string.profile_import_ok)).assertDoesNotExist()
+    }
+
     @Test fun openingWritingAndClosingTheDocumentMustRunOffTheMainThread() {
         val openedOnMain = AtomicBoolean(false)
         val writtenOnMain = AtomicBoolean(false)

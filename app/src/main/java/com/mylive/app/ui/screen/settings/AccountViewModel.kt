@@ -53,9 +53,6 @@ class AccountViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            // Delay DataStore reads slightly to ensure enter transition runs smoothly
-            kotlinx.coroutines.delay(250)
-            
             launch {
                 accountRepository.bilibiliCookie.collect { cookie ->
                     _uiState.value = _uiState.value.copy(

@@ -51,6 +51,7 @@ class AppUpdateRepository @Inject constructor(
             "下载失败：安装包超过大小限制"
         }
         val updateDir = File(context.cacheDir, "updates")
+        pruneStaleCachedApks(updateDir)
         // Navigation entries can overlap while a previous download is being cancelled. Each
         // request owns both paths, so its completion/cleanup cannot replace another request's APK.
         val targetFile = File(updateDir, "${UUID.randomUUID()}-${updateInfo.apkName.sanitizeFileName()}")
@@ -79,6 +80,7 @@ class AppUpdateRepository @Inject constructor(
                             }
                             val totalBytes = if (responseSize > 0) responseSize else updateInfo.apkSizeBytes
                             var downloadedBytes = 0L
+                            var lastReportedProgress = -1
                             updateDir.mkdirs()
                             body.byteStream().use { input ->
                                 temporaryFile.outputStream().use { output ->
@@ -94,11 +96,13 @@ class AppUpdateRepository @Inject constructor(
                                         }
                                         output.write(buffer, 0, read)
                                         if (totalBytes > 0) {
-                                            onProgress(
-                                                ((downloadedBytes * 100) / totalBytes)
-                                                    .toInt()
-                                                    .coerceIn(0, 100)
-                                            )
+                                            val percent = ((downloadedBytes * 100) / totalBytes)
+                                                .toInt()
+                                                .coerceIn(0, 100)
+                                            if (percent != lastReportedProgress) {
+                                                lastReportedProgress = percent
+                                                onProgress(percent)
+                                            }
                                         }
                                     }
                                 }
@@ -125,6 +129,16 @@ class AppUpdateRepository @Inject constructor(
         }
     }
 
+    private fun pruneStaleCachedApks(updateDir: File) {
+        if (!updateDir.isDirectory) return
+        val cutoff = System.currentTimeMillis() - STALE_APK_TTL_MS
+        updateDir.listFiles()?.forEach { file ->
+            if (file.isFile && file.lastModified() in 1 until cutoff) {
+                runCatching { file.delete() }
+            }
+        }
+    }
+
     private fun String.sanitizeFileName(): String {
         return replace(Regex("[^A-Za-z0-9._-]"), "_")
             .ifBlank { "mylive-update.apk" }
@@ -133,5 +147,6 @@ class AppUpdateRepository @Inject constructor(
     private companion object {
         const val RELEASES_URL = "https://api.github.com/repos/C0neF/My_Live/releases"
         const val MAX_APK_SIZE_BYTES = 250L * 1024L * 1024L
+        const val STALE_APK_TTL_MS = 60L * 60L * 1000L
     }
 }

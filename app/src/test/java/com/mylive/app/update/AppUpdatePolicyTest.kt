@@ -129,6 +129,64 @@ class AppUpdatePolicyTest {
     }
 
     @Test
+    fun currentMajorChannelSelectsV3UpdatesForV3BuildsAndIgnoresV1AndV2() {
+        val release = selectLatestStableReleaseForCurrentMajor(
+            releasesJson = """
+                [
+                  {
+                    "tag_name": "v1.10.0",
+                    "draft": false,
+                    "prerelease": false,
+                    "assets": [
+                      {
+                        "name": "MyLive-v1.10.0.apk",
+                        "browser_download_url": "https://example.com/MyLive-v1.10.0.apk"
+                      }
+                    ]
+                  },
+                  {
+                    "tag_name": "v2.9.0",
+                    "draft": false,
+                    "prerelease": false,
+                    "assets": [
+                      {
+                        "name": "MyLive-v2.9.0.apk",
+                        "browser_download_url": "https://example.com/MyLive-v2.9.0.apk"
+                      }
+                    ]
+                  },
+                  {
+                    "tag_name": "windows-v3.0.2",
+                    "draft": false,
+                    "prerelease": false,
+                    "assets": [
+                      {
+                        "name": "MyLive-3.0.2.msi",
+                        "browser_download_url": "https://example.com/MyLive-3.0.2.msi"
+                      }
+                    ]
+                  },
+                  {
+                    "tag_name": "v3.0.1",
+                    "draft": false,
+                    "prerelease": false,
+                    "assets": [
+                      {
+                        "name": "MyLive-v3.0.1.apk",
+                        "browser_download_url": "https://example.com/MyLive-v3.0.1.apk"
+                      }
+                    ]
+                  }
+                ]
+            """.trimIndent(),
+            currentVersionName = "3.0.0"
+        )
+
+        assertNotNull(release)
+        assertEquals("3.0.1", release?.versionName)
+    }
+
+    @Test
     fun v1ChannelRejectsDraftPrereleaseInvalidAssetsAndInstalledVersion() {
         val release = selectLatestStableReleaseForMajor(
             releasesJson = """

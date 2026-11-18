@@ -1,54 +1,87 @@
 package com.mylive.app.ui.screen.settings
 
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
-import com.mylive.app.ui.theme.Icons
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.mylive.app.ui.navigation.Navigator
-import com.mylive.app.ui.navigation.Route
 import com.mylive.app.R
 import com.mylive.app.core.site.douyin.DouyinCookieInspector
 import com.mylive.app.core.site.douyu.DouyuCookieInspection
 import com.mylive.app.core.site.douyu.inspectDouyuCookie
-import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.VisualTransformation
+import com.mylive.app.ui.component.settings.SettingsHairlineDivider
+import com.mylive.app.ui.component.settings.SettingsInsetCard
+import com.mylive.app.ui.component.settings.SettingsSectionHeader
+import com.mylive.app.ui.layout.AdaptivePageFrame
+import com.mylive.app.ui.layout.LocalAppLayout
+import com.mylive.app.ui.layout.pageContentWindowInsets
+import com.mylive.app.ui.navigation.Navigator
+import com.mylive.app.ui.navigation.Route
+import com.mylive.app.ui.theme.Icons
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AccountScreen(
     navigator: Navigator,
+    embedded: Boolean = false,
     viewModel: AccountViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
-    val context = LocalContext.current
+    val resources = LocalResources.current
 
     val handleBack = navigator.rememberRouteActions().onBack
 
-    // Show message snackbar
     LaunchedEffect(uiState.message) {
         val msg = uiState.message ?: return@LaunchedEffect
         val text = when (msg) {
-            AccountMessage.BilibiliCookieSaved -> context.getString(R.string.account_bilibili_cookie_saved)
-            AccountMessage.DouyinCookieSaved -> context.getString(R.string.account_douyin_cookie_saved)
-            AccountMessage.BilibiliLoggedOut -> context.getString(R.string.account_bilibili_logged_out)
-            AccountMessage.DouyinLoggedOut -> context.getString(R.string.account_douyin_logged_out)
+            AccountMessage.BilibiliCookieSaved -> resources.getString(R.string.account_bilibili_cookie_saved)
+            AccountMessage.DouyinCookieSaved -> resources.getString(R.string.account_douyin_cookie_saved)
+            AccountMessage.BilibiliLoggedOut -> resources.getString(R.string.account_bilibili_logged_out)
+            AccountMessage.DouyinLoggedOut -> resources.getString(R.string.account_douyin_logged_out)
             is AccountMessage.DouyuNotice -> msg.text
         }
         snackbarHostState.showSnackbar(text)
@@ -56,141 +89,178 @@ fun AccountScreen(
     }
 
     Scaffold(
+        containerColor = if (embedded) Color.Transparent else MaterialTheme.colorScheme.background,
+        contentWindowInsets = pageContentWindowInsets(embedded),
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.account_title)) },
-                navigationIcon = {
-                    IconButton(onClick = handleBack) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(R.string.cd_back)
-                        )
+            if (!embedded) {
+                TopAppBar(
+                    title = { Text(stringResource(R.string.account_title)) },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.background
+                    ),
+                    navigationIcon = {
+                        IconButton(onClick = handleBack) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = stringResource(R.string.cd_back)
+                            )
+                        }
                     }
-                }
-            )
+                )
+            }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(vertical = 6.dp)
-        ) {
-            // B站 Section
-            AccountSectionHeader(title = stringResource(R.string.account_bilibili_section))
-            
-            AccountCard(
-                title = stringResource(R.string.account_status_label),
-                contentRight = {
-                    Text(
-                        text = if (uiState.isLoggedInBiliBili) stringResource(R.string.account_status_logged_in)
-                               else stringResource(R.string.account_status_logged_out),
-                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-                        color = if (uiState.isLoggedInBiliBili) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            )
-
-            if (uiState.isLoggedInBiliBili) {
-                AccountCard(
-                    title = stringResource(R.string.account_clear_cookie_action),
-                    subtitle = stringResource(R.string.account_clear_cookie_subtitle),
-                    onClick = { viewModel.logoutBiliBili() }
-                )
-            } else {
-                AccountCard(
-                    title = stringResource(R.string.account_web_login),
-                    subtitle = stringResource(R.string.account_web_login_subtitle),
-                    onClick = { navigator.navigate(Route.SettingsAccountLoginWebview) }
-                )
-                AccountCard(
-                    title = stringResource(R.string.account_cookie_login),
-                    subtitle = stringResource(R.string.account_cookie_login_subtitle),
-                    onClick = { viewModel.showBilibiliCookieDialog() }
-                )
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // 抖音 Section
-            AccountSectionHeader(title = stringResource(R.string.account_douyin_section))
-            
-            AccountCard(
-                title = stringResource(R.string.account_status_label),
-                subtitle = douyinCookieStatusDescription(uiState.douyinCookieInspection),
-                contentRight = {
-                    Text(
-                        text = douyinCookieStatusLabel(uiState.douyinCookieInspection.kind),
-                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-                        color = if (uiState.isLoggedInDouyin) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            )
-
-            if (uiState.hasDouyinCookie) {
-                AccountCard(
-                    title = stringResource(R.string.account_clear_cookie_action),
-                    subtitle = stringResource(R.string.account_clear_cookie_subtitle),
-                    onClick = { viewModel.logoutDouyin() }
-                )
-            }
-            if (!uiState.isLoggedInDouyin) {
-                AccountCard(
-                    title = stringResource(R.string.account_web_login),
-                    subtitle = stringResource(R.string.account_web_login_subtitle),
-                    onClick = { navigator.navigate(Route.SettingsAccountDouyinLoginWebview) }
-                )
-                AccountCard(
-                    title = stringResource(R.string.account_cookie_login),
-                    subtitle = stringResource(R.string.account_cookie_login_subtitle),
-                    onClick = { viewModel.showDouyinCookieDialog() }
-                )
-            }
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            AccountSectionHeader(title = stringResource(R.string.account_douyu_section))
-            AccountCard(
-                title = stringResource(R.string.account_status_label),
-                subtitle = douyuCookieStatusDescription(uiState.douyuInspection),
-                contentRight = {
-                    Text(
-                        if (uiState.douyuBusy) "处理中…" else if (uiState.douyuInspection.hasLoginToken) "已保存" else "未配置",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            )
-            AccountCard(
-                title = stringResource(R.string.account_web_login),
-                subtitle = stringResource(R.string.account_web_login_subtitle),
-                onClick = { navigator.navigate(Route.SettingsAccountDouyuLoginWebview) }
-            )
-            AccountCard(
-                title = stringResource(R.string.account_cookie_login),
-                subtitle = stringResource(R.string.account_cookie_login_subtitle),
-                onClick = { viewModel.showDouyuCookieDialog() }
-            )
-            if (uiState.douyuInspection.canRenew && !uiState.douyuBusy) {
-                AccountCard(title = "立即续期", onClick = viewModel::renewDouyuCookie)
-            }
-            if (uiState.douyuInspection.configured && !uiState.douyuBusy) {
-                AccountCard(
-                    title = stringResource(R.string.account_clear_cookie_action),
-                    subtitle = stringResource(R.string.account_clear_cookie_subtitle),
-                    onClick = {
-                        clearDouyuWebCookies()
-                        viewModel.logoutDouyu()
+        AdaptivePageFrame(Modifier.padding(padding), LocalAppLayout.current.settingsMaxWidthDp) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(if (embedded) Color.Transparent else MaterialTheme.colorScheme.background)
+                    .verticalScroll(rememberScrollState())
+                    .padding(
+                        start = 16.dp,
+                        top = if (embedded) 10.dp else 12.dp,
+                        end = 16.dp,
+                        bottom = 12.dp
+                    ),
+                verticalArrangement = Arrangement.spacedBy(18.dp)
+            ) {
+                // B站 Section
+                Column {
+                    SettingsSectionHeader(stringResource(R.string.account_bilibili_section))
+                    SettingsInsetCard(embedded = embedded) {
+                        AccountCard(
+                            title = stringResource(R.string.account_status_label),
+                            contentRight = {
+                                Text(
+                                    text = if (uiState.isLoggedInBiliBili) stringResource(R.string.account_status_logged_in)
+                                    else stringResource(R.string.account_status_logged_out),
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                                    color = if (uiState.isLoggedInBiliBili) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        )
+                        SettingsHairlineDivider()
+                        if (uiState.isLoggedInBiliBili) {
+                            AccountCard(
+                                title = stringResource(R.string.account_clear_cookie_action),
+                                subtitle = stringResource(R.string.account_clear_cookie_subtitle),
+                                isDanger = true,
+                                showDivider = false,
+                                onClick = { viewModel.logoutBiliBili() }
+                            )
+                        } else {
+                            AccountCard(
+                                title = stringResource(R.string.account_web_login),
+                                subtitle = stringResource(R.string.account_web_login_subtitle),
+                                onClick = { navigator.navigate(Route.SettingsAccountLoginWebview) }
+                            )
+                            AccountCard(
+                                title = stringResource(R.string.account_cookie_login),
+                                subtitle = stringResource(R.string.account_cookie_login_subtitle),
+                                showDivider = false,
+                                onClick = { viewModel.showBilibiliCookieDialog() }
+                            )
+                        }
                     }
-                )
+                }
+
+                // 抖音 Section
+                Column {
+                    SettingsSectionHeader(stringResource(R.string.account_douyin_section))
+                    SettingsInsetCard(embedded = embedded) {
+                        AccountCard(
+                            title = stringResource(R.string.account_status_label),
+                            subtitle = douyinCookieStatusDescription(uiState.douyinCookieInspection),
+                            contentRight = {
+                                Text(
+                                    text = douyinCookieStatusLabel(uiState.douyinCookieInspection.kind),
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                                    color = if (uiState.isLoggedInDouyin) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        )
+                        if (uiState.hasDouyinCookie) {
+                            AccountCard(
+                                title = stringResource(R.string.account_clear_cookie_action),
+                                subtitle = stringResource(R.string.account_clear_cookie_subtitle),
+                                isDanger = true,
+                                showDivider = !uiState.isLoggedInDouyin,
+                                onClick = { viewModel.logoutDouyin() }
+                            )
+                        }
+                        if (!uiState.isLoggedInDouyin) {
+                            AccountCard(
+                                title = stringResource(R.string.account_web_login),
+                                subtitle = stringResource(R.string.account_web_login_subtitle),
+                                onClick = { navigator.navigate(Route.SettingsAccountDouyinLoginWebview) }
+                            )
+                            AccountCard(
+                                title = stringResource(R.string.account_cookie_login),
+                                subtitle = stringResource(R.string.account_cookie_login_subtitle),
+                                showDivider = false,
+                                onClick = { viewModel.showDouyinCookieDialog() }
+                            )
+                        }
+                    }
+                }
+
+                // 斗鱼 Section
+                Column {
+                    SettingsSectionHeader(stringResource(R.string.account_douyu_section))
+                    SettingsInsetCard(embedded = embedded) {
+                        val hasRenewRow = uiState.douyuInspection.canRenew && !uiState.douyuBusy
+                        val hasClearRow = uiState.douyuInspection.configured && !uiState.douyuBusy
+                        AccountCard(
+                            title = stringResource(R.string.account_status_label),
+                            subtitle = douyuCookieStatusDescription(uiState.douyuInspection),
+                            contentRight = {
+                                Text(
+                                    text = if (uiState.douyuBusy) "处理中…" else if (uiState.douyuInspection.hasLoginToken) "已保存" else "未配置",
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                                    color = if (uiState.douyuInspection.hasLoginToken) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        )
+                        AccountCard(
+                            title = stringResource(R.string.account_web_login),
+                            subtitle = stringResource(R.string.account_web_login_subtitle),
+                            onClick = { navigator.navigate(Route.SettingsAccountDouyuLoginWebview) }
+                        )
+                        AccountCard(
+                            title = stringResource(R.string.account_cookie_login),
+                            subtitle = stringResource(R.string.account_cookie_login_subtitle),
+                            showDivider = hasRenewRow || hasClearRow,
+                            onClick = { viewModel.showDouyuCookieDialog() }
+                        )
+                        if (hasRenewRow) {
+                            AccountCard(
+                                title = "立即续期",
+                                showDivider = hasClearRow,
+                                onClick = viewModel::renewDouyuCookie
+                            )
+                        }
+                        if (hasClearRow) {
+                            AccountCard(
+                                title = stringResource(R.string.account_clear_cookie_action),
+                                subtitle = stringResource(R.string.account_clear_cookie_subtitle),
+                                isDanger = true,
+                                showDivider = false,
+                                onClick = {
+                                    clearDouyuWebCookies()
+                                    viewModel.logoutDouyu()
+                                }
+                            )
+                        }
+                    }
+                }
             }
-            Spacer(modifier = Modifier.height(16.dp))
         }
     }
 
-    // B站 Cookie Dialog
     if (uiState.showBilibiliCookieDialog) {
         CookieInputDialog(
             title = stringResource(R.string.account_bilibili_cookie_input_title),
@@ -199,7 +269,6 @@ fun AccountScreen(
         )
     }
 
-    // 抖音 Cookie Dialog
     if (uiState.showDouyinCookieDialog) {
         CookieInputDialog(
             title = stringResource(R.string.account_douyin_cookie_input_title),
@@ -232,24 +301,11 @@ internal fun douyuCookieStatusDescription(info: DouyuCookieInspection): String =
 }
 
 @Composable
-private fun AccountSectionHeader(title: String) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp)
-    ) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-            color = MaterialTheme.colorScheme.primary
-        )
-    }
-}
-
-@Composable
 private fun AccountCard(
     title: String,
     subtitle: String? = null,
+    isDanger: Boolean = false,
+    showDivider: Boolean = true,
     onClick: (() -> Unit)? = null,
     contentRight: (@Composable () -> Unit)? = null
 ) {
@@ -261,19 +317,23 @@ private fun AccountCard(
                     if (onClick != null) Modifier.clickable(onClick = onClick)
                     else Modifier
                 )
-                .padding(horizontal = 16.dp, vertical = 14.dp),
+                .padding(horizontal = 16.dp, vertical = 13.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(modifier = Modifier.weight(1f)) {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(end = 12.dp)
+            ) {
                 Text(
                     text = title,
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.Bold
+                    style = MaterialTheme.typography.bodyLarge.copy(
+                        fontWeight = FontWeight.Medium
                     ),
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = if (isDanger) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
                 )
                 if (subtitle != null) {
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = subtitle,
                         style = MaterialTheme.typography.bodySmall,
@@ -287,15 +347,14 @@ private fun AccountCard(
                 Icon(
                     imageVector = Icons.Default.ChevronRight,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(20.dp)
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                    modifier = Modifier.size(18.dp)
                 )
             }
         }
-        HorizontalDivider(
-            modifier = Modifier.padding(start = 16.dp),
-            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-        )
+        if (showDivider) {
+            SettingsHairlineDivider()
+        }
     }
 }
 
@@ -312,7 +371,14 @@ private fun CookieInputDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(title) },
+        shape = RoundedCornerShape(20.dp),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        title = {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
+            )
+        },
         text = {
             OutlinedTextField(
                 value = cookieText,
@@ -322,6 +388,7 @@ private fun CookieInputDialog(
                 supportingText = inputHint?.let { hint ->
                     { Text(hint(cookieText)) }
                 },
+                shape = RoundedCornerShape(12.dp),
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag(inputTag)

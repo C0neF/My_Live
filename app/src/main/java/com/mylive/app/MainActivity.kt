@@ -6,6 +6,7 @@ import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.util.Rational
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -35,8 +36,10 @@ import com.mylive.app.ui.navigation.Route
 import com.mylive.app.ui.orientation.resolveTabletOrientationMode
 import com.mylive.app.ui.orientation.tabletRequestedOrientation
 import com.mylive.app.ui.screen.room.player.LivePlaybackHostSignals
+import com.mylive.app.ui.screen.room.player.playbackPipAspectRatio
 import com.mylive.app.ui.theme.MyLiveTheme
 import com.mylive.app.service.FollowUpdateScheduleCoordinator
+import com.mylive.app.service.LanSyncService
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -148,6 +151,13 @@ class MainActivity : ComponentActivity() {
         super.onSaveInstanceState(outState)
     }
 
+    override fun onDestroy() {
+        if (isFinishing && LanSyncService.isRunning) {
+            LanSyncService.stop(applicationContext)
+        }
+        super.onDestroy()
+    }
+
 
     /**
      * On Android 13+ POST_NOTIFICATIONS is a runtime permission. Without it, the follow
@@ -180,12 +190,13 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             combine(
                 LivePlaybackHostSignals.autoPipOnLeaveFlow,
+                LivePlaybackHostSignals.videoAspectRatioFlow,
                 snapshotFlow { navigator.backStack.lastOrNull() }
-            ) { autoPipOnLeave, topRoute ->
-                shouldEnterPipOnUserLeave(autoPipOnLeave = autoPipOnLeave, topRoute = topRoute)
+            ) { autoPipOnLeave, aspectRatio, topRoute ->
+                shouldEnterPipOnUserLeave(autoPipOnLeave = autoPipOnLeave, topRoute = topRoute) to aspectRatio
             }
                 .distinctUntilChanged()
-                .collect { eligible ->
+                .collect { (eligible, _) ->
                     runCatching {
                         setPictureInPictureParams(pictureInPictureParams(autoEnter = eligible))
                     }
@@ -195,6 +206,8 @@ class MainActivity : ComponentActivity() {
 
     private fun pictureInPictureParams(autoEnter: Boolean): PictureInPictureParams {
         val builder = PictureInPictureParams.Builder()
+        val aspectRatio = playbackPipAspectRatio(LivePlaybackHostSignals.videoAspectRatioFlow.value)
+        builder.setAspectRatio(Rational((aspectRatio * 10_000).toInt(), 10_000))
         // Animate out of the video itself rather than cross-fading the whole window.
         val sourceRectHint = LivePlaybackHostSignals.sourceRectHint
         if (sourceRectHint != null) {

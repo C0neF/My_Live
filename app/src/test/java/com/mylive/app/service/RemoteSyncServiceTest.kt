@@ -333,8 +333,119 @@ class RemoteSyncServiceTest {
 
     @Test
     fun connectionErrorsDoNotReferenceRetiredWorkersDomain() {
-        val source = File("src/main/java/com/mylive/app/service/RemoteSyncService.kt").readText()
+        val source = File("../live-core/src/main/java/com/mylive/app/service/RemoteSyncService.kt").readText()
 
         assertFalse(source.contains("workers.dev"))
+    }
+
+    @Test
+    fun encryptedRoomSealsCookiesOnWireAndRejectsPlaintextOrWrongKeyPayloads() = runBlocking {
+        val server = MockWebServer()
+        val wireFrames = CopyOnWriteArrayList<String>()
+        val sockets = CopyOnWriteArrayList<WebSocket>()
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                return MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
+                    override fun onOpen(webSocket: WebSocket, response: okhttp3.Response) {
+                        sockets += webSocket
+                    }
+
+                    override fun onMessage(webSocket: WebSocket, text: String) {
+                        wireFrames += text
+                        val msg = JSONObject(text)
+                        val reqId = msg.optString("requestId")
+                        when (val type = msg.optString("type")) {
+                            "createRoom" -> {
+                                webSocket.send(
+                                    JSONObject()
+                                        .put("type", "roomCreated")
+                                        .put("requestId", reqId)
+                                        .put("roomId", "ENC123")
+                                        .toString()
+                                )
+                            }
+                            "joinRoom" -> {
+                                webSocket.send(
+                                    JSONObject()
+                                        .put("type", "roomJoined")
+                                        .put("requestId", reqId)
+                                        .toString()
+                                )
+                            }
+                            "sendBiliAccount" -> {
+                                val forwarded = JSONObject()
+                                    .put("type", "biliAccountReceived")
+                                    .put("payload", msg.optJSONObject("payload") ?: JSONObject())
+                                    .toString()
+                                sockets.filter { it !== webSocket }.forEach { it.send(forwarded) }
+                                webSocket.send(JSONObject().put("type", "ack").put("requestId", reqId).toString())
+                            }
+                        }
+                    }
+
+                    override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                        webSocket.close(code, reason)
+                    }
+                })
+            }
+        }
+        server.start()
+
+        val creator = RemoteSyncService()
+        val joiner = RemoteSyncService()
+        val receivedCookies = CopyOnWriteArrayList<String>()
+        val syncErrors = CopyOnWriteArrayList<String>()
+        joiner.onBiliAccountReceived = { _, content -> receivedCookies += content }
+        joiner.onSyncError = { err -> syncErrors += err }
+
+        try {
+            val baseUrl = server.url("/").toString().trimEnd('/').replace("http://", "ws://")
+
+            // Joining with only a bare 6-char room ID must fail before connecting.
+            val bareJoin = joiner.joinRoom(baseUrl, RemoteSyncService.K_DIRECT_PROXY_VALUE, "ENC123", JSONObject())
+            assertFalse(bareJoin.isSuccess)
+
+            val createResp = creator.createRoom(baseUrl, RemoteSyncService.K_DIRECT_PROXY_VALUE, JSONObject())
+            assertTrue(createResp.message, createResp.isSuccess)
+            assertTrue(creator.currentInviteCode.startsWith("ENC123-"))
+
+            val joinResp = joiner.joinRoom(
+                baseUrl,
+                RemoteSyncService.K_DIRECT_PROXY_VALUE,
+                creator.currentQrPayload,
+                JSONObject()
+            )
+            assertTrue(joinResp.message, joinResp.isSuccess)
+
+            val secretJson = """{"cookie":"SESSDATA=ultra_secret_cookie_token"}"""
+            val sendResp = creator.sendContent("SendBiliAccount", overlay = false, content = secretJson)
+            assertTrue(sendResp.message, sendResp.isSuccess)
+
+            // Wait briefly for async frame delivery
+            val deadline = System.currentTimeMillis() + 3_000L
+            while (receivedCookies.isEmpty() && System.currentTimeMillis() < deadline) {
+                Thread.sleep(20)
+            }
+            assertEquals(listOf(secretJson), receivedCookies.toList())
+            assertTrue(wireFrames.none { it.contains("ultra_secret_cookie_token") || it.contains("SESSDATA") })
+
+            // Injecting an unencrypted payload from relay must be rejected and reported via onSyncError
+            sockets.last().send(
+                JSONObject()
+                    .put("type", "biliAccountReceived")
+                    .put("payload", JSONObject().put("overlay", false).put("content", """{"cookie":"injected"}"""))
+                    .toString()
+            )
+            val errDeadline = System.currentTimeMillis() + 3_000L
+            while (syncErrors.isEmpty() && System.currentTimeMillis() < errDeadline) {
+                Thread.sleep(20)
+            }
+            assertEquals(1, receivedCookies.size)
+            assertTrue(syncErrors.isNotEmpty())
+        } finally {
+            creator.disconnect()
+            joiner.disconnect()
+            server.shutdown()
+        }
     }
 }

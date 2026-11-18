@@ -1,40 +1,45 @@
 package com.mylive.app.ui.screen.settings
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import com.mylive.app.ui.theme.Icons
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mylive.app.R
 import com.mylive.app.core.model.DanmakuSettingsPolicy
+import com.mylive.app.ui.component.settings.SettingsHairlineDivider
+import com.mylive.app.ui.component.settings.SettingsInsetCard
 import com.mylive.app.ui.component.settings.SettingsMenu
+import com.mylive.app.ui.component.settings.SettingsSectionHeader
+import com.mylive.app.ui.component.settings.SettingsSelectionDialog
+import com.mylive.app.ui.component.settings.SettingsSwitch
+import com.mylive.app.ui.layout.AdaptivePageFrame
+import com.mylive.app.ui.layout.LocalAppLayout
 import com.mylive.app.ui.navigation.Navigator
 import com.mylive.app.ui.navigation.Route
-import com.mylive.app.ui.component.settings.SettingsSwitch
+import com.mylive.app.ui.theme.Icons
 
 private val fontWeightValues = DanmakuSettingsPolicy.fontWeightValues
 private val lineCountValues = (0..12).toList()
@@ -62,6 +67,7 @@ enum class DanmuSettingDialog {
 @Composable
 fun DanmuSettingsScreen(
     navigator: Navigator,
+    embedded: Boolean = false,
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val danmuEnable by viewModel.danmuEnable.collectAsStateWithLifecycle()
@@ -111,241 +117,239 @@ fun DanmuSettingsScreen(
     val handleBack = navigator.rememberRouteActions().onBack
 
     Scaffold(
+        containerColor = if (embedded) Color.Transparent else MaterialTheme.colorScheme.background,
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.settings_danmu)) },
-                navigationIcon = {
-                    IconButton(onClick = handleBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(R.string.cd_back)
+            if (!embedded) {
+                TopAppBar(
+                    title = { Text(stringResource(R.string.settings_danmu)) },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.background
+                    ),
+                    navigationIcon = {
+                        IconButton(onClick = handleBack) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = stringResource(R.string.cd_back)
+                            )
+                        }
+                    }
+                )
+            }
+        }
+    ) { padding ->
+        AdaptivePageFrame(Modifier.padding(padding), LocalAppLayout.current.settingsMaxWidthDp) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(if (embedded) Color.Transparent else MaterialTheme.colorScheme.background)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(18.dp)
+            ) {
+                Column {
+                    SettingsSectionHeader("弹幕屏蔽")
+                    SettingsInsetCard(embedded = embedded) {
+                        SettingsSwitch(
+                            title = "启用弹幕屏蔽",
+                            subtitle = "关闭后关键词和用户屏蔽都会暂时失效",
+                            checked = danmuShieldEnable,
+                            onCheckedChange = { viewModel.setDanmuShieldEnable(it) }
+                        )
+                        SettingsHairlineDivider()
+                        SettingsSwitch(
+                            title = "启用关键词屏蔽",
+                            checked = danmuKeywordShieldEnable,
+                            onCheckedChange = { viewModel.setDanmuKeywordShieldEnable(it) }
+                        )
+                        SettingsHairlineDivider()
+                        SettingsSwitch(
+                            title = "启用用户屏蔽",
+                            subtitle = "可按平台分别管理，也可在直播间点击用户名快速处理",
+                            checked = danmuUserShieldEnable,
+                            onCheckedChange = { viewModel.setDanmuUserShieldEnable(it) }
+                        )
+                        SettingsHairlineDivider()
+                        SettingsMenu(
+                            title = "打开屏蔽管理",
+                            subtitle = "添加、编辑关键词和屏蔽用户，管理屏蔽预设",
+                            onClick = { navigator.navigate(Route.SettingsDanmuShield) }
                         )
                     }
                 }
-            )
-        }
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .background(MaterialTheme.colorScheme.background)
-                .verticalScroll(rememberScrollState())
-        ) {
-            SettingsSectionTitle("弹幕屏蔽")
 
-            SettingsSwitch(
-                title = "启用弹幕屏蔽",
-                subtitle = "关闭后关键词和用户屏蔽都会暂时失效",
-                checked = danmuShieldEnable,
-                onCheckedChange = { viewModel.setDanmuShieldEnable(it) }
-            )
-            HorizontalDivider()
+                Column {
+                    SettingsSectionHeader("弹幕显示")
+                    SettingsInsetCard(embedded = embedded) {
+                        SettingsSwitch(
+                            title = stringResource(R.string.danmu_switch_title),
+                            subtitle = stringResource(R.string.danmu_enable_subtitle),
+                            checked = danmuEnable,
+                            onCheckedChange = { viewModel.setDanmuEnable(it) }
+                        )
+                        SettingsHairlineDivider()
+                        SettingsSwitch(
+                            title = stringResource(R.string.danmu_render_emoji_title),
+                            subtitle = stringResource(R.string.danmu_render_emoji_subtitle),
+                            checked = danmuRenderEmoji,
+                            onCheckedChange = { viewModel.setDanmuRenderEmoji(it) }
+                        )
+                        SettingsHairlineDivider()
+                        SettingsSwitch(
+                            title = stringResource(R.string.danmu_hide_scroll_title),
+                            checked = danmuHideScroll,
+                            onCheckedChange = { viewModel.setDanmuHideScroll(it) }
+                        )
+                        SettingsHairlineDivider()
+                        SettingsSwitch(
+                            title = stringResource(R.string.danmu_hide_bottom_title),
+                            checked = danmuHideBottom,
+                            onCheckedChange = { viewModel.setDanmuHideBottom(it) }
+                        )
+                        SettingsHairlineDivider()
+                        SettingsSwitch(
+                            title = stringResource(R.string.danmu_hide_top_title),
+                            checked = danmuHideTop,
+                            onCheckedChange = { viewModel.setDanmuHideTop(it) }
+                        )
+                        SettingsHairlineDivider()
+                        SettingsMenu(
+                            title = stringResource(R.string.danmu_size_title),
+                            value = DanmakuSettingsPolicy.multiplierText(size),
+                            onClick = { activeDialog = DanmuSettingDialog.FONT_SIZE }
+                        )
+                        SettingsHairlineDivider()
+                        SettingsMenu(
+                            title = stringResource(R.string.danmu_speed_title),
+                            value = DanmakuSettingsPolicy.multiplierText(speed),
+                            onClick = { activeDialog = DanmuSettingDialog.SPEED }
+                        )
+                        SettingsHairlineDivider()
+                        SettingsMenu(
+                            title = stringResource(R.string.danmu_area_title),
+                            value = DanmakuSettingsPolicy.percentText(area),
+                            onClick = { activeDialog = DanmuSettingDialog.AREA }
+                        )
+                        SettingsHairlineDivider()
+                        SettingsMenu(
+                            title = "显示几行",
+                            subtitle = "0 表示不显示播放器弹幕，超过当前区域上限时自动收紧",
+                            value = danmuLineCountText(danmuLineCount),
+                            onClick = { activeDialog = DanmuSettingDialog.LINE_COUNT }
+                        )
+                        SettingsHairlineDivider()
+                        SettingsMenu(
+                            title = stringResource(R.string.danmu_opacity_title),
+                            value = DanmakuSettingsPolicy.percentText(opacity),
+                            onClick = { activeDialog = DanmuSettingDialog.OPACITY }
+                        )
+                        SettingsHairlineDivider()
+                        SettingsMenu(
+                            title = stringResource(R.string.danmu_font_weight_title),
+                            value = fontWeightOptions.getOrElse(fontWeightValues.indexOf(weight)) { fontWeightDefault },
+                            onClick = { activeDialog = DanmuSettingDialog.FONT_WEIGHT }
+                        )
+                        SettingsHairlineDivider()
+                        SettingsMenu(
+                            title = stringResource(R.string.danmu_stroke_title),
+                            value = DanmakuSettingsPolicy.strokeText(stroke),
+                            onClick = { activeDialog = DanmuSettingDialog.STROKE_WIDTH }
+                        )
+                        SettingsHairlineDivider()
+                        SettingsMenu(
+                            title = "全局弹幕延迟",
+                            subtitle = "单位毫秒，适合不同平台节奏不同或网络抖动时微调",
+                            value = "${danmuDelay.toInt()} ms",
+                            onClick = { activeDialog = DanmuSettingDialog.DELAY }
+                        )
+                        SettingsHairlineDivider()
+                        SettingsMenu(
+                            title = "顶部安全边距",
+                            subtitle = "异形屏或状态栏遮挡时可微调",
+                            value = "${danmuTopMargin.toInt()} dp",
+                            onClick = { activeDialog = DanmuSettingDialog.TOP_MARGIN }
+                        )
+                        SettingsHairlineDivider()
+                        SettingsMenu(
+                            title = "底部安全边距",
+                            subtitle = "导航栏或手势条遮挡时可微调",
+                            value = "${danmuBottomMargin.toInt()} dp",
+                            onClick = { activeDialog = DanmuSettingDialog.BOTTOM_MARGIN }
+                        )
+                    }
+                }
 
-            SettingsSwitch(
-                title = "启用关键词屏蔽",
-                checked = danmuKeywordShieldEnable,
-                onCheckedChange = { viewModel.setDanmuKeywordShieldEnable(it) }
-            )
-            HorizontalDivider()
-
-            SettingsSwitch(
-                title = "启用用户屏蔽",
-                subtitle = "可按平台分别管理，也可在直播间点击用户名快速处理",
-                checked = danmuUserShieldEnable,
-                onCheckedChange = { viewModel.setDanmuUserShieldEnable(it) }
-            )
-            HorizontalDivider()
-
-            SettingsMenu(
-                title = "打开屏蔽管理",
-                subtitle = "添加、编辑关键词和屏蔽用户，管理屏蔽预设",
-                onClick = { navigator.navigate(Route.SettingsDanmuShield) }
-            )
-            HorizontalDivider()
-
-            SettingsSectionTitle("弹幕显示")
-
-            SettingsSwitch(
-                title = stringResource(R.string.danmu_switch_title),
-                subtitle = stringResource(R.string.danmu_enable_subtitle),
-                checked = danmuEnable,
-                onCheckedChange = { viewModel.setDanmuEnable(it) }
-            )
-            HorizontalDivider()
-
-            SettingsSwitch(
-                title = stringResource(R.string.danmu_render_emoji_title),
-                subtitle = stringResource(R.string.danmu_render_emoji_subtitle),
-                checked = danmuRenderEmoji,
-                onCheckedChange = { viewModel.setDanmuRenderEmoji(it) }
-            )
-            HorizontalDivider()
-
-            SettingsSwitch(
-                title = stringResource(R.string.danmu_hide_scroll_title),
-                checked = danmuHideScroll,
-                onCheckedChange = { viewModel.setDanmuHideScroll(it) }
-            )
-            HorizontalDivider()
-
-            SettingsSwitch(
-                title = stringResource(R.string.danmu_hide_bottom_title),
-                checked = danmuHideBottom,
-                onCheckedChange = { viewModel.setDanmuHideBottom(it) }
-            )
-            HorizontalDivider()
-
-            SettingsSwitch(
-                title = stringResource(R.string.danmu_hide_top_title),
-                checked = danmuHideTop,
-                onCheckedChange = { viewModel.setDanmuHideTop(it) }
-            )
-            HorizontalDivider()
-
-            // Menu items with selection dialogs
-            SettingsMenu(
-                title = stringResource(R.string.danmu_size_title),
-                value = DanmakuSettingsPolicy.multiplierText(size),
-                onClick = { activeDialog = DanmuSettingDialog.FONT_SIZE }
-            )
-            HorizontalDivider()
-
-            SettingsMenu(
-                title = stringResource(R.string.danmu_speed_title),
-                value = DanmakuSettingsPolicy.multiplierText(speed),
-                onClick = { activeDialog = DanmuSettingDialog.SPEED }
-            )
-            HorizontalDivider()
-
-            SettingsMenu(
-                title = stringResource(R.string.danmu_area_title),
-                value = DanmakuSettingsPolicy.percentText(area),
-                onClick = { activeDialog = DanmuSettingDialog.AREA }
-            )
-            HorizontalDivider()
-
-            SettingsMenu(
-                title = "显示几行",
-                subtitle = "0 表示不显示播放器弹幕，超过当前区域上限时自动收紧",
-                value = danmuLineCountText(danmuLineCount),
-                onClick = { activeDialog = DanmuSettingDialog.LINE_COUNT }
-            )
-            HorizontalDivider()
-
-            SettingsMenu(
-                title = stringResource(R.string.danmu_opacity_title),
-                value = DanmakuSettingsPolicy.percentText(opacity),
-                onClick = { activeDialog = DanmuSettingDialog.OPACITY }
-            )
-            HorizontalDivider()
-
-            SettingsMenu(
-                title = stringResource(R.string.danmu_font_weight_title),
-                value = fontWeightOptions.getOrElse(fontWeightValues.indexOf(weight)) { fontWeightDefault },
-                onClick = { activeDialog = DanmuSettingDialog.FONT_WEIGHT }
-            )
-            HorizontalDivider()
-
-            SettingsMenu(
-                title = stringResource(R.string.danmu_stroke_title),
-                value = DanmakuSettingsPolicy.strokeText(stroke),
-                onClick = { activeDialog = DanmuSettingDialog.STROKE_WIDTH }
-            )
-            HorizontalDivider()
-
-            SettingsMenu(
-                title = "全局弹幕延迟",
-                subtitle = "单位毫秒，适合不同平台节奏不同或网络抖动时微调",
-                value = "${danmuDelay.toInt()} ms",
-                onClick = { activeDialog = DanmuSettingDialog.DELAY }
-            )
-            HorizontalDivider()
-
-            SettingsMenu(
-                title = "顶部安全边距",
-                subtitle = "异形屏或状态栏遮挡时可微调",
-                value = "${danmuTopMargin.toInt()} dp",
-                onClick = { activeDialog = DanmuSettingDialog.TOP_MARGIN }
-            )
-            HorizontalDivider()
-
-            SettingsMenu(
-                title = "底部安全边距",
-                subtitle = "导航栏或手势条遮挡时可微调",
-                value = "${danmuBottomMargin.toInt()} dp",
-                onClick = { activeDialog = DanmuSettingDialog.BOTTOM_MARGIN }
-            )
-            HorizontalDivider()
-
-            SettingsSectionTitle("弹幕过滤")
-
-            SettingsSwitch(
-                title = "重复弹幕过滤",
-                subtitle = "同一用户在最近若干条内重复刷同一句时只显示一次",
-                checked = danmuDedupeEnable,
-                onCheckedChange = { viewModel.setDanmuDedupeEnable(it) }
-            )
-            HorizontalDivider()
-
-            SettingsSwitch(
-                title = "严格去重模式",
-                subtitle = "全局过滤不同观众发送的相同弹幕",
-                checked = danmuDedupeStrictMode,
-                onCheckedChange = { viewModel.setDanmuDedupeStrictMode(it) }
-            )
-            HorizontalDivider()
-
-            SettingsMenu(
-                title = "过滤窗口",
-                subtitle = "默认 10 条；窗口越大越容易过滤刷屏",
-                value = "$danmuDedupeWindow 条",
-                onClick = { activeDialog = DanmuSettingDialog.DEDUPE_WINDOW }
-            )
-            HorizontalDivider()
-
-            SettingsMenu(
-                title = "过滤步长",
-                subtitle = "默认 2；数值越大检查窗口移动越少",
-                value = "$danmuDedupeStep 条",
-                onClick = { activeDialog = DanmuSettingDialog.DEDUPE_STEP }
-            )
+                Column {
+                    SettingsSectionHeader("弹幕过滤")
+                    SettingsInsetCard(embedded = embedded) {
+                        SettingsSwitch(
+                            title = "重复弹幕过滤",
+                            subtitle = "同一用户在最近若干条内重复刷同一句时只显示一次",
+                            checked = danmuDedupeEnable,
+                            onCheckedChange = { viewModel.setDanmuDedupeEnable(it) }
+                        )
+                        SettingsHairlineDivider()
+                        SettingsSwitch(
+                            title = "严格去重模式",
+                            subtitle = "全局过滤不同观众发送的相同弹幕",
+                            checked = danmuDedupeStrictMode,
+                            onCheckedChange = { viewModel.setDanmuDedupeStrictMode(it) }
+                        )
+                        SettingsHairlineDivider()
+                        SettingsMenu(
+                            title = "过滤窗口",
+                            subtitle = "默认 10 条；窗口越大越容易过滤刷屏",
+                            value = "$danmuDedupeWindow 条",
+                            onClick = { activeDialog = DanmuSettingDialog.DEDUPE_WINDOW }
+                        )
+                        SettingsHairlineDivider()
+                        SettingsMenu(
+                            title = "过滤步长",
+                            subtitle = "默认 2；数值越大检查窗口移动越少",
+                            value = "$danmuDedupeStep 条",
+                            onClick = { activeDialog = DanmuSettingDialog.DEDUPE_STEP }
+                        )
+                    }
+                }
+            }
         }
     }
 
     when (activeDialog) {
         DanmuSettingDialog.FONT_SIZE -> {
-            SelectionDialog(
+            SettingsSelectionDialog(
                 title = stringResource(R.string.danmu_size_title),
                 options = fontSizeOptions,
                 values = fontSizeValues,
                 selectedValue = size,
                 onSelect = { viewModel.setDanmuSize(it) },
-                onDismiss = { activeDialog = null }
+                onDismiss = { activeDialog = null },
+                equalsPredicate = DanmakuSettingsPolicy::sameValue
             )
         }
         DanmuSettingDialog.SPEED -> {
-            SelectionDialog(
+            SettingsSelectionDialog(
                 title = stringResource(R.string.danmu_speed_title),
                 options = speedOptions,
                 values = speedValues,
                 selectedValue = speed,
                 onSelect = { viewModel.setDanmuSpeed(it) },
-                onDismiss = { activeDialog = null }
+                onDismiss = { activeDialog = null },
+                equalsPredicate = DanmakuSettingsPolicy::sameValue
             )
         }
         DanmuSettingDialog.AREA -> {
-            SelectionDialog(
+            SettingsSelectionDialog(
                 title = stringResource(R.string.danmu_area_title),
                 options = areaOptions,
                 values = areaValues,
                 selectedValue = area,
                 onSelect = { viewModel.setDanmuArea(it) },
-                onDismiss = { activeDialog = null }
+                onDismiss = { activeDialog = null },
+                equalsPredicate = DanmakuSettingsPolicy::sameValue
             )
         }
         DanmuSettingDialog.LINE_COUNT -> {
-            SelectionDialog(
+            SettingsSelectionDialog(
                 title = "显示几行",
                 options = lineCountValues.map { danmuLineCountText(it) }.toTypedArray(),
                 values = lineCountValues,
@@ -355,17 +359,18 @@ fun DanmuSettingsScreen(
             )
         }
         DanmuSettingDialog.OPACITY -> {
-            SelectionDialog(
+            SettingsSelectionDialog(
                 title = stringResource(R.string.danmu_opacity_title),
                 options = opacityOptions,
                 values = opacityValues,
                 selectedValue = opacity,
                 onSelect = { viewModel.setDanmuOpacity(it) },
-                onDismiss = { activeDialog = null }
+                onDismiss = { activeDialog = null },
+                equalsPredicate = DanmakuSettingsPolicy::sameValue
             )
         }
         DanmuSettingDialog.FONT_WEIGHT -> {
-            SelectionDialog(
+            SettingsSelectionDialog(
                 title = stringResource(R.string.danmu_font_weight_title),
                 options = fontWeightOptions,
                 values = fontWeightValues,
@@ -375,17 +380,18 @@ fun DanmuSettingsScreen(
             )
         }
         DanmuSettingDialog.STROKE_WIDTH -> {
-            SelectionDialog(
+            SettingsSelectionDialog(
                 title = stringResource(R.string.danmu_stroke_title),
                 options = strokeWidthOptions,
                 values = strokeWidthValues,
                 selectedValue = stroke,
                 onSelect = { viewModel.setDanmuStrokeWidth(it) },
-                onDismiss = { activeDialog = null }
+                onDismiss = { activeDialog = null },
+                equalsPredicate = DanmakuSettingsPolicy::sameValue
             )
         }
         DanmuSettingDialog.DELAY -> {
-            SelectionDialog(
+            SettingsSelectionDialog(
                 title = "全局弹幕延迟",
                 options = delayValues.map { "$it ms" }.toTypedArray(),
                 values = delayValues,
@@ -395,7 +401,7 @@ fun DanmuSettingsScreen(
             )
         }
         DanmuSettingDialog.TOP_MARGIN -> {
-            SelectionDialog(
+            SettingsSelectionDialog(
                 title = "顶部安全边距",
                 options = safeMarginValues.map { "$it dp" }.toTypedArray(),
                 values = safeMarginValues,
@@ -405,7 +411,7 @@ fun DanmuSettingsScreen(
             )
         }
         DanmuSettingDialog.BOTTOM_MARGIN -> {
-            SelectionDialog(
+            SettingsSelectionDialog(
                 title = "底部安全边距",
                 options = safeMarginValues.map { "$it dp" }.toTypedArray(),
                 values = safeMarginValues,
@@ -415,7 +421,7 @@ fun DanmuSettingsScreen(
             )
         }
         DanmuSettingDialog.DEDUPE_WINDOW -> {
-            SelectionDialog(
+            SettingsSelectionDialog(
                 title = "过滤窗口",
                 options = dedupeWindowValues.map { "$it 条" }.toTypedArray(),
                 values = dedupeWindowValues,
@@ -425,7 +431,7 @@ fun DanmuSettingsScreen(
             )
         }
         DanmuSettingDialog.DEDUPE_STEP -> {
-            SelectionDialog(
+            SettingsSelectionDialog(
                 title = "过滤步长",
                 options = dedupeStepValues.map { "$it 条" }.toTypedArray(),
                 values = dedupeStepValues,
@@ -434,78 +440,9 @@ fun DanmuSettingsScreen(
                 onDismiss = { activeDialog = null }
             )
         }
-        null -> { /* Do nothing */ }
+        null -> Unit
     }
-}
-
-@Composable
-private fun SettingsSectionTitle(title: String) {
-    Text(
-        text = title,
-        style = MaterialTheme.typography.titleSmall,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 4.dp)
-    )
 }
 
 private fun danmuLineCountText(value: Int): String =
     if (value <= 0) "不显示弹幕" else "$value 行"
-
-@Composable
-private fun <T> SelectionDialog(
-    title: String,
-    options: Array<String>,
-    values: List<T>,
-    selectedValue: T,
-    onSelect: (T) -> Unit,
-    onDismiss: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(text = title) },
-        text = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
-            ) {
-                values.forEachIndexed { index, value ->
-                    val isSelected = if (value is Double && selectedValue is Double)
-                        DanmakuSettingsPolicy.sameValue(value, selectedValue) else value == selectedValue
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                onSelect(value)
-                                onDismiss()
-                            }
-                            .padding(vertical = 12.dp, horizontal = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = options.getOrElse(index) { value.toString() },
-                            style = MaterialTheme.typography.bodyLarge,
-                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.weight(1f)
-                        )
-                        if (isSelected) {
-                            Icon(
-                                imageVector = Icons.Default.Check,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {},
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(android.R.string.cancel))
-            }
-        }
-    )
-}
-

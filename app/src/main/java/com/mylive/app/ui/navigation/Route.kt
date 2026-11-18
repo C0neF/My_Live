@@ -22,7 +22,8 @@ sealed interface Route : NavKey {
     data class LiveRoomDetail(
         val roomId: String,
         val siteId: String = "",
-        val initialIsFollowing: Boolean? = null
+        val initialIsFollowing: Boolean? = null,
+        val initialFullscreen: Boolean = false
     ) : Route
 
     @Serializable
@@ -92,7 +93,10 @@ sealed interface Route : NavKey {
     data object LocalSync : Route
 
     @Serializable
-    data class RemoteSyncRoom(val roomId: String = "") : Route
+    data class RemoteSyncRoom(
+        val roomId: String = "",
+        val roomKey: String = ""
+    ) : Route
 
     @Serializable
     data object DebugLog : Route

@@ -1,14 +1,18 @@
 package com.mylive.app.ui.screen.sync
 
 import android.widget.Toast
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import com.mylive.app.ui.theme.Icons
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -20,14 +24,20 @@ import androidx.lifecycle.viewModelScope
 import com.mylive.app.ui.navigation.Navigator
 import com.mylive.app.ui.navigation.Route
 import com.mylive.app.R
+import com.mylive.app.core.sync.LanSyncClient
 import com.mylive.app.core.sync.LanSyncImportType
 import com.mylive.app.data.repository.FollowRepository
 import com.mylive.app.data.repository.HistoryRepository
 import com.mylive.app.data.repository.ProfileBackupManager
 import com.mylive.app.data.repository.ShieldRepository
-import com.mylive.app.data.sync.LanSyncClient
+import com.mylive.app.ui.component.settings.SettingsHairlineDivider
+import com.mylive.app.ui.component.settings.SettingsInsetCard
 import com.mylive.app.ui.component.settings.SettingsMenu
+import com.mylive.app.ui.component.settings.SettingsSectionHeader
+import com.mylive.app.ui.layout.AdaptivePageFrame
+import com.mylive.app.ui.layout.LocalAppLayout
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -61,6 +71,8 @@ class SyncDeviceViewModel @Inject constructor(
                 val peer = lanSyncClient.connect(address, port, token)
                 peer.import(LanSyncImportType.PROFILE, json, overlay)
                 _syncResults.value = _syncResults.value + ("profile" to "✅ 配置包同步成功")
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
                 _syncResults.value = _syncResults.value + ("profile" to "❌ 配置包同步失败: ${e.message}")
             } finally {
@@ -80,6 +92,8 @@ class SyncDeviceViewModel @Inject constructor(
                 peer.import(LanSyncImportType.FOLLOW, followRepository.exportToJson(), overlay)
 
                 _syncResults.value = _syncResults.value + ("follow" to "✅ 关注列表同步成功")
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
                 _syncResults.value = _syncResults.value + ("follow" to "❌ 关注列表同步失败: ${e.message}")
             } finally {
@@ -107,6 +121,8 @@ class SyncDeviceViewModel @Inject constructor(
                 }
                 peer.import(LanSyncImportType.HISTORY, jsonArray.toString(), overlay)
                 _syncResults.value = _syncResults.value + ("history" to "✅ 观看历史同步成功")
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
                 _syncResults.value = _syncResults.value + ("history" to "❌ 观看历史同步失败: ${e.message}")
             } finally {
@@ -124,6 +140,8 @@ class SyncDeviceViewModel @Inject constructor(
                 val payload = encodeShieldKeywordsForLanSync(shields)
                 peer.import(LanSyncImportType.BLOCKED_WORD, payload, overlay)
                 _syncResults.value = _syncResults.value + ("shield" to "✅ 屏蔽词同步成功")
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
                 _syncResults.value = _syncResults.value + ("shield" to "❌ 屏蔽词同步失败: ${e.message}")
             } finally {
@@ -143,7 +161,6 @@ fun SyncDeviceScreen(
     key: Route.SyncDevice,
     viewModel: SyncDeviceViewModel = hiltViewModel()
 ) {
-    val context = LocalContext.current
     val syncingKey by viewModel.syncingKey.collectAsStateWithLifecycle()
     val syncResults by viewModel.syncResults.collectAsStateWithLifecycle()
 
@@ -158,9 +175,13 @@ fun SyncDeviceScreen(
     var showConfirmDialog by remember { mutableStateOf<String?>(null) }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
                 title = { Text("设备同步") },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background
+                ),
                 navigationIcon = {
                     IconButton(onClick = handleBack) {
                         Icon(
@@ -172,113 +193,120 @@ fun SyncDeviceScreen(
             )
         }
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-        ) {
-            // Device info card
-            Card(
+        AdaptivePageFrame(Modifier.padding(padding), LocalAppLayout.current.settingsMaxWidthDp) {
+            Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp)
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.background)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(18.dp)
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(20.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Sync,
-                        contentDescription = null,
-                        modifier = Modifier.size(40.dp),
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Column {
-                        Text(
-                            text = deviceName,
-                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
-                        )
-                        Text(
-                            text = "$address:$port",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                Column {
+                    SettingsSectionHeader("目标设备")
+                    SettingsInsetCard {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(14.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(42.dp)
+                                        .clip(CircleShape)
+                                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Sync,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(22.dp),
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(14.dp))
+                                Column {
+                                    Text(
+                                        text = deviceName,
+                                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
+                                    )
+                                    Text(
+                                        text = "$address:$port",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+
+                            OutlinedTextField(
+                                value = token,
+                                onValueChange = { token = it.trim() },
+                                label = { Text("配对码") },
+                                placeholder = { Text("扫码会自动填入；手动连接请填对方“本机信息”中的配对码") },
+                                shape = RoundedCornerShape(12.dp),
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
                     }
                 }
-            }
 
-            OutlinedTextField(
-                value = token,
-                onValueChange = { token = it.trim() },
-                label = { Text("配对码") },
-                placeholder = { Text("扫码会自动填入；手动连接请填对方“本机信息”中的配对码") },
-                singleLine = true,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-            )
+                Column {
+                    SettingsSectionHeader("同步操作")
+                    SettingsInsetCard {
+                        val operations = listOf(
+                            "profile" to "完整配置包" to { showConfirmDialog = "profile" },
+                            "follow" to "关注列表 + 标签" to { showConfirmDialog = "follow" },
+                            "history" to "观看历史" to { showConfirmDialog = "history" },
+                            "shield" to "弹幕屏蔽词" to { showConfirmDialog = "shield" }
+                        )
 
-            Text(
-                text = "同步操作",
-                style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-            )
+                        operations.forEachIndexed { index, (pair, action) ->
+                            val (opKey, title) = pair
+                            val result = syncResults[opKey]
+                            val isSyncing = syncingKey == opKey
 
-            // Sync operations
-            val operations = listOf(
-                "profile" to "完整配置包" to { showConfirmDialog = "profile" },
-                "follow" to "关注列表 + 标签" to { showConfirmDialog = "follow" },
-                "history" to "观看历史" to { showConfirmDialog = "history" },
-                "shield" to "弹幕屏蔽词" to { showConfirmDialog = "shield" }
-            )
-
-            operations.forEachIndexed { index, (pair, action) ->
-                val (key, title) = pair
-                val result = syncResults[key]
-                val isSyncing = syncingKey == key
-
-                SettingsMenu(
-                    title = if (isSyncing) "$title (同步中...)" else title,
-                    subtitle = result ?: "点击开始同步",
-                    onClick = {
-                        if (syncingKey == null) action()
-                    },
-                    enabled = syncingKey == null
-                )
-                if (index < operations.lastIndex) {
-                    HorizontalDivider()
+                            SettingsMenu(
+                                title = if (isSyncing) "$title (同步中...)" else title,
+                                subtitle = result ?: "点击开始同步",
+                                onClick = {
+                                    if (syncingKey == null) action()
+                                },
+                                enabled = syncingKey == null
+                            )
+                            if (index < operations.lastIndex) {
+                                SettingsHairlineDivider()
+                            }
+                        }
+                    }
                 }
+
+                Text(
+                    text = "提示：同步操作会将数据推送到目标设备。账号 Cookie 不通过局域网 HTTP 同步。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 8.dp)
+                )
             }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            Text(
-                text = "提示：同步操作会将数据推送到目标设备。账号 Cookie 不通过局域网 HTTP 同步。",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 16.dp)
-            )
-
-            Spacer(modifier = Modifier.height(32.dp))
         }
     }
 
     // Confirmation dialog
     if (showConfirmDialog != null) {
-        val key = showConfirmDialog!!
+        val opKey = showConfirmDialog!!
         AlertDialog(
             onDismissRequest = { showConfirmDialog = null },
+            shape = RoundedCornerShape(20.dp),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
             title = { Text("确认同步") },
             text = { Text("确定要将数据同步到 $deviceName 吗？") },
             confirmButton = {
                 TextButton(onClick = {
                     showConfirmDialog = null
-                    when (key) {
+                    when (opKey) {
                         "profile" -> viewModel.syncProfile(address, port, token)
                         "follow" -> viewModel.syncFollow(address, port, token)
                         "history" -> viewModel.syncHistory(address, port, token)

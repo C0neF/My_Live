@@ -31,7 +31,7 @@ import javax.inject.Singleton
 @Singleton
 class JsEngine @Inject constructor(
     @ApplicationContext context: Context
-) {
+) : JsExecutor {
     private val appContext = context.applicationContext
 
     // Owns the single dedicated thread the QuickJS runtime lives on, and enforces deadlines.
@@ -49,7 +49,7 @@ class JsEngine @Inject constructor(
      * Execute a JS function from a script file in assets/scripts/.
      * @return the function's String result (throws if it returns null).
      */
-    suspend fun execute(scriptName: String, functionName: String, vararg args: String): String {
+    override suspend fun execute(scriptName: String, functionName: String, vararg args: String): String {
         val script = loadAssetScriptOffThread(scriptName)
         return runOnEngineThread(BUNDLED_SCRIPT_TIMEOUT_MS, "$scriptName#$functionName") {
             evalAndCall(script, functionName, args)
@@ -62,7 +62,7 @@ class JsEngine @Inject constructor(
      * Callers that pass a script downloaded at runtime MUST screen it first with
      * [RemoteScriptPolicy.requireTrustedRemoteScript].
      */
-    suspend fun executeRaw(script: String, functionName: String, vararg args: String): String =
+    override suspend fun executeRaw(script: String, functionName: String, vararg args: String): String =
         runOnEngineThread(REMOTE_SCRIPT_TIMEOUT_MS, "raw#$functionName") {
             evalAndCall(script, functionName, args)
         }
@@ -72,7 +72,7 @@ class JsEngine @Inject constructor(
      * accepts the result or [maxAttempts] is reached — all within a single context. This avoids
      * re-parsing a large script (e.g. the ~625 KB webmssdk) on every retry attempt.
      */
-    suspend fun executeWithRetry(
+    override suspend fun executeWithRetry(
         scriptName: String,
         functionName: String,
         args: Array<String>,
@@ -153,7 +153,7 @@ class JsEngine @Inject constructor(
     /**
      * Load a script file from assets/scripts/ (cached). Safe to call from any thread.
      */
-    fun loadAssetScript(scriptName: String): String =
+    override fun loadAssetScript(scriptName: String): String =
         scriptCache.getOrPut(scriptName) {
             appContext.assets.open("scripts/$scriptName").bufferedReader().readText()
         }

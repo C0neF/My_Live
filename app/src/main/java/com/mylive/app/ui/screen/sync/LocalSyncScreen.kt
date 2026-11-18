@@ -1,6 +1,8 @@
 package com.mylive.app.ui.screen.sync
 
+import android.net.Uri
 import android.widget.Toast
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -14,6 +16,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.res.stringResource
@@ -28,11 +31,19 @@ import com.mylive.app.core.sync.LanSyncProtocol
 import com.mylive.app.service.LanSyncService
 import com.mylive.app.service.SyncClient
 import com.mylive.app.service.shouldKeepLanSyncServerRunning
+import com.mylive.app.ui.component.settings.SettingsInsetCard
+import com.mylive.app.ui.component.settings.SettingsSectionHeader
+import com.mylive.app.ui.layout.AdaptivePageFrame
+import com.mylive.app.ui.layout.LocalAppLayout
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.net.URI
+import java.util.concurrent.TimeUnit
 import timber.log.Timber
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -41,6 +52,7 @@ fun LocalSyncScreen(
     navigator: Navigator
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     val clients = LanSyncService.scanClients
     var manualAddress by remember { mutableStateOf("") }
     var isConnecting by remember { mutableStateOf(false) }
@@ -64,9 +76,13 @@ fun LocalSyncScreen(
     }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
                 title = { Text("局域网同步") },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background
+                ),
                 navigationIcon = {
                     IconButton(onClick = handleBack) {
                         Icon(
@@ -91,141 +107,142 @@ fun LocalSyncScreen(
             )
         }
     ) { padding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-        ) {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                item {
-                    Text(
-                        text = "手动连接",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
-                    )
-
-                    Card(
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            OutlinedTextField(
-                                value = manualAddress,
-                                onValueChange = { manualAddress = it },
-                                label = { Text("输入对方设备的 IP 地址或完整同步地址") },
-                                placeholder = { Text("例如: 192.168.1.100") },
-                                singleLine = true,
-                                trailingIcon = {
-                                    IconButton(onClick = {
-                                        navigator.navigate(Route.SyncScan)
-                                    }) {
-                                        Icon(Icons.Default.QrCodeScanner, contentDescription = "扫码连接")
-                                    }
-                                },
-                                modifier = Modifier.fillMaxWidth()
-                            )
-
-                            Button(
-                                onClick = {
-                                    val cleaned = manualAddress.trim()
-                                    if (cleaned.isEmpty()) {
-                                        Toast.makeText(context, "请输入地址", Toast.LENGTH_SHORT).show()
-                                        return@Button
-                                    }
-                                    connectToManualAddress(cleaned, navigator, context) {
-                                        isConnecting = it
-                                    }
-                                },
-                                enabled = !isConnecting,
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text("连接设备")
-                            }
-                        }
-                    }
-                }
-
-                item {
-                    Text(
-                        text = "发现设备",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)
-                    )
-                }
-
-                if (clients.isEmpty()) {
+        AdaptivePageFrame(Modifier.padding(padding), LocalAppLayout.current.settingsMaxWidthDp) {
+            Box(modifier = Modifier.fillMaxSize()) {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    contentPadding = PaddingValues(vertical = 12.dp)
+                ) {
                     item {
-                        Card(
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(32.dp),
-                                contentAlignment = Alignment.Center
+                        SettingsSectionHeader("手动连接")
+                        SettingsInsetCard {
+                            Column(
+                                modifier = Modifier.padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
-                                Column(
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.Center
+                                OutlinedTextField(
+                                    value = manualAddress,
+                                    onValueChange = { manualAddress = it },
+                                    label = { Text("输入对方设备的 IP 地址或完整同步地址") },
+                                    placeholder = { Text("例如: 192.168.1.100") },
+                                    shape = RoundedCornerShape(12.dp),
+                                    singleLine = true,
+                                    trailingIcon = {
+                                        IconButton(onClick = {
+                                            navigator.navigate(Route.SyncScan)
+                                        }) {
+                                            Icon(Icons.Default.QrCodeScanner, contentDescription = "扫码连接")
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+
+                                Button(
+                                    onClick = {
+                                        val cleaned = manualAddress.trim()
+                                        if (cleaned.isEmpty()) {
+                                            Toast.makeText(context, "请输入地址", Toast.LENGTH_SHORT).show()
+                                            return@Button
+                                        }
+                                        connectToManualAddress(
+                                            rawAddress = cleaned,
+                                            coroutineScope = coroutineScope,
+                                            navigator = navigator,
+                                            context = context
+                                        ) {
+                                            isConnecting = it
+                                        }
+                                    },
+                                    enabled = !isConnecting,
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    CircularProgressIndicator(modifier = Modifier.size(36.dp))
-                                    Spacer(modifier = Modifier.height(16.dp))
-                                    Text(
-                                        text = "正在搜索同一 Wi-Fi/局域网内的设备...\n请确保对方设备已打开局域网同步界面",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        textAlign = TextAlign.Center
-                                    )
+                                    Text("连接设备")
                                 }
                             }
                         }
                     }
-                } else {
-                    items(clients) { client ->
-                        ClientItem(
-                            client = client,
-                            onClick = {
-                                navigator.navigate(
-                                    Route.SyncDevice(
-                                        address = client.address,
-                                        port = client.port.toString(),
-                                        name = client.name
-                                    )
-                                )
-                            }
+
+                    item {
+                        SettingsSectionHeader(
+                            title = "发现设备",
+                            modifier = Modifier.padding(top = 6.dp)
                         )
+                    }
+
+                    if (clients.isEmpty()) {
+                        item {
+                            SettingsInsetCard {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(32.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.Center
+                                    ) {
+                                        CircularProgressIndicator(modifier = Modifier.size(32.dp), strokeWidth = 2.5.dp)
+                                        Spacer(modifier = Modifier.height(14.dp))
+                                        Text(
+                                            text = "正在搜索同一 Wi-Fi/局域网内的设备...\n请确保对方设备已打开局域网同步界面",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            textAlign = TextAlign.Center
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        items(clients, key = { "${it.address}:${it.port}" }) { client ->
+                            ClientItem(
+                                client = client,
+                                onClick = {
+                                    navigator.navigate(
+                                        Route.SyncDevice(
+                                            address = client.address,
+                                            port = client.port.toString(),
+                                            name = client.name
+                                        )
+                                    )
+                                }
+                            )
+                        }
+                    }
+
+                    item {
+                        Spacer(modifier = Modifier.height(16.dp))
                     }
                 }
 
-                item {
-                    Spacer(modifier = Modifier.height(24.dp))
-                }
-            }
-
-            if (isConnecting) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.6f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Card {
-                        Column(
-                            modifier = Modifier.padding(24.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
+                if (isConnecting) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.25f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(20.dp),
+                            color = MaterialTheme.colorScheme.surfaceContainerLow,
+                            border = BorderStroke(
+                                0.5.dp,
+                                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                            )
                         ) {
-                            CircularProgressIndicator()
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text("正在尝试建立连接...")
+                            Column(
+                                modifier = Modifier.padding(24.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                CircularProgressIndicator(modifier = Modifier.size(32.dp), strokeWidth = 2.5.dp)
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Text("正在尝试建立连接...", style = MaterialTheme.typography.bodyMedium)
+                            }
                         }
                     }
                 }
@@ -244,14 +261,20 @@ fun LocalSyncScreen(
 
 @Composable
 fun ClientItem(client: SyncClient, onClick: () -> Unit) {
-    Card(
+    Surface(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        border = BorderStroke(
+            0.5.dp,
+            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+        )
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(horizontal = 16.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             val icon = when (client.type.lowercase()) {
@@ -267,24 +290,24 @@ fun ClientItem(client: SyncClient, onClick: () -> Unit) {
                 modifier = Modifier
                     .size(40.dp)
                     .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primaryContainer),
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer
+                    tint = MaterialTheme.colorScheme.primary
                 )
             }
 
-            Spacer(modifier = Modifier.width(16.dp))
+            Spacer(modifier = Modifier.width(14.dp))
 
             Column(
                 modifier = Modifier.weight(1f)
             ) {
                 Text(
                     text = client.name,
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
                 )
                 Text(
                     text = "IP: ${client.address}:${client.port}",
@@ -293,7 +316,11 @@ fun ClientItem(client: SyncClient, onClick: () -> Unit) {
                 )
             }
 
-            Icon(Icons.Default.ChevronRight, contentDescription = null)
+            Icon(
+                Icons.Default.ChevronRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+            )
         }
     }
 }
@@ -304,9 +331,13 @@ fun MyInfoDialog(addresses: String, onDismiss: () -> Unit) {
     val displayStr = cleanAddresses.joinToString("\n") { "$it:${LanSyncService.HTTP_PORT}" }
 
     Dialog(onDismissRequest = onDismiss) {
-        Card(
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            border = BorderStroke(
+                0.5.dp,
+                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+            )
         ) {
             Column(
                 modifier = Modifier.padding(24.dp),
@@ -315,7 +346,7 @@ fun MyInfoDialog(addresses: String, onDismiss: () -> Unit) {
             ) {
                 Text(
                     text = "本机同步信息",
-                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold)
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -325,14 +356,22 @@ fun MyInfoDialog(addresses: String, onDismiss: () -> Unit) {
                     val qrData = "mylive-sync://${cleanAddresses.first()}:${LanSyncService.HTTP_PORT}?token=${LanSyncService.syncToken}"
                     val bitmap = remember(qrData) { generateQrCode(qrData) }
                     if (bitmap != null) {
-                        Image(
-                            bitmap = bitmap.asImageBitmap(),
-                            contentDescription = "QR Code",
-                            modifier = Modifier
-                                .size(180.dp)
-                                .background(androidx.compose.ui.graphics.Color.White)
-                                .padding(8.dp)
-                        )
+                        Surface(
+                            shape = RoundedCornerShape(14.dp),
+                            color = Color.White,
+                            border = BorderStroke(
+                                0.5.dp,
+                                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
+                            )
+                        ) {
+                            Image(
+                                bitmap = bitmap.asImageBitmap(),
+                                contentDescription = "QR Code",
+                                modifier = Modifier
+                                    .size(184.dp)
+                                    .padding(10.dp)
+                            )
+                        }
                     }
                 }
 
@@ -349,7 +388,7 @@ fun MyInfoDialog(addresses: String, onDismiss: () -> Unit) {
                     Text(
                         text = displayStr,
                         style = MaterialTheme.typography.bodyMedium.copy(
-                            fontWeight = FontWeight.Bold,
+                            fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.primary
                         ),
                         textAlign = TextAlign.Center
@@ -360,12 +399,12 @@ fun MyInfoDialog(addresses: String, onDismiss: () -> Unit) {
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = "配对码：${LanSyncService.syncToken}",
-                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
                         textAlign = TextAlign.Center
                     )
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(14.dp))
 
                 Text(
                     text = "请在另一台设备的“局域网同步”界面扫描上方二维码即可自动配对并同步；若手动连接，请在对方“设备同步”页填入上方配对码。",
@@ -374,10 +413,11 @@ fun MyInfoDialog(addresses: String, onDismiss: () -> Unit) {
                     textAlign = TextAlign.Center
                 )
 
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(20.dp))
 
                 Button(
                     onClick = onDismiss,
+                    shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("确定")
@@ -389,17 +429,22 @@ fun MyInfoDialog(addresses: String, onDismiss: () -> Unit) {
 
 private fun connectToManualAddress(
     rawAddress: String,
+    coroutineScope: CoroutineScope,
     navigator: Navigator,
     context: android.content.Context,
     setLoading: (Boolean) -> Unit
 ) {
-    val okHttpClient = OkHttpClient()
-    setLoading(true)
-
-    // Parse address
     var address = rawAddress.trim()
-    if (!address.startsWith("http://") && !address.startsWith("https://")) {
+    var parsedToken = ""
+    if (address.startsWith("mylive-sync://", ignoreCase = true)) {
+        parsedToken = runCatching { Uri.parse(address).getQueryParameter("token").orEmpty() }.getOrDefault("")
+        address = "http://" + address.substringAfter("://")
+    } else if (!address.startsWith("http://", ignoreCase = true) && !address.startsWith("https://", ignoreCase = true)) {
         address = "http://$address"
+    }
+
+    if (parsedToken.isEmpty()) {
+        parsedToken = runCatching { Uri.parse(address).getQueryParameter("token").orEmpty() }.getOrDefault("")
     }
 
     val uri = try {
@@ -416,36 +461,46 @@ private fun connectToManualAddress(
 
     val host = uri.host
     val port = if (uri.port != -1) uri.port else LanSyncService.HTTP_PORT
-
-    // Make network request in background
     val request = Request.Builder()
         .url("http://$host:$port${LanSyncProtocol.INFO_PATH}")
         .build()
 
-    // Run async task
-    val thread = Thread {
+    setLoading(true)
+    coroutineScope.launch {
         try {
-            okHttpClient.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) throw Exception("HTTP ${response.code}")
-                val body = response.body?.string() ?: ""
-                val peerInfo = LanSyncProtocol.decodePeerInfo(body)
-                val name = peerInfo.name ?: "Android Device"
-
-                // Navigate back on main thread
-                android.os.Handler(android.os.Looper.getMainLooper()).post {
-                    setLoading(false)
-                    navigator.navigate(
-                        Route.SyncDevice(address = host, port = port.toString(), name = name)
-                    )
+            val peerName = withContext(Dispatchers.IO) {
+                val client = OkHttpClient.Builder()
+                    .connectTimeout(5, TimeUnit.SECONDS)
+                    .readTimeout(5, TimeUnit.SECONDS)
+                    .build()
+                try {
+                    client.newCall(request).execute().use { response ->
+                        if (!response.isSuccessful) throw Exception("HTTP ${response.code}")
+                        val body = response.body?.string().orEmpty()
+                        val peerInfo = LanSyncProtocol.decodePeerInfo(body)
+                        peerInfo.name ?: "Android Device"
+                    }
+                } finally {
+                    client.dispatcher.executorService.shutdown()
+                    client.connectionPool.evictAll()
                 }
             }
+            setLoading(false)
+            navigator.navigate(
+                Route.SyncDevice(
+                    address = host,
+                    port = port.toString(),
+                    name = peerName,
+                    token = parsedToken
+                )
+            )
+        } catch (cancelled: CancellationException) {
+            setLoading(false)
+            throw cancelled
         } catch (e: Exception) {
             Timber.e(e, "LocalSyncScreen: Manual connect failed")
-            android.os.Handler(android.os.Looper.getMainLooper()).post {
-                setLoading(false)
-                Toast.makeText(context, "连接设备失败: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
-            }
+            setLoading(false)
+            Toast.makeText(context, "连接设备失败: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
         }
     }
-    thread.start()
 }

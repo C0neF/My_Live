@@ -2,12 +2,21 @@ package com.mylive.app.ui.motion
 
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.ContentTransform
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.SpringSpec
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.ui.Alignment
 import kotlin.math.abs
 
 /**
@@ -149,4 +158,42 @@ fun <S> AnimatedContentTransitionScope<S>.adaptiveNavigationContentTransform(
     } else {
         horizontalContentTransform(direction, motionPolicy)
     }
+}
+
+fun popoverEnter(motionPolicy: AppMotionPolicy): EnterTransition {
+    if (motionPolicy.reducedMotion) return fadeIn(animationSpec = motionPolicy.effectsSpec())
+    return scaleIn(
+        animationSpec = motionPolicy.contentSpec(),
+        initialScale = 0.92f
+    ) + slideInVertically(
+        animationSpec = motionPolicy.contentSpec(),
+        initialOffsetY = { it / 5 }
+    ) + fadeIn(animationSpec = motionPolicy.effectsSpec())
+}
+
+fun popoverExit(motionPolicy: AppMotionPolicy): ExitTransition {
+    if (motionPolicy.reducedMotion) return fadeOut(animationSpec = motionPolicy.effectsSpec())
+    return scaleOut(
+        animationSpec = motionPolicy.contentSpec(),
+        targetScale = 0.92f
+    ) + slideOutVertically(
+        animationSpec = motionPolicy.contentSpec(),
+        targetOffsetY = { it / 5 }
+    ) + fadeOut(animationSpec = motionPolicy.effectsSpec())
+}
+
+fun expandCollapseEnter(motionPolicy: AppMotionPolicy): EnterTransition {
+    if (motionPolicy.reducedMotion) return fadeIn(animationSpec = motionPolicy.effectsSpec())
+    return expandVertically(
+        animationSpec = motionPolicy.contentSpec(),
+        expandFrom = Alignment.Top
+    ) + fadeIn(animationSpec = motionPolicy.effectsSpec())
+}
+
+fun expandCollapseExit(motionPolicy: AppMotionPolicy): ExitTransition {
+    if (motionPolicy.reducedMotion) return fadeOut(animationSpec = motionPolicy.effectsSpec())
+    return shrinkVertically(
+        animationSpec = motionPolicy.contentSpec(),
+        shrinkTowards = Alignment.Top
+    ) + fadeOut(animationSpec = motionPolicy.effectsSpec())
 }

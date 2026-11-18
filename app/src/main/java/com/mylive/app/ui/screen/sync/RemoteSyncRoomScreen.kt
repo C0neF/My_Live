@@ -2,6 +2,7 @@ package com.mylive.app.ui.screen.sync
 
 import android.graphics.Bitmap
 import android.widget.Toast
+import androidx.compose.foundation.BorderStroke
 import androidx.core.graphics.createBitmap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -34,7 +35,12 @@ import com.mylive.app.R
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mylive.app.service.RemoteRoomUser
 import com.mylive.app.service.RemoteSyncConnectionState
+import com.mylive.app.ui.component.settings.SettingsHairlineDivider
+import com.mylive.app.ui.component.settings.SettingsInsetCard
 import com.mylive.app.ui.component.settings.SettingsMenu
+import com.mylive.app.ui.component.settings.SettingsSectionHeader
+import com.mylive.app.ui.layout.AdaptivePageFrame
+import com.mylive.app.ui.layout.LocalAppLayout
 import com.mylive.app.ui.util.copyPlainText
 import kotlinx.coroutines.flow.collectLatest
 
@@ -51,6 +57,7 @@ enum class AccountSyncType {
 fun RemoteSyncRoomScreen(
     navigator: Navigator,
     roomIdParam: String = "",
+    roomKeyParam: String = "",
     viewModel: RemoteSyncRoomViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
@@ -59,16 +66,19 @@ fun RemoteSyncRoomScreen(
 
     val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
     val roomId by viewModel.roomId.collectAsStateWithLifecycle()
+    val inviteCode by viewModel.inviteCode.collectAsStateWithLifecycle()
+    val qrPayload by viewModel.qrPayload.collectAsStateWithLifecycle()
     val roomUsers by viewModel.roomUsers.collectAsStateWithLifecycle()
     val countDown by viewModel.countDown.collectAsStateWithLifecycle()
     val loadingState by viewModel.loadingState.collectAsStateWithLifecycle()
+    val pendingIncomingAction by viewModel.pendingIncomingAction.collectAsStateWithLifecycle()
 
     var showOverlayDialog by remember { mutableStateOf<SyncType?>(null) }
     var showAccountDialog by remember { mutableStateOf<AccountSyncType?>(null) }
     var showQrDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
-        viewModel.initRoom(roomIdParam)
+        viewModel.initRoom(roomIdParam, roomKeyParam)
     }
 
     LaunchedEffect(Unit) {
@@ -84,9 +94,13 @@ fun RemoteSyncRoomScreen(
     }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
                 title = { Text("数据同步") },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background
+                ),
                 navigationIcon = {
                     IconButton(onClick = handleBack) {
                         Icon(
@@ -120,122 +134,112 @@ fun RemoteSyncRoomScreen(
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             text = statusText,
-                            style = MaterialTheme.typography.bodyMedium
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
             )
         }
     ) { padding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-        ) {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                if (roomIdParam.isEmpty() && roomId.isNotEmpty()) {
+        AdaptivePageFrame(Modifier.padding(padding), LocalAppLayout.current.settingsMaxWidthDp) {
+            Box(modifier = Modifier.fillMaxSize()) {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    contentPadding = PaddingValues(vertical = 12.dp)
+                ) {
+                    if (roomIdParam.isEmpty() && roomId.isNotEmpty()) {
+                        item {
+                            Surface(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(14.dp),
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                                border = BorderStroke(
+                                    0.5.dp,
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)
+                                )
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(14.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(Icons.Default.Timer, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Text(
+                                        text = "${countDown}秒后房间将会自动关闭",
+                                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
                     item {
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f))
-                        ) {
+                        SettingsSectionHeader("房间配对码（端到端加密）")
+                        SettingsInsetCard {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(16.dp),
+                                    .padding(horizontal = 16.dp, vertical = 12.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(Icons.Default.Timer, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                                Spacer(modifier = Modifier.width(12.dp))
                                 Text(
-                                    text = "${countDown}秒后房间将会自动关闭",
-                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium)
+                                    text = inviteCode.ifBlank { roomId.ifBlank { "正在生成..." } },
+                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                                    modifier = Modifier.weight(1f)
                                 )
-                            }
-                        }
-                    }
-                }
 
-                item {
-                    Text(
-                        text = "房间号",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
-                    )
+                                if (inviteCode.isNotEmpty()) {
+                                    IconButton(onClick = {
+                                        copyPlainText(context, "sync room invite", inviteCode)
+                                        Toast.makeText(context, "已复制房间配对码", Toast.LENGTH_SHORT).show()
+                                    }) {
+                                        Icon(Icons.Default.ContentCopy, contentDescription = "复制")
+                                    }
 
-                    Card(
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = roomId.ifBlank { "正在生成..." },
-                                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                                modifier = Modifier.weight(1f)
-                            )
-
-                            if (roomId.isNotEmpty()) {
-                                IconButton(onClick = {
-                                    copyPlainText(context, "sync room id", roomId)
-                                    Toast.makeText(context, "已复制房间号", Toast.LENGTH_SHORT).show()
-                                }) {
-                                    Icon(Icons.Default.ContentCopy, contentDescription = "复制")
-                                }
-
-                                IconButton(onClick = { showQrDialog = true }) {
-                                    Icon(Icons.Default.QrCode, contentDescription = "显示二维码")
+                                    IconButton(onClick = { showQrDialog = true }) {
+                                        Icon(Icons.Default.QrCode, contentDescription = "显示二维码")
+                                    }
                                 }
                             }
                         }
                     }
-                }
 
-                item {
-                    Text(
-                        text = "同步数据至其他设备",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)
-                    )
-
-                    Card(
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column {
+                    item {
+                        SettingsSectionHeader(
+                            title = "同步数据至其他设备",
+                            modifier = Modifier.padding(top = 6.dp)
+                        )
+                        SettingsInsetCard {
                             SettingsMenu(
                                 title = "发送关注列表",
                                 subtitle = "同步关注主播及分组标签",
                                 onClick = { showOverlayDialog = SyncType.FOLLOW }
                             )
-                            HorizontalDivider()
+                            SettingsHairlineDivider()
                             SettingsMenu(
                                 title = "发送观看记录",
                                 subtitle = "同步最近观看的直播间历史",
                                 onClick = { showOverlayDialog = SyncType.HISTORY }
                             )
-                            HorizontalDivider()
+                            SettingsHairlineDivider()
                             SettingsMenu(
                                 title = "发送弹幕屏蔽词",
                                 subtitle = "同步本地屏蔽词及设置",
                                 onClick = { showOverlayDialog = SyncType.SHIELD }
                             )
-                            HorizontalDivider()
+                            SettingsHairlineDivider()
                             SettingsMenu(
                                 title = "发送哔哩哔哩账号",
                                 subtitle = "同步哔哩哔哩登录 Cookies",
                                 onClick = { showAccountDialog = AccountSyncType.BILIBILI }
                             )
-                            HorizontalDivider()
+                            SettingsHairlineDivider()
                             SettingsMenu(
                                 title = "发送抖音账号",
                                 subtitle = "同步抖音登录 Cookies",
@@ -243,69 +247,70 @@ fun RemoteSyncRoomScreen(
                             )
                         }
                     }
-                }
 
-                item {
-                    Text(
-                        text = "已连接设备 (${roomUsers.size})",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)
-                    )
-                }
-
-                if (roomUsers.isEmpty()) {
                     item {
-                        Card(
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(24.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = "暂无设备连接\n可在另一台设备上加入此房间",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    textAlign = TextAlign.Center
-                                )
+                        SettingsSectionHeader(
+                            title = "已连接设备 (${roomUsers.size})",
+                            modifier = Modifier.padding(top = 6.dp)
+                        )
+                    }
+
+                    if (roomUsers.isEmpty()) {
+                        item {
+                            SettingsInsetCard {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(24.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "暂无设备连接\n可在另一台设备上加入此房间",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        textAlign = TextAlign.Center
+                                    )
+                                }
                             }
                         }
+                    } else {
+                        items(roomUsers, key = { it.shortId }) { user ->
+                            DeviceUserItem(user = user)
+                        }
                     }
-                } else {
-                    items(roomUsers) { user ->
-                        DeviceUserItem(user = user)
+
+                    item {
+                        Spacer(modifier = Modifier.height(16.dp))
                     }
                 }
 
-                item {
-                    Spacer(modifier = Modifier.height(24.dp))
-                }
-            }
-
-            if (loadingState != null) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.6f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                if (loadingState != null) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.25f)),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Column(
-                            modifier = Modifier.padding(24.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center
-                        ) {
-                            CircularProgressIndicator()
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text(
-                                text = loadingState ?: "",
-                                style = MaterialTheme.typography.bodyMedium
+                        Surface(
+                            shape = RoundedCornerShape(20.dp),
+                            color = MaterialTheme.colorScheme.surfaceContainerLow,
+                            border = BorderStroke(
+                                0.5.dp,
+                                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                             )
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(24.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                CircularProgressIndicator(modifier = Modifier.size(32.dp), strokeWidth = 2.5.dp)
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Text(
+                                    text = loadingState ?: "",
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                            }
                         }
                     }
                 }
@@ -317,6 +322,8 @@ fun RemoteSyncRoomScreen(
         val type = showOverlayDialog!!
         AlertDialog(
             onDismissRequest = { showOverlayDialog = null },
+            shape = RoundedCornerShape(20.dp),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
             title = { Text("数据覆盖") },
             text = { Text("是否覆盖对方设备上的同类数据？选择“不覆盖”会合并同步。") },
             confirmButton = {
@@ -354,6 +361,8 @@ fun RemoteSyncRoomScreen(
         }
         AlertDialog(
             onDismissRequest = { showAccountDialog = null },
+            shape = RoundedCornerShape(20.dp),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
             title = { Text("发送账号") },
             text = { Text("确定要发送${accountName}登录 Cookies 到当前房间内的设备吗？") },
             confirmButton = {
@@ -375,20 +384,50 @@ fun RemoteSyncRoomScreen(
         )
     }
 
-    if (showQrDialog && roomId.isNotEmpty()) {
-        QrCodeDialog(roomId = roomId, onDismiss = { showQrDialog = false })
+    if (showQrDialog && qrPayload.isNotEmpty()) {
+        QrCodeDialog(
+            inviteCode = inviteCode,
+            qrPayload = qrPayload,
+            onDismiss = { showQrDialog = false }
+        )
+    }
+
+    pendingIncomingAction?.let { pending ->
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissIncomingAction() },
+            shape = RoundedCornerShape(20.dp),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+            title = { Text(pending.title) },
+            text = { Text(pending.message) },
+            confirmButton = {
+                TextButton(onClick = { viewModel.confirmIncomingAction() }) {
+                    Text("确认应用")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.dismissIncomingAction() }) {
+                    Text("忽略")
+                }
+            }
+        )
     }
 }
 
 @Composable
 fun DeviceUserItem(user: RemoteRoomUser) {
-    Card(
-        modifier = Modifier.fillMaxWidth()
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        border = BorderStroke(
+            0.5.dp,
+            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+        )
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(horizontal = 16.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             val icon = when (user.platform.lowercase()) {
@@ -404,17 +443,17 @@ fun DeviceUserItem(user: RemoteRoomUser) {
                 modifier = Modifier
                     .size(40.dp)
                     .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primaryContainer),
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer
+                    tint = MaterialTheme.colorScheme.primary
                 )
             }
 
-            Spacer(modifier = Modifier.width(16.dp))
+            Spacer(modifier = Modifier.width(14.dp))
 
             Column(
                 modifier = Modifier.weight(1f)
@@ -424,16 +463,16 @@ fun DeviceUserItem(user: RemoteRoomUser) {
                 ) {
                     Text(
                         text = user.shortId,
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
                     )
                     if (user.isCreator) {
                         Spacer(modifier = Modifier.width(8.dp))
                         Box(
                             modifier = Modifier
                                 .border(
-                                    width = 1.dp,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    shape = RoundedCornerShape(4.dp)
+                                    width = 0.5.dp,
+                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
+                                    shape = RoundedCornerShape(6.dp)
                                 )
                                 .padding(horizontal = 6.dp, vertical = 2.dp)
                         ) {
@@ -456,7 +495,7 @@ fun DeviceUserItem(user: RemoteRoomUser) {
                 Text(
                     text = "本机",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.outline
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
@@ -464,13 +503,21 @@ fun DeviceUserItem(user: RemoteRoomUser) {
 }
 
 @Composable
-fun QrCodeDialog(roomId: String, onDismiss: () -> Unit) {
-    val bitmap = remember(roomId) { generateQrCode(roomId) }
+fun QrCodeDialog(
+    inviteCode: String,
+    qrPayload: String,
+    onDismiss: () -> Unit
+) {
+    val bitmap = remember(qrPayload) { generateQrCode(qrPayload) }
 
     Dialog(onDismissRequest = onDismiss) {
-        Card(
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            border = BorderStroke(
+                0.5.dp,
+                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+            )
         ) {
             Column(
                 modifier = Modifier.padding(24.dp),
@@ -478,20 +525,28 @@ fun QrCodeDialog(roomId: String, onDismiss: () -> Unit) {
             ) {
                 Text(
                     text = "房间信息",
-                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold)
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
 
                 if (bitmap != null) {
-                    Image(
-                        bitmap = bitmap.asImageBitmap(),
-                        contentDescription = "QR Code",
-                        modifier = Modifier
-                            .size(200.dp)
-                            .background(Color.White)
-                            .padding(8.dp)
-                    )
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = Color.White,
+                        border = BorderStroke(
+                            0.5.dp,
+                            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
+                        )
+                    ) {
+                        Image(
+                            bitmap = bitmap.asImageBitmap(),
+                            contentDescription = "QR Code",
+                            modifier = Modifier
+                                .size(200.dp)
+                                .padding(10.dp)
+                        )
+                    }
                 } else {
                     Box(
                         modifier = Modifier.size(200.dp),
@@ -504,9 +559,10 @@ fun QrCodeDialog(roomId: String, onDismiss: () -> Unit) {
                 Spacer(modifier = Modifier.height(16.dp))
 
                 Text(
-                    text = roomId,
-                    style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.primary
+                    text = inviteCode,
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                    color = MaterialTheme.colorScheme.primary,
+                    textAlign = TextAlign.Center
                 )
 
                 Spacer(modifier = Modifier.height(8.dp))
@@ -518,10 +574,11 @@ fun QrCodeDialog(roomId: String, onDismiss: () -> Unit) {
                     textAlign = TextAlign.Center
                 )
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(18.dp))
 
                 Button(
                     onClick = onDismiss,
+                    shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("关闭")

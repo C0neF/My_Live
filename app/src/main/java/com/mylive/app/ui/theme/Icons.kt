@@ -6,6 +6,7 @@ import com.adamglin.PhosphorIcons
 import com.adamglin.phosphoricons.Fill
 import com.adamglin.phosphoricons.Regular
 import com.adamglin.phosphoricons.fill.Heart as PhosphorHeartFill
+import com.adamglin.phosphoricons.fill.Star as PhosphorStarFill
 import com.adamglin.phosphoricons.regular.AndroidLogo
 
 /**
@@ -86,6 +87,8 @@ object Icons {
         val ContentCopy: ImageVector = Lucide.Copy
         val Sun: ImageVector = Lucide.Sun
         val Star: ImageVector = Lucide.Star
+        val StarFilled: ImageVector = PhosphorIcons.Fill.PhosphorStarFill
+        val StarOff: ImageVector = Lucide.StarOff
         val Inbox: ImageVector = Lucide.Inbox
     }
 

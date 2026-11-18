@@ -38,7 +38,7 @@ class CategoryViewModel @Inject constructor(
         .combine(kotlinx.coroutines.flow.flowOf(liveSites)) { sortStr, sites ->
             sites.sortedByUserOrder(sortStr)
         }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), liveSites.sortedByDefaultOrder())
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private val _selectedSiteIndex = MutableStateFlow(0)
     val selectedSiteIndex: StateFlow<Int> = _selectedSiteIndex.asStateFlow()
@@ -58,7 +58,7 @@ class CategoryViewModel @Inject constructor(
     private val _loadedSiteId = MutableStateFlow<String?>(null)
     private var loadJob: Job? = null
     private val loadRequestGate = LatestCatalogRequestGate()
-    private var previousSiteIds = liveSites.sortedByDefaultOrder().map { it.id }
+    private var previousSiteIds: List<String> = emptyList()
 
     // Per-site cache to avoid flicker when swiping between pages
     private data class SiteCache(
@@ -73,12 +73,17 @@ class CategoryViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             siteList.collect { sites ->
+                if (sites.isEmpty()) return@collect
                 val reorderedSiteIds = sites.map { it.id }
-                val nextIndex = preserveSelectedSiteIndex(
-                    previousSiteIds = previousSiteIds,
-                    reorderedSiteIds = reorderedSiteIds,
-                    selectedIndex = _selectedSiteIndex.value
-                )
+                val nextIndex = if (previousSiteIds.isEmpty()) {
+                    0
+                } else {
+                    preserveSelectedSiteIndex(
+                        previousSiteIds = previousSiteIds,
+                        reorderedSiteIds = reorderedSiteIds,
+                        selectedIndex = _selectedSiteIndex.value
+                    )
+                }
                 previousSiteIds = reorderedSiteIds
                 _selectedSiteIndex.value = nextIndex
                 val selectedSite = sites.getOrNull(nextIndex)

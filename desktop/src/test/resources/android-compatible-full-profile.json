@@ -1,0 +1,134 @@
+{
+  "settings": {
+    "DanmuShieldEnable": true,
+    "DanmuHideTop": false,
+    "DanmuSpeed": 10,
+    "DanmuLineCount": 8,
+    "QualityLevel": 1,
+    "AutoUpdateFollowDuration": 60,
+    "DanmuOpacity": 1,
+    "AutoExitEnable": false,
+    "DanmuDedupeEnable": false,
+    "ThemeMode": 1,
+    "ChatTextSize": 13,
+    "DanmuRenderEmoji": true,
+    "ScaleMode": 0,
+    "UserRemarks": "{\"douyu::Contract Anchor\":\"Contract note\"}",
+    "DanmuEnable": false,
+    "AutoExitDuration": 60,
+    "DanmuDedupeWindow": 10,
+    "AutoUpdateFollowEnable": true,
+    "DanmuHideBottom": false,
+    "HardwareDecode": false,
+    "AllowBackgroundPlayback": false,
+    "DanmuArea": 0.8,
+    "SiteSort": "douyu,bilibili,huya,douyin",
+    "DanmuHideScroll": false,
+    "DanmuSize": 24
+  },
+  "schemaVersion": 3,
+  "desktop": {
+    "appearance": {
+      "platformOrder": [
+        "douyu",
+        "bilibili",
+        "huya",
+        "douyin"
+      ],
+      "theme": 1,
+      "textScalePercent": 100,
+      "accent": 0
+    },
+    "followOptions": {
+      "autoRefresh": true,
+      "intervalSeconds": 60
+    },
+    "danmaku": {
+      "area": 0.8,
+      "dedupeSeconds": 10,
+      "travelSeconds": 8,
+      "keywords": ["blocked-keyword"],
+      "deduplicate": false,
+      "bottom": true,
+      "scroll": true,
+      "dedupeByUser": false,
+      "users": [{
+        "siteId": "douyu",
+        "userName": "blocked-user"
+      }],
+      "shieldEnabled": true,
+      "top": true,
+      "fontSize": 24,
+      "colored": true,
+      "renderEmoji": true,
+      "opacity": 1,
+      "lines": 8
+    },
+    "version": 1,
+    "player": {
+      "alwaysOnTop": false,
+      "scale": "Fit",
+      "superChatVisible": true,
+      "minimizeToTray": false,
+      "qualityLevel": 0,
+      "danmakuEnabled": false,
+      "volume": 25,
+      "rememberQuality": true,
+      "chatVisible": true,
+      "backgroundPlayback": false,
+      "hardwareDecode": false,
+      "chatAutoScroll": true,
+      "autoStopMinutes": 60,
+      "qualityBySite": {},
+      "autoStopEnabled": false,
+      "muted": false,
+      "chatTextSize": 13
+    }
+  },
+  "danmuShield": [
+    {
+      "id": "557aa5c9-e1fa-33fd-85ac-e864e19b4607",
+      "value": "keyword:blocked-keyword"
+    },
+    {
+      "id": "976de838-08dd-3b5a-b095-a6b3de7b51d9",
+      "value": "user:douyu:blocked-user"
+    }
+  ],
+  "exportTime": "2026-10-25T16:49:43.556071Z",
+  "followUsers": [{
+    "cover": "",
+    "note": "Contract note",
+    "face": "",
+    "addTime": 100,
+    "siteId": "douyu",
+    "id": "douyu_9999",
+    "isSpecialFollow": true,
+    "userName": "Contract Anchor",
+    "title": "Contract room",
+    "roomId": "9999"
+  }],
+  "histories": [{
+    "cover": "",
+    "face": "",
+    "siteId": "douyu",
+    "updateTime": 200,
+    "id": "douyu_9999",
+    "userName": "Contract Anchor",
+    "title": "Contract room",
+    "roomId": "9999"
+  }],
+  "type": "my_live_profile",
+  "followUserTags": [
+    {
+      "userIds": ["douyu_9999"],
+      "id": "251bd814-3891-338e-8edc-306508e29017",
+      "tag": "Games"
+    },
+    {
+      "userIds": ["douyu_9999"],
+      "id": "d7898694-7356-3dd3-bb43-d57df289dee9",
+      "tag": "Favorites"
+    }
+  ]
+}

@@ -34,6 +34,8 @@ class FollowUpdateWorker @AssistedInject constructor(
                 }
             }
             Result.success()
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             Timber.e(e, "FollowUpdateWorker failed")
             Result.retry()
@@ -74,7 +76,7 @@ class FollowUpdateWorker @AssistedInject constructor(
         }
 
         val notification = NotificationCompat.Builder(applicationContext, channelId)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_notification_playback)
             .setContentTitle("特别关注开播啦")
             .setContentText("您关注的「${follow.userName}」已在${siteName}开播！")
             .setContentIntent(pendingIntent)

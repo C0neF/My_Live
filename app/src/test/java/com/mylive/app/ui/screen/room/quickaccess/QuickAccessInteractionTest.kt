@@ -62,14 +62,19 @@ class QuickAccessInteractionTest {
         )
         f.remarks.value = mapOf("bilibili::Alpha" to "Teacher")
         show()
+        compose.onNodeWithTag("quick_access_open_search_follow").performSemanticsAction(SemanticsActions.OnClick) { it() }
+        compose.waitForIdle()
         compose.onNodeWithTag("quick_access_search_follow").performTextInput("Teacher")
-        compose.onNodeWithText("1 位主播").assertIsDisplayed()
+        compose.waitForIdle()
         compose.onNodeWithTag("quick_access_room_Teacher").assertIsDisplayed()
+        compose.onNodeWithTag("quick_access_room_UnfollowedAnchor").assertIsDisplayed()
         compose.onNodeWithText("重置筛选").performSemanticsAction(SemanticsActions.OnClick) { it() }
-        compose.onNodeWithText("2 位主播").assertIsDisplayed()
+        compose.onNodeWithTag("quick_access_room_Teacher").assertIsDisplayed()
+        compose.onNodeWithTag("quick_access_room_Beta").assertIsDisplayed()
+        compose.onNodeWithTag("quick_access_search_back_follow").performSemanticsAction(SemanticsActions.OnClick) { it() }
+        compose.waitForIdle()
         compose.onNodeWithTag("quick_access_status_Unknown").performSemanticsAction(SemanticsActions.OnClick) { it() }
         compose.onNodeWithTag("quick_access_room_Beta").assertIsDisplayed()
-        compose.onNodeWithText("1 位主播").assertIsDisplayed()
     }
 
     @Test fun historyDeletionRequiresConfirmationAndCancellationKeepsTheEntry() {
@@ -115,5 +120,17 @@ class QuickAccessInteractionTest {
         show("room_settings", listOf(QuickAccessExtraTab("room_settings", "设置", Icons.Default.Settings) { Text("RoomSettingsContent") }))
         compose.onNodeWithTag("quick_access_tab_room_settings").assertIsSelected()
         compose.onNodeWithText("RoomSettingsContent").assertIsDisplayed()
+    }
+
+    @Test
+    @Config(qualifiers = "w891dp-h390dp")
+    fun compactFullscreenLandscapeDisplaysAtLeastSixFollowCardsImmediately() {
+        f.follows.value = (1..8).map { index ->
+            FollowUserEntity("bilibili_$index", "$index", "bilibili", "Anchor$index", "", 0, liveStatus = 1)
+        }
+        show("follow")
+        for (index in 1..6) {
+            compose.onNodeWithTag("quick_access_room_Anchor$index").assertIsDisplayed()
+        }
     }
 }

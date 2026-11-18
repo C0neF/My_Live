@@ -9,6 +9,7 @@ import android.provider.Settings
 import androidx.annotation.OptIn
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Timeline
+import androidx.media3.common.VideoSize
 import androidx.media3.common.Format
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
@@ -44,12 +45,14 @@ data class PlayerState(
     val volume: Float = 1f,
     val brightness: Float = 0.5f,
     val isFullscreen: Boolean = false,
+    val videoAspectRatio: Float? = null,
     val playerGeneration: Long = 0L,
     val firstFrameRendered: Boolean = false,
     val playWhenReady: Boolean = false,
     val playbackState: Int = Player.STATE_IDLE,
     val currentLineIndex: Int = 0,
-    val urls: List<String> = emptyList()
+    val urls: List<String> = emptyList(),
+    val brightnessOverride: Float? = null
 )
 
 @OptIn(UnstableApi::class)
@@ -60,10 +63,19 @@ class PlayerController(
     private val onPlaybackSourceExhausted: (() -> Boolean)? = null,
     private val onPlaybackReady: (() -> Unit)? = null,
     private val onUserPlaybackSelection: (() -> Unit)? = null,
-    private val onPlayerReplaced: ((Player, Player) -> Unit)? = null
+    private val onPlayerReplaced: ((Player, Player) -> Unit)? = null,
+    initialFullscreen: Boolean = false,
+    initialBrightnessOverride: Float? = null
 ) {
 
-    private val _state = MutableStateFlow(PlayerState())
+    private val normalizedInitialBrightness = initialBrightnessOverride?.coerceIn(0.01f, 1f)
+    private val _state = MutableStateFlow(
+        PlayerState(
+            brightness = normalizedInitialBrightness ?: 0.5f,
+            isFullscreen = initialFullscreen,
+            brightnessOverride = normalizedInitialBrightness
+        )
+    )
     val state: StateFlow<PlayerState> = _state
 
     var player: ExoPlayer? = null
@@ -205,6 +217,17 @@ class PlayerController(
     }
 
     private val analyticsListener = object : AnalyticsListener {
+        override fun onVideoSizeChanged(eventTime: AnalyticsListener.EventTime, videoSize: VideoSize) {
+            if (!isCurrentSourceEvent(eventTime)) return
+            val aspectRatio = playbackVideoAspectRatio(
+                videoSize.width, videoSize.height,
+                videoSize.pixelWidthHeightRatio, videoSize.unappliedRotationDegrees
+            ) ?: return
+            // Renderer disable/rebuffer events report UNKNOWN. Keep the last valid geometry
+            // within this room so quality/line changes do not briefly rotate the window.
+            _state.value = _state.value.copy(videoAspectRatio = aspectRatio)
+        }
+
         override fun onAudioInputFormatChanged(
             eventTime: AnalyticsListener.EventTime,
             format: Format,
@@ -392,8 +415,9 @@ class PlayerController(
     }
 
     fun beginRoomLoad(startedAtMillis: Long) {
+        hasActiveSource = false
         startupTiming.beginRoomLoad(startedAtMillis)
-        _state.value = _state.value.copy(firstFrameRendered = false)
+        _state.value = _state.value.copy(firstFrameRendered = false, videoAspectRatio = null)
     }
 
     fun play(
@@ -459,14 +483,17 @@ class PlayerController(
         val mediaItem = MediaItem.Builder().setUri(url).setTag(mediaToken).build()
 
         val requestHeaders = headers
-        val dataSourceFactory = if (requestHeaders != null) {
-            DefaultHttpDataSource.Factory().setDefaultRequestProperties(requestHeaders)
-        } else {
-            DefaultHttpDataSource.Factory()
-        }
+        val dataSourceFactory = DefaultHttpDataSource.Factory()
+            .setAllowCrossProtocolRedirects(true)
+            .setConnectTimeoutMs(10_000)
+            .setReadTimeoutMs(10_000)
+            .let { factory ->
+                if (requestHeaders != null) factory.setDefaultRequestProperties(requestHeaders) else factory
+            }
 
+        val normalizedPath = url.substringBefore('?').lowercase()
         val mediaSource = when {
-            url.contains(".m3u8") || url.contains(".m3u") -> {
+            normalizedPath.endsWith(".m3u8") || normalizedPath.endsWith(".m3u") || url.contains(".m3u8", ignoreCase = true) -> {
                 HlsMediaSource.Factory(dataSourceFactory)
                     .createMediaSource(mediaItem)
             }
@@ -620,18 +647,14 @@ class PlayerController(
     }
 
     fun setBrightness(activity: android.app.Activity, delta: Float) {
-        val layoutParams = activity.window.attributes
-        val currentBrightness = if (layoutParams.screenBrightness < 0) {
-            try {
-                Settings.System.getInt(activity.contentResolver, Settings.System.SCREEN_BRIGHTNESS) / 255f
-            } catch (_: Exception) { 0.5f }
-        } else {
-            layoutParams.screenBrightness
-        }
+        val currentBrightness = currentWindowOrSystemBrightness(activity)
         val newBrightness = (currentBrightness + delta).coerceIn(0.01f, 1f)
-        layoutParams.screenBrightness = newBrightness
-        activity.window.attributes = layoutParams
-        _state.value = _state.value.copy(brightness = newBrightness)
+        applyWindowBrightnessOverride(activity, newBrightness)
+        LivePlaybackHostSignals.updatePlaybackBrightnessOverride(newBrightness)
+        _state.value = _state.value.copy(
+            brightness = newBrightness,
+            brightnessOverride = newBrightness
+        )
     }
 
     fun toggleFullscreen() {
@@ -646,7 +669,7 @@ class PlayerController(
         hasActiveSource = false
         startupTiming.invalidateSource()
         decoderConfiguredFrameRate = null
-        _state.value = _state.value.copy(firstFrameRendered = false)
+        _state.value = _state.value.copy(firstFrameRendered = false, videoAspectRatio = null)
         cancelEndedRecovery()
         stopStallWatchdog(resetMonitor = true)
         player?.stop()
@@ -657,7 +680,7 @@ class PlayerController(
         hasActiveSource = false
         startupTiming.invalidateSource()
         decoderConfiguredFrameRate = null
-        _state.value = _state.value.copy(firstFrameRendered = false)
+        _state.value = _state.value.copy(firstFrameRendered = false, videoAspectRatio = null)
         cancelEndedRecovery()
         stopStallWatchdog(resetMonitor = true)
         player?.removeListener(playerListener)
@@ -905,4 +928,42 @@ private fun playbackExceptionText(error: PlaybackException): String {
         error.cause?.toString(),
         error.toString()
     ).joinToString(separator = "\n")
+}
+
+internal fun currentWindowOrSystemBrightness(activity: android.app.Activity): Float {
+    val screenBrightness = activity.window.attributes.screenBrightness
+    val raw = if (screenBrightness < 0f) {
+        try {
+            Settings.System.getInt(
+                activity.contentResolver,
+                Settings.System.SCREEN_BRIGHTNESS
+            ) / 255f
+        } catch (_: Exception) {
+            0.5f
+        }
+    } else {
+        screenBrightness
+    }
+    return raw.coerceIn(0.01f, 1f)
+}
+
+internal fun applyWindowBrightnessOverride(activity: android.app.Activity?, brightness: Float?) {
+    val window = activity?.window ?: return
+    val target = brightness?.coerceIn(0.01f, 1f)
+        ?: android.view.WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+    val layoutParams = window.attributes
+    if (layoutParams.screenBrightness != target) {
+        layoutParams.screenBrightness = target
+        window.attributes = layoutParams
+    }
+}
+
+internal fun resetWindowBrightnessToSystem(
+    activity: android.app.Activity?,
+    clearPlaybackOverride: Boolean = true
+) {
+    if (clearPlaybackOverride) {
+        LivePlaybackHostSignals.updatePlaybackBrightnessOverride(null)
+    }
+    applyWindowBrightnessOverride(activity, null)
 }

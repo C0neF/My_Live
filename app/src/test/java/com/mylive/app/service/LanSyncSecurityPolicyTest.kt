@@ -36,7 +36,7 @@ class LanSyncSecurityPolicyTest {
     @Test
     fun thePairingCodeIsNeverPutOnTheWireByEitherSide() {
         val receiveSource = File("src/main/java/com/mylive/app/service/LanSyncService.kt").readText()
-        val sendSource = File("src/main/java/com/mylive/app/data/sync/LanSyncClient.kt").readText()
+        val sendSource = File("../live-core/src/main/java/com/mylive/app/core/sync/LanSyncClient.kt").readText()
         val authBlock = receiveSource.substringAfter("private fun authorizeRequest(")
             .substringBefore("private fun openSealedSyncBody(")
 
@@ -112,7 +112,7 @@ class LanSyncSecurityPolicyTest {
     fun lanSyncWriteEndpointsRunAsBoundedBackgroundImports() {
         val source = File("src/main/java/com/mylive/app/service/LanSyncService.kt").readText()
         val protocolSource = File(
-            "src/main/java/com/mylive/app/core/sync/LanSyncProtocol.kt"
+            "../live-core/src/main/java/com/mylive/app/core/sync/LanSyncProtocol.kt"
         ).readText()
         val postBlock = source.substringAfter("} else if (method == Method.POST) {")
             .substringBefore("} else {")
@@ -263,7 +263,7 @@ class LanSyncSecurityPolicyTest {
 
     @Test
     fun lanSyncBodiesAreSealedBeforeTheyLeaveTheDeviceAndUnsealedBodiesAreRejected() {
-        val sendSource = File("src/main/java/com/mylive/app/data/sync/LanSyncClient.kt").readText()
+        val sendSource = File("../live-core/src/main/java/com/mylive/app/core/sync/LanSyncClient.kt").readText()
         val receiveSource = File("src/main/java/com/mylive/app/service/LanSyncService.kt").readText()
 
         // Sender seals every payload against the signed request context and refuses to send while
@@ -307,7 +307,7 @@ class LanSyncSecurityPolicyTest {
     fun theUnauthenticatedInfoEndpointDoesNotFingerprintTheDevice() {
         val source = File("src/main/java/com/mylive/app/service/LanSyncService.kt").readText()
         val protocolSource = File(
-            "src/main/java/com/mylive/app/core/sync/LanSyncProtocol.kt"
+            "../live-core/src/main/java/com/mylive/app/core/sync/LanSyncProtocol.kt"
         ).readText()
         val infoBlock = source.substringAfter("uri == LanSyncProtocol.INFO_PATH")
             .substringBefore("uri.startsWith(LanSyncProtocol.JOB_PATH_PREFIX)")

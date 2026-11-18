@@ -2,7 +2,7 @@ package com.mylive.app.core.site.douyin
 
 import com.mylive.app.core.common.HttpClient
 import com.mylive.app.core.common.CoreError
-import com.mylive.app.core.script.JsEngine
+import com.mylive.app.core.script.JsExecutor
 import com.mylive.app.core.site.LiveSite
 import com.mylive.app.data.local.entity.FollowUserEntity
 import com.mylive.app.data.repository.FollowRepository
@@ -33,9 +33,17 @@ import javax.inject.Provider
 class DouyinFollowPresenceTest {
 
     private fun createSite(httpClient: HttpClient): DouyinSite {
-        val jsEngine = mockk<JsEngine>()
+        val jsEngine = mockk<JsExecutor>()
         coEvery { jsEngine.execute(any(), any(), *anyVararg()) } returns "signature"
-        return DouyinSite(httpClient, Provider { jsEngine }, OkHttpClient()) { "" }
+        return DouyinSite(
+            httpClient,
+            Provider { jsEngine },
+            OkHttpClient(),
+            { "" },
+            object : DouyinTtwidSource {
+                override suspend fun current(forceRefresh: Boolean) = "ttwid=test-fixed"
+            }
+        )
     }
 
     @Test

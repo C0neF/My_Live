@@ -22,12 +22,20 @@ internal data class KeywordShieldRules(
             if (message.contains(keyword)) return true
         }
         for (regex in regexKeywords) {
-            if (regex.containsMatchIn(message)) return true
+            val matched = try {
+                regex.containsMatchIn(BoundedStepCharSequence(message, MAX_REGEX_STEPS))
+            } catch (_: RegexStepBudgetExceededException) {
+                false
+            }
+            if (matched) return true
         }
         return false
     }
 
     companion object {
+        private const val MAX_REGEX_PATTERN_LENGTH = 256
+        private const val MAX_REGEX_STEPS = 10_000
+
         fun from(shieldValues: List<String>): KeywordShieldRules {
             val plainKeywords = mutableListOf<String>()
             val regexKeywords = mutableListOf<Regex>()
@@ -35,11 +43,12 @@ internal data class KeywordShieldRules(
                 val keyword = rawValue.keywordShieldValue() ?: continue
                 if (keyword.isEmpty()) continue
                 if (keyword.isSlashRegex()) {
-                    val regex = runCatching {
-                        Regex(keyword.substring(1, keyword.length - 1))
-                    }.getOrNull()
-                    if (regex != null) {
-                        regexKeywords.add(regex)
+                    val pattern = keyword.substring(1, keyword.length - 1)
+                    if (pattern.length <= MAX_REGEX_PATTERN_LENGTH) {
+                        val regex = runCatching { Regex(pattern) }.getOrNull()
+                        if (regex != null) {
+                            regexKeywords.add(regex)
+                        }
                     }
                 } else {
                     plainKeywords.add(keyword)
@@ -132,3 +141,49 @@ private fun String.userShieldRule(): UserShieldRule? {
 
 private fun String.isSlashRegex(): Boolean =
     length > 2 && startsWith('/') && endsWith('/')
+
+private class RegexStepBudgetExceededException : RuntimeException(null, null, false, false)
+
+private class BoundedStepCharSequence(
+    private val delegate: CharSequence,
+    private val maxSteps: Int
+) : CharSequence {
+    private var steps = 0
+
+    override val length: Int
+        get() = delegate.length
+
+    override fun get(index: Int): Char {
+        countStep()
+        return delegate[index]
+    }
+
+    override fun subSequence(startIndex: Int, endIndex: Int): CharSequence =
+        BoundedStepCharSequenceView(delegate.subSequence(startIndex, endIndex), this)
+
+    override fun toString(): String = delegate.toString()
+
+    internal fun countStep() {
+        if (++steps > maxSteps) {
+            throw RegexStepBudgetExceededException()
+        }
+    }
+}
+
+private class BoundedStepCharSequenceView(
+    private val delegate: CharSequence,
+    private val owner: BoundedStepCharSequence
+) : CharSequence {
+    override val length: Int
+        get() = delegate.length
+
+    override fun get(index: Int): Char {
+        owner.countStep()
+        return delegate[index]
+    }
+
+    override fun subSequence(startIndex: Int, endIndex: Int): CharSequence =
+        BoundedStepCharSequenceView(delegate.subSequence(startIndex, endIndex), owner)
+
+    override fun toString(): String = delegate.toString()
+}

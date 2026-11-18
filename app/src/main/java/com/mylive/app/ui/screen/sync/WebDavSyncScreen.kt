@@ -1,14 +1,16 @@
 package com.mylive.app.ui.screen.sync
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import com.mylive.app.ui.theme.Icons
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -24,6 +26,10 @@ import com.mylive.app.core.common.readUtf8TextWithinLimit
 import com.mylive.app.data.local.datastore.SettingsDataStore
 import com.mylive.app.data.local.secure.SensitiveCredentialStore
 import com.mylive.app.data.repository.ProfileBackupManager
+import com.mylive.app.ui.component.settings.SettingsInsetCard
+import com.mylive.app.ui.component.settings.SettingsSectionHeader
+import com.mylive.app.ui.layout.AdaptivePageFrame
+import com.mylive.app.ui.layout.LocalAppLayout
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
@@ -78,20 +84,30 @@ class WebDavViewModel @Inject constructor(
     private val _message = MutableSharedFlow<WebDavMessage?>(replay = 0, extraBufferCapacity = 1)
     val message: SharedFlow<WebDavMessage?> = _message.asSharedFlow()
 
+    private var serverUrlEdited = false
+    private var usernameEdited = false
+    private var passwordEdited = false
+
     init {
         viewModelScope.launch {
             settingsDataStore.getFlow(SettingsDataStore.WebDAVUri, "").collect { url ->
-                _uiState.value = _uiState.value.copy(serverUrl = url)
+                if (!serverUrlEdited || url.isNotEmpty()) {
+                    _uiState.value = _uiState.value.copy(serverUrl = url)
+                }
             }
         }
         viewModelScope.launch {
             settingsDataStore.getFlow(SettingsDataStore.WebDAVUser, "").collect { user ->
-                _uiState.value = _uiState.value.copy(username = user)
+                if (!usernameEdited || user.isNotEmpty()) {
+                    _uiState.value = _uiState.value.copy(username = user)
+                }
             }
         }
         viewModelScope.launch {
             sensitiveCredentialStore.webDavPassword.collect { pass ->
-                _uiState.value = _uiState.value.copy(password = pass)
+                if (!passwordEdited || pass.isNotEmpty()) {
+                    _uiState.value = _uiState.value.copy(password = pass)
+                }
             }
         }
         viewModelScope.launch {
@@ -107,14 +123,17 @@ class WebDavViewModel @Inject constructor(
     }
 
     fun updateServerUrl(url: String) {
+        serverUrlEdited = true
         _uiState.value = _uiState.value.copy(serverUrl = url)
     }
 
     fun updateUsername(username: String) {
+        usernameEdited = true
         _uiState.value = _uiState.value.copy(username = username)
     }
 
     fun updatePassword(password: String) {
+        passwordEdited = true
         _uiState.value = _uiState.value.copy(password = password)
     }
 
@@ -158,6 +177,9 @@ class WebDavViewModel @Inject constructor(
                 settingsDataStore.setValue(SettingsDataStore.kWebDAVLastUploadTime, uploadTime)
                 _uiState.value = _uiState.value.copy(isLoading = false)
                 _message.emit(WebDavMessage.BackupOk)
+            } catch (cancelled: CancellationException) {
+                _uiState.value = _uiState.value.copy(isLoading = false)
+                throw cancelled
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(isLoading = false)
                 _message.emit(WebDavMessage.BackupFailed(e.message ?: ""))
@@ -210,6 +232,9 @@ class WebDavViewModel @Inject constructor(
     }
 
     private suspend fun persistConfig(state: WebDavUiState) {
+        serverUrlEdited = false
+        usernameEdited = false
+        passwordEdited = false
         settingsDataStore.setValue(SettingsDataStore.WebDAVUri, state.serverUrl.trim())
         settingsDataStore.setValue(SettingsDataStore.WebDAVUser, state.username)
         sensitiveCredentialStore.setWebDavPassword(state.password)
@@ -236,7 +261,7 @@ fun WebDavSyncScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
-    val context = LocalContext.current
+    val resources = LocalResources.current
 
     val handleBack = navigator.rememberRouteActions().onBack
 
@@ -244,22 +269,26 @@ fun WebDavSyncScreen(
         viewModel.message.collect { msg ->
             msg ?: return@collect
             val text = when (msg) {
-                WebDavMessage.Saved -> context.getString(R.string.webdav_saved)
-                WebDavMessage.BackupOk -> context.getString(R.string.webdav_backup_ok)
-                is WebDavMessage.BackupFailed -> context.getString(R.string.webdav_backup_failed, msg.reason)
-                WebDavMessage.RestoreOk -> context.getString(R.string.webdav_restore_ok)
-                is WebDavMessage.RestoreFailed -> context.getString(R.string.webdav_restore_failed, msg.reason)
-                WebDavMessage.ConfigRequired -> context.getString(R.string.webdav_config_required)
-                is WebDavMessage.ConfigInvalid -> context.getString(R.string.webdav_config_invalid, msg.reason)
+                WebDavMessage.Saved -> resources.getString(R.string.webdav_saved)
+                WebDavMessage.BackupOk -> resources.getString(R.string.webdav_backup_ok)
+                is WebDavMessage.BackupFailed -> resources.getString(R.string.webdav_backup_failed, msg.reason)
+                WebDavMessage.RestoreOk -> resources.getString(R.string.webdav_restore_ok)
+                is WebDavMessage.RestoreFailed -> resources.getString(R.string.webdav_restore_failed, msg.reason)
+                WebDavMessage.ConfigRequired -> resources.getString(R.string.webdav_config_required)
+                is WebDavMessage.ConfigInvalid -> resources.getString(R.string.webdav_config_invalid, msg.reason)
             }
             snackbarHostState.showSnackbar(text)
         }
     }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.webdav_title)) },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background
+                ),
                 navigationIcon = {
                     IconButton(onClick = handleBack) {
                         Icon(
@@ -272,114 +301,136 @@ fun WebDavSyncScreen(
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            // Server URL
-            OutlinedTextField(
-                value = uiState.serverUrl,
-                onValueChange = { viewModel.updateServerUrl(it) },
-                label = { Text(stringResource(R.string.webdav_server_url)) },
-                placeholder = { Text(stringResource(R.string.webdav_server_url_hint)) },
-                supportingText = if (isNutstoreWebDavServer(uiState.serverUrl)) {
-                    { Text(stringResource(R.string.webdav_nutstore_directory_hint)) }
-                } else null,
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                enabled = !uiState.isLoading
-            )
+        AdaptivePageFrame(Modifier.padding(padding), LocalAppLayout.current.settingsMaxWidthDp) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.background)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(18.dp)
+            ) {
+                Column {
+                    SettingsSectionHeader("服务器配置")
+                    SettingsInsetCard {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            OutlinedTextField(
+                                value = uiState.serverUrl,
+                                onValueChange = { viewModel.updateServerUrl(it) },
+                                label = { Text(stringResource(R.string.webdav_server_url)) },
+                                placeholder = { Text(stringResource(R.string.webdav_server_url_hint)) },
+                                supportingText = if (isNutstoreWebDavServer(uiState.serverUrl)) {
+                                    { Text(stringResource(R.string.webdav_nutstore_directory_hint)) }
+                                } else null,
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true,
+                                enabled = !uiState.isLoading
+                            )
 
-            // Username
-            OutlinedTextField(
-                value = uiState.username,
-                onValueChange = { viewModel.updateUsername(it) },
-                label = { Text(stringResource(R.string.webdav_username)) },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                enabled = !uiState.isLoading
-            )
+                            OutlinedTextField(
+                                value = uiState.username,
+                                onValueChange = { viewModel.updateUsername(it) },
+                                label = { Text(stringResource(R.string.webdav_username)) },
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true,
+                                enabled = !uiState.isLoading
+                            )
 
-            // Password
-            OutlinedTextField(
-                value = uiState.password,
-                onValueChange = { viewModel.updatePassword(it) },
-                label = { Text(stringResource(R.string.webdav_password)) },
-                supportingText = if (isNutstoreWebDavServer(uiState.serverUrl)) {
-                    { Text(stringResource(R.string.webdav_nutstore_password_hint)) }
-                } else null,
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                enabled = !uiState.isLoading,
-                visualTransformation = if (uiState.showPassword) VisualTransformation.None
-                                       else PasswordVisualTransformation(),
-                trailingIcon = {
-                    IconButton(onClick = { viewModel.togglePasswordVisibility() }) {
-                        Text(
-                            text = if (uiState.showPassword) stringResource(R.string.webdav_hide)
-                            else stringResource(R.string.webdav_show),
-                            style = MaterialTheme.typography.bodySmall
-                        )
+                            OutlinedTextField(
+                                value = uiState.password,
+                                onValueChange = { viewModel.updatePassword(it) },
+                                label = { Text(stringResource(R.string.webdav_password)) },
+                                supportingText = if (isNutstoreWebDavServer(uiState.serverUrl)) {
+                                    { Text(stringResource(R.string.webdav_nutstore_password_hint)) }
+                                } else null,
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true,
+                                enabled = !uiState.isLoading,
+                                visualTransformation = if (uiState.showPassword) VisualTransformation.None
+                                else PasswordVisualTransformation(),
+                                trailingIcon = {
+                                    IconButton(onClick = { viewModel.togglePasswordVisibility() }) {
+                                        Text(
+                                            text = if (uiState.showPassword) stringResource(R.string.webdav_hide)
+                                            else stringResource(R.string.webdav_show),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                }
+                            )
+
+                            Button(
+                                onClick = { viewModel.saveConfig() },
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth(),
+                                enabled = !uiState.isLoading
+                            ) {
+                                Text(stringResource(R.string.webdav_save))
+                            }
+                        }
                     }
                 }
-            )
 
-            // Save config button
-            Button(
-                onClick = { viewModel.saveConfig() },
-                modifier = Modifier.fillMaxWidth(),
-                enabled = !uiState.isLoading
-            ) {
-                Text(stringResource(R.string.webdav_save))
-            }
+                Column {
+                    SettingsSectionHeader("云端同步")
+                    SettingsInsetCard {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            if (uiState.lastUploadTime.isNotEmpty() || uiState.lastRecoverTime.isNotEmpty()) {
+                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    if (uiState.lastUploadTime.isNotEmpty()) {
+                                        Text(
+                                            text = stringResource(R.string.webdav_last_backup, uiState.lastUploadTime),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    if (uiState.lastRecoverTime.isNotEmpty()) {
+                                        Text(
+                                            text = stringResource(R.string.webdav_last_recover, uiState.lastRecoverTime),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
 
-            Spacer(modifier = Modifier.height(8.dp))
+                            OutlinedButton(
+                                onClick = { viewModel.backup() },
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth(),
+                                enabled = !uiState.isLoading && uiState.serverUrl.isNotBlank()
+                            ) {
+                                if (uiState.isLoading) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(18.dp),
+                                        strokeWidth = 2.dp
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                }
+                                Text(stringResource(R.string.webdav_backup))
+                            }
 
-            // Last times
-            if (uiState.lastUploadTime.isNotEmpty()) {
-                Text(
-                    text = stringResource(R.string.webdav_last_backup, uiState.lastUploadTime),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            if (uiState.lastRecoverTime.isNotEmpty()) {
-                Text(
-                    text = stringResource(R.string.webdav_last_recover, uiState.lastRecoverTime),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Backup button
-            OutlinedButton(
-                onClick = { viewModel.backup() },
-                modifier = Modifier.fillMaxWidth(),
-                enabled = !uiState.isLoading && uiState.serverUrl.isNotBlank()
-            ) {
-                if (uiState.isLoading) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        strokeWidth = 2.dp
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
+                            OutlinedButton(
+                                onClick = { viewModel.restore() },
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth(),
+                                enabled = !uiState.isLoading && uiState.serverUrl.isNotBlank()
+                            ) {
+                                Text(stringResource(R.string.webdav_restore))
+                            }
+                        }
+                    }
                 }
-                Text(stringResource(R.string.webdav_backup))
-            }
-
-            // Restore button
-            OutlinedButton(
-                onClick = { viewModel.restore() },
-                modifier = Modifier.fillMaxWidth(),
-                enabled = !uiState.isLoading && uiState.serverUrl.isNotBlank()
-            ) {
-                Text(stringResource(R.string.webdav_restore))
             }
         }
     }

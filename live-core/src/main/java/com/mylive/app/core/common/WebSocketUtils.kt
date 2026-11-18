@@ -1,0 +1,497 @@
+package com.mylive.app.core.common
+
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.Response
+import okhttp3.WebSocket
+import okhttp3.WebSocketListener
+import okio.ByteString
+import java.util.Timer
+import java.util.TimerTask
+import java.util.concurrent.TimeUnit
+
+internal fun buildWebSocketClient(
+    baseClient: OkHttpClient,
+    disableCompression: Boolean,
+    connectTimeoutMillis: Long?
+): OkHttpClient {
+    if (!disableCompression && connectTimeoutMillis == null) return baseClient
+
+    val builder = baseClient.newBuilder()
+    if (connectTimeoutMillis != null) {
+        builder.connectTimeout(connectTimeoutMillis, TimeUnit.MILLISECONDS)
+    }
+    if (disableCompression) {
+        builder.addInterceptor { chain ->
+            val request = chain.request().newBuilder()
+                .removeHeader("Sec-WebSocket-Extensions")
+                .build()
+            chain.proceed(request)
+        }
+    }
+    return builder.build()
+}
+
+/**
+ * WebSocket connection status.
+ */
+enum class SocketStatus {
+    CONNECTING,
+    CONNECTED,
+    FAILED,
+    CLOSED
+}
+
+/**
+ * WebSocket utility using OkHttp, providing auto-reconnect, backup URLs,
+ * heartbeat, and the same lifecycle callbacks as the Dart WebScoketUtils.
+ *
+ * Usage:
+ * ```
+ * val ws = WebSocketUtils(okHttpClient)
+ * ws.connect(
+ *     url = "wss://example.com/ws",
+ *     heartBeatTime = 30_000L,
+ *     onMessage = { data -> /* handle message */ },
+ *     onClose = { msg -> /* handle close */ },
+ *     onReady = { /* connected */ },
+ *     onHeartBeat = { ws.sendMessage("ping") }
+ * )
+ * ```
+ */
+class WebSocketUtils(
+    private val client: OkHttpClient
+) {
+
+    @Volatile
+    var status: SocketStatus = SocketStatus.CLOSED
+        private set
+
+    @Volatile
+    private var webSocket: WebSocket? = null
+    @Volatile
+    private var heartBeatTimer: Timer? = null
+    @Volatile
+    private var reconnectTimer: Timer? = null
+    @Volatile
+    private var reconnectTime: Int = 0
+    private val maxReconnectTime: Int = 5
+
+    // Written by the caller thread in connect(), by OkHttp callback threads in onError()/onReady()
+    // and by Timer threads in reconnect(). Without @Volatile a reconnect could keep reading a
+    // stale index and reconnect to the wrong URL forever.
+    @Volatile
+    private var currentUrlIndex: Int = 0
+    @Volatile
+    private var intentionalClose: Boolean = true
+
+    // Cached parameters for reconnect. Published from the connect() caller thread and read from
+    // OkHttp callback and Timer threads, so every field has to be volatile.
+    @Volatile
+    private var connectUrl: String = ""
+    @Volatile
+    private var connectBackupUrl: String? = null
+    @Volatile
+    private var connectBackupUrls: List<String> = emptyList()
+    @Volatile
+    private var connectHeartBeatTime: Long = 30_000L
+    @Volatile
+    private var connectIdleTimeoutMillis: Long? = null
+    @Volatile
+    private var connectSocketClient: OkHttpClient = client
+    @Volatile
+    private var connectHeaders: Map<String, String>? = null
+    @Volatile
+    private var callbackMessage: ((Any) -> Unit)? = null
+    @Volatile
+    private var callbackClose: ((String) -> Unit)? = null
+    @Volatile
+    private var callbackReconnect: (() -> Unit)? = null
+    @Volatile
+    private var callbackReady: (() -> Unit)? = null
+    @Volatile
+    private var callbackHeartBeat: (() -> Unit)? = null
+    @Volatile
+    private var lastMessageAtMillis: Long = 0L
+    @Volatile
+    private var sessionGeneration: Long = 0L
+
+    private fun sanitizeCloseCode(code: Int): Int {
+        return if (code in 1000..1003 || code in 1007..1014 || code in 3000..4999) {
+            code
+        } else {
+            1000
+        }
+    }
+
+    // Heartbeat ticks and OkHttp callbacks both touch the socket. The attempt id is published
+    // before newWebSocket returns, because OkHttp can deliver onOpen on another thread before
+    // the assignment `webSocket = newWebSocket(...)` runs. Comparing only the field drops that
+    // onOpen, so the replacement connects on the server and the caller never sees onReady.
+    private val connectionLock = Any()
+    private var socketEpoch = 0L
+
+    /**
+     * Build the ordered list of URLs to try: primary + backup(s), deduplicated.
+     */
+    private val connectUrls: List<String>
+        get() {
+            val urls = mutableListOf(connectUrl)
+            if (!connectBackupUrl.isNullOrEmpty()) {
+                urls.add(connectBackupUrl!!)
+            }
+            urls.addAll(connectBackupUrls.filter { it.isNotEmpty() })
+            return urls.distinct()
+        }
+
+    /**
+     * Connect to a WebSocket server with auto-reconnect and backup URL support.
+     *
+     * @param url Primary WebSocket URL
+     * @param backupUrl Optional backup URL
+     * @param backupUrls Optional list of additional backup URLs
+     * @param heartBeatTime Heartbeat interval in milliseconds
+     * @param idleTimeoutMillis Optional timeout for connections that stay open but stop receiving messages
+     * @param disableCompression Disable per-message deflate for servers with incompatible implementations
+     * @param connectTimeoutMillis Optional handshake connect timeout for each candidate URL
+     * @param headers Optional request headers
+     * @param onMessage Callback when a message is received
+     * @param onClose Callback when connection is closed
+     * @param onReconnect Callback when attempting to reconnect
+     * @param onReady Callback when connection is established
+     * @param onHeartBeat Callback for heartbeat ticks
+     */
+    fun connect(
+        url: String,
+        backupUrl: String? = null,
+        backupUrls: List<String> = emptyList(),
+        heartBeatTime: Long = 30_000L,
+        idleTimeoutMillis: Long? = null,
+        disableCompression: Boolean = false,
+        connectTimeoutMillis: Long? = null,
+        headers: Map<String, String>? = null,
+        onMessage: ((Any) -> Unit)? = null,
+        onClose: ((String) -> Unit)? = null,
+        onReconnect: (() -> Unit)? = null,
+        onReady: (() -> Unit)? = null,
+        onHeartBeat: (() -> Unit)? = null
+    ) {
+        synchronized(connectionLock) {
+            sessionGeneration++
+            reconnectTimer?.cancel()
+            reconnectTimer = null
+            // Cache parameters for reconnect
+            this.connectUrl = url
+            this.connectBackupUrl = backupUrl
+            this.connectBackupUrls = backupUrls
+            this.connectHeartBeatTime = heartBeatTime
+            this.connectIdleTimeoutMillis = idleTimeoutMillis
+            this.connectSocketClient = buildWebSocketClient(
+                baseClient = client,
+                disableCompression = disableCompression,
+                connectTimeoutMillis = connectTimeoutMillis
+            )
+            this.connectHeaders = headers
+            this.callbackMessage = onMessage
+            this.callbackClose = onClose
+            this.callbackReconnect = onReconnect
+            this.callbackReady = onReady
+            this.callbackHeartBeat = onHeartBeat
+            this.intentionalClose = false
+            this.currentUrlIndex = 0
+            this.reconnectTime = 0
+
+            doConnect(retry = false)
+        }
+    }
+
+    /**
+     * Internal connect implementation. Tries each URL in order.
+     *
+     * @param retry If true, skip the primary URL and try backup(s) only
+     */
+    private fun doConnect(retry: Boolean) {
+        currentUrlIndex = if (retry && connectUrls.size > 1) 1 else 0
+        doConnectCurrentUrl()
+    }
+
+    private fun doConnectCurrentUrl() {
+        val (attempt, previous) = synchronized(connectionLock) {
+            val previous = retireSocketLocked()
+            status = SocketStatus.CONNECTING
+            socketEpoch to previous
+        }
+        previous?.cancel()
+
+        val wsUrl = connectUrls.getOrNull(currentUrlIndex)
+        if (wsUrl == null) {
+            onError(RuntimeException("WebSocket connection failed"))
+            return
+        }
+
+        try {
+            val requestBuilder = Request.Builder().url(wsUrl)
+            connectHeaders?.forEach { (key, value) ->
+                requestBuilder.addHeader(key, value)
+            }
+
+            val created = connectSocketClient.newWebSocket(
+                requestBuilder.build(),
+                AttemptListener(attempt)
+            )
+            synchronized(connectionLock) {
+                if (socketEpoch != attempt) {
+                    created.cancel()
+                } else if (webSocket == null) {
+                    webSocket = created
+                }
+            }
+        } catch (e: Throwable) {
+            synchronized(connectionLock) {
+                if (socketEpoch == attempt) {
+                    webSocket?.cancel()
+                    webSocket = null
+                }
+            }
+            onError(e)
+        }
+    }
+
+    /** Drops the current socket. Caller must hold [connectionLock] and cancel the returned socket outside it. */
+    private fun retireSocketLocked(): WebSocket? {
+        socketEpoch++
+        heartBeatTimer?.cancel()
+        heartBeatTimer = null
+        val previous = webSocket
+        webSocket = null
+        return previous
+    }
+
+    private inner class AttemptListener(private val attempt: Long) : WebSocketListener() {
+        private fun accept(socket: WebSocket): Boolean = synchronized(connectionLock) {
+            if (socketEpoch != attempt || intentionalClose) return false
+            if (webSocket == null) webSocket = socket
+            webSocket === socket
+        }
+
+        override fun onOpen(webSocket: WebSocket, response: Response) {
+            if (!accept(webSocket)) return
+            onReady(attempt)
+        }
+
+        override fun onMessage(webSocket: WebSocket, text: String) {
+            if (!accept(webSocket)) return
+            receiveMessage(text)
+        }
+
+        override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
+            if (!accept(webSocket)) return
+            receiveMessage(bytes.toByteArray())
+        }
+
+        override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+            if (!accept(webSocket)) return
+            onError(t)
+        }
+
+        override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+            if (!accept(webSocket)) return
+            heartBeatTimer?.cancel()
+            heartBeatTimer = null
+            status = SocketStatus.CLOSED
+            // OkHttp waits for our Close frame before delivering onClosed. A peer
+            // may send a reserved Close code, which cannot be echoed.
+            runCatching { webSocket.close(sanitizeCloseCode(code), reason.take(40)) }
+        }
+
+        override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+            if (!accept(webSocket)) return
+            onDone()
+        }
+    }
+
+    /**
+     * Called when the WebSocket connection is established.
+     */
+    private fun onReady(attempt: Long) {
+        synchronized(connectionLock) {
+            if (socketEpoch != attempt) return
+            status = SocketStatus.CONNECTED
+            currentUrlIndex = 0
+            lastMessageAtMillis = System.currentTimeMillis()
+            reconnectTimer?.cancel()
+            reconnectTimer = null
+            reconnectTime = 0
+        }
+        callbackReady?.invoke()
+        initHeartBeat(attempt)
+    }
+
+    /**
+     * Start the periodic heartbeat timer.
+     */
+    private fun initHeartBeat(attempt: Long) {
+        synchronized(connectionLock) {
+            if (socketEpoch != attempt || status != SocketStatus.CONNECTED) return
+            heartBeatTimer?.cancel()
+            heartBeatTimer = Timer("ws-heartbeat", true).apply {
+                schedule(object : TimerTask() {
+                    override fun run() {
+                        val idleFor = synchronized(connectionLock) {
+                            if (socketEpoch != attempt || status != SocketStatus.CONNECTED) return
+                            System.currentTimeMillis() - lastMessageAtMillis
+                        }
+                        if (
+                            shouldReconnectOnIdleTimeout(
+                                intentionalClose = intentionalClose,
+                                idleTimeoutMillis = connectIdleTimeoutMillis,
+                                idleForMillis = idleFor
+                            )
+                        ) {
+                            onIdleTimeout()
+                            return
+                        }
+                        runCatching { callbackHeartBeat?.invoke() }
+                    }
+                }, connectHeartBeatTime, connectHeartBeatTime)
+            }
+        }
+    }
+
+    /**
+     * Called when a message is received. Resets reconnect counter on first message.
+     */
+    private fun receiveMessage(data: Any) {
+        lastMessageAtMillis = System.currentTimeMillis()
+        reconnectTime = 0
+        callbackMessage?.invoke(data)
+    }
+
+    /**
+     * A silent-but-open socket is recoverable and should not be surfaced as a
+     * terminal close to the UI. Recreate it immediately so streams can resume.
+     */
+    private fun onIdleTimeout() {
+        synchronized(connectionLock) {
+            if (status != SocketStatus.CONNECTED) return
+            val idleFor = System.currentTimeMillis() - lastMessageAtMillis
+            if (!shouldReconnectOnIdleTimeout(
+                    intentionalClose = intentionalClose,
+                    idleTimeoutMillis = connectIdleTimeoutMillis,
+                    idleForMillis = idleFor
+                )
+            ) {
+                return
+            }
+            heartBeatTimer?.cancel()
+            heartBeatTimer = null
+            status = SocketStatus.FAILED
+        }
+        callbackReconnect?.invoke()
+        doConnect(retry = true)
+    }
+
+    /**
+     * Called on error. Sets status to FAILED and notifies via onClose.
+     * Skips if we intentionally closed the socket.
+     */
+    private fun onError(t: Throwable) {
+        heartBeatTimer?.cancel()
+        heartBeatTimer = null
+        when (
+            webSocketFailureAction(
+                intentionalClose = intentionalClose,
+                currentUrlIndex = currentUrlIndex,
+                urlCount = connectUrls.size,
+                reconnectAttemptsAlready = reconnectTime,
+                maxReconnectAttempts = maxReconnectTime
+            )
+        ) {
+            WebSocketFailureAction.GIVE_UP -> {
+                if (!intentionalClose) {
+                    status = SocketStatus.FAILED
+                    reconnect()
+                }
+            }
+            WebSocketFailureAction.TRY_NEXT_URL -> {
+                currentUrlIndex++
+                callbackReconnect?.invoke()
+                doConnectCurrentUrl()
+            }
+            WebSocketFailureAction.SCHEDULE_RECONNECT -> {
+                status = SocketStatus.FAILED
+                callbackClose?.invoke(t.toString())
+                reconnect()
+            }
+        }
+    }
+
+    /**
+     * Called when the WebSocket is closed (not by us). Triggers reconnect.
+     */
+    private fun onDone() {
+        if (intentionalClose) return
+        reconnect()
+    }
+
+    /**
+     * Send a text or binary message over the WebSocket.
+     *
+     * @param message A [String] (sent as text) or [ByteArray] (sent as binary)
+     */
+    fun sendMessage(message: Any) {
+        if (status != SocketStatus.CONNECTED) return
+        when (message) {
+            is String -> webSocket?.send(message)
+            is ByteArray -> webSocket?.send(ByteString.of(*message))
+        }
+    }
+
+    /**
+     * Close the WebSocket connection and clean up all timers.
+     * This is a user-initiated close; no reconnect will be attempted.
+     */
+    fun close() {
+        val previous = synchronized(connectionLock) {
+            sessionGeneration++
+            reconnectTimer?.cancel()
+            reconnectTimer = null
+            reconnectTime = 0
+            intentionalClose = true
+            status = SocketStatus.CLOSED
+            retireSocketLocked()
+        }
+        previous?.close(1000, "Client closed")
+    }
+
+    /**
+     * Attempt to reconnect with exponential-ish backoff (fixed 5-second interval).
+     * After [maxReconnectTime] attempts, gives up and notifies [callbackClose].
+     */
+    private fun reconnect() {
+        if (!shouldRunScheduledReconnect(intentionalClose)) return
+        if (reconnectTime >= maxReconnectTime) {
+            callbackClose?.invoke("重连超过最大次数，与服务器断开连接")
+            reconnectTimer?.cancel()
+            reconnectTimer = null
+            close()
+            return
+        }
+
+        reconnectTime = nextReconnectAttemptCount(reconnectTime)
+        reconnectTimer?.cancel()
+        val generation = sessionGeneration
+        reconnectTimer = Timer("ws-reconnect", true).apply {
+            schedule(object : TimerTask() {
+                override fun run() {
+                    try {
+                        if (generation != sessionGeneration || !shouldRunScheduledReconnect(intentionalClose)) return
+                        callbackReconnect?.invoke()
+                        doConnect(retry = false)
+                    } catch (_: Throwable) {
+                    }
+                }
+            }, 5_000L)
+        }
+    }
+}

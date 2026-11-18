@@ -3,8 +3,10 @@ package com.mylive.app.ui.screen.sync
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import com.mylive.app.ui.theme.Icons
 import androidx.compose.material3.*
@@ -12,6 +14,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -23,6 +26,10 @@ import com.mylive.app.ui.navigation.Route
 import com.mylive.app.R
 import com.mylive.app.core.common.readUtf8TextWithinLimit
 import com.mylive.app.data.repository.ProfileBackupManager
+import com.mylive.app.ui.component.settings.SettingsInsetCard
+import com.mylive.app.ui.component.settings.SettingsSectionHeader
+import com.mylive.app.ui.layout.AdaptivePageFrame
+import com.mylive.app.ui.layout.LocalAppLayout
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -94,6 +101,10 @@ class ProfileBackupViewModel @Inject constructor(
         }
     }
 
+    fun reportImportReadError(reason: String) {
+        _uiState.value = _uiState.value.copy(isImporting = false, message = ProfileMessage.ImportFailed(reason))
+    }
+
     fun clearMessage() {
         _uiState.value = _uiState.value.copy(message = null)
     }
@@ -108,6 +119,7 @@ fun ProfileBackupScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
+    val resources = LocalResources.current
     val coroutineScope = rememberCoroutineScope()
 
     val handleBack = navigator.rememberRouteActions().onBack
@@ -115,12 +127,12 @@ fun ProfileBackupScreen(
     LaunchedEffect(uiState.message) {
         val msg = uiState.message ?: return@LaunchedEffect
         val text = when (msg) {
-            is ProfileMessage.ExportOk -> context.getString(R.string.profile_export_ok)
-            is ProfileMessage.ExportFailed -> context.getString(R.string.profile_export_failed, msg.reason)
-            is ProfileMessage.ImportOk -> context.getString(R.string.profile_import_ok)
-            is ProfileMessage.ImportFailed -> context.getString(R.string.profile_import_failed, msg.reason)
-            is ProfileMessage.InvalidJson -> context.getString(R.string.profile_invalid_json)
-            is ProfileMessage.UnsupportedVersion -> context.getString(R.string.profile_unsupported_version)
+            is ProfileMessage.ExportOk -> resources.getString(R.string.profile_export_ok)
+            is ProfileMessage.ExportFailed -> resources.getString(R.string.profile_export_failed, msg.reason)
+            is ProfileMessage.ImportOk -> resources.getString(R.string.profile_import_ok)
+            is ProfileMessage.ImportFailed -> resources.getString(R.string.profile_import_failed, msg.reason)
+            is ProfileMessage.InvalidJson -> resources.getString(R.string.profile_invalid_json)
+            is ProfileMessage.UnsupportedVersion -> resources.getString(R.string.profile_unsupported_version)
         }
         snackbarHostState.showSnackbar(text)
         viewModel.clearMessage()
@@ -145,24 +157,30 @@ fun ProfileBackupScreen(
     ) { uri: Uri? ->
         uri?.let {
             coroutineScope.launch {
-                val jsonString = runCatching {
+                runCatching {
                     withContext(Dispatchers.IO) {
                         context.contentResolver.openInputStream(it)?.use { inputStream ->
                             inputStream.readUtf8TextWithinLimit()
                         } ?: error("无法读取导入文件")
                     }
-                }.getOrElse {
-                    ""
+                }.onSuccess { jsonString ->
+                    viewModel.importProfile(jsonString)
+                }.onFailure { error ->
+                    if (error is CancellationException) throw error
+                    viewModel.reportImportReadError(error.message ?: "")
                 }
-                viewModel.importProfile(jsonString)
             }
         }
     }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.profile_title)) },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background
+                ),
                 navigationIcon = {
                     IconButton(onClick = handleBack) {
                         Icon(
@@ -175,62 +193,81 @@ fun ProfileBackupScreen(
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            Text(
-                text = stringResource(R.string.profile_intro),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            Text(
-                text = stringResource(R.string.profile_warning),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Export button
-            Button(
-                onClick = {
-                    val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
-                    exportLauncher.launch("mylive_config_$timestamp.json")
-                },
-                modifier = Modifier.fillMaxWidth(),
-                enabled = !uiState.isExporting && !uiState.isImporting
+        AdaptivePageFrame(Modifier.padding(padding), LocalAppLayout.current.settingsMaxWidthDp) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.background)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(18.dp)
             ) {
-                if (uiState.isExporting) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.onPrimary
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
+                Column {
+                    SettingsSectionHeader("备份说明")
+                    SettingsInsetCard {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = stringResource(R.string.profile_intro),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = stringResource(R.string.profile_warning),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                 }
-                Text(stringResource(R.string.profile_export))
-            }
 
-            // Import button
-            OutlinedButton(
-                onClick = { importLauncher.launch("application/json") },
-                modifier = Modifier.fillMaxWidth(),
-                enabled = !uiState.isExporting && !uiState.isImporting
-            ) {
-                if (uiState.isImporting) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        strokeWidth = 2.dp
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
+                Column {
+                    SettingsSectionHeader("导入与导出")
+                    SettingsInsetCard {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Button(
+                                onClick = {
+                                    val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+                                    exportLauncher.launch("mylive_config_$timestamp.json")
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth(),
+                                enabled = !uiState.isExporting && !uiState.isImporting
+                            ) {
+                                if (uiState.isExporting) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(18.dp),
+                                        strokeWidth = 2.dp,
+                                        color = MaterialTheme.colorScheme.onPrimary
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                }
+                                Text(stringResource(R.string.profile_export))
+                            }
+
+                            OutlinedButton(
+                                onClick = { importLauncher.launch("application/json") },
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth(),
+                                enabled = !uiState.isExporting && !uiState.isImporting
+                            ) {
+                                if (uiState.isImporting) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(18.dp),
+                                        strokeWidth = 2.dp
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                }
+                                Text(stringResource(R.string.profile_import))
+                            }
+                        }
+                    }
                 }
-                Text(stringResource(R.string.profile_import))
             }
         }
     }

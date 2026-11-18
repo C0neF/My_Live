@@ -1,6 +1,7 @@
 package com.mylive.app.ui.screen.search
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -170,40 +171,40 @@ private fun SearchTabletControlPane(
     onSiteSelected: (Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Surface(
-        modifier = modifier.fillMaxHeight().testTag("search_tablet_controls"),
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+    Box(
+        modifier = modifier
+            .fillMaxHeight()
+            .testTag("search_tablet_controls")
+            .padding(start = 12.dp, top = 8.dp, bottom = 12.dp)
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(bottom = 16.dp)
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerLow
         ) {
-            SearchHeader(onBack = onBack)
-            SearchInputField(
-                searchText = searchText,
-                onSearchTextChange = onSearchTextChange,
-                onClearSearch = onClearSearch,
-                onSearch = onSearch
-            )
-            SearchFilterRow(
-                selectedTab = selectedTab,
-                selectedPlatformId = selectedPlatformId,
-                searchType = searchType,
-                showSearchTypeMenu = showSearchTypeMenu,
-                onSearchTypeMenuChange = onSearchTypeMenuChange,
-                siteTabs = siteTabs,
-                onTypeSelected = onTypeSelected,
-                onSiteSelected = onSiteSelected
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            Text(
-                text = stringResource(R.string.search_hint),
-                modifier = Modifier.padding(horizontal = 16.dp),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(bottom = 16.dp)
+            ) {
+                SearchHeader(onBack = onBack)
+                SearchInputField(
+                    searchText = searchText,
+                    onSearchTextChange = onSearchTextChange,
+                    onClearSearch = onClearSearch,
+                    onSearch = onSearch
+                )
+                SearchFilterRow(
+                    selectedTab = selectedTab,
+                    selectedPlatformId = selectedPlatformId,
+                    searchType = searchType,
+                    showSearchTypeMenu = showSearchTypeMenu,
+                    onSearchTypeMenuChange = onSearchTypeMenuChange,
+                    siteTabs = siteTabs,
+                    onTypeSelected = onTypeSelected,
+                    onSiteSelected = onSiteSelected
+                )
+            }
         }
     }
 }
@@ -270,7 +271,12 @@ private fun SearchInputField(
             )
         },
         trailingIcon = {
-            if (searchText.isNotEmpty()) {
+            val motionPolicy = LocalAppMotionPolicy.current
+            AnimatedVisibility(
+                visible = searchText.isNotEmpty(),
+                enter = com.mylive.app.ui.motion.popoverEnter(motionPolicy),
+                exit = com.mylive.app.ui.motion.popoverExit(motionPolicy)
+            ) {
                 IconButton(onClick = onClearSearch) {
                     Icon(
                         Icons.Default.Close,
@@ -499,14 +505,23 @@ private fun SearchResultsContent(
                                         navigator.navigateToRoom(siteId = siteId, roomId = anchor.roomId)
                                     },
                                 colors = CardDefaults.cardColors(
-                                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)
+                                    containerColor = if (anchor.liveStatus) {
+                                        MaterialTheme.colorScheme.surface
+                                    } else {
+                                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+                                    }
                                 ),
-                                shape = RoundedCornerShape(12.dp)
+                                border = BorderStroke(
+                                    1.dp,
+                                    if (anchor.liveStatus) MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)
+                                    else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
+                                ),
+                                shape = RoundedCornerShape(14.dp)
                             ) {
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(12.dp),
+                                        .padding(14.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Box(modifier = Modifier.size(48.dp)) {
@@ -522,7 +537,7 @@ private fun SearchResultsContent(
                                                     .align(Alignment.BottomEnd)
                                                     .size(12.dp),
                                                 shape = androidx.compose.foundation.shape.CircleShape,
-                                                color = MaterialTheme.colorScheme.error,
+                                                color = Color(0xFF34D399),
                                                 border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.surface)
                                             ) {}
                                         }
@@ -533,7 +548,7 @@ private fun SearchResultsContent(
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(
                                             text = anchor.userName,
-                                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
                                             color = MaterialTheme.colorScheme.onSurface
                                         )
                                         Spacer(modifier = Modifier.height(4.dp))
@@ -541,19 +556,27 @@ private fun SearchResultsContent(
                                             text = if (anchor.liveStatus) stringResource(R.string.follow_group_live)
                                                    else stringResource(R.string.follow_group_offline),
                                             style = MaterialTheme.typography.bodySmall,
-                                            color = if (anchor.liveStatus) MaterialTheme.colorScheme.error
-                                                    else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                            color = if (anchor.liveStatus) MaterialTheme.colorScheme.primary
+                                                    else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
                                             fontWeight = if (anchor.liveStatus) FontWeight.SemiBold else FontWeight.Normal
                                         )
                                     }
 
                                     if (anchor.liveStatus) {
-                                        Icon(
-                                            imageVector = Icons.Default.PlayArrow,
-                                            contentDescription = "Go to Live",
-                                            tint = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.size(24.dp)
-                                        )
+                                        Surface(
+                                            shape = androidx.compose.foundation.shape.CircleShape,
+                                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
+                                            modifier = Modifier.size(34.dp)
+                                        ) {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                Icon(
+                                                    imageVector = Icons.Default.PlayArrow,
+                                                    contentDescription = "Go to Live",
+                                                    tint = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier.size(20.dp)
+                                                )
+                                            }
+                                        }
                                     }
                                 }
                             }

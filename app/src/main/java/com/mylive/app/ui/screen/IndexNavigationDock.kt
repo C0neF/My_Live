@@ -5,6 +5,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -44,8 +45,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -60,8 +63,6 @@ import androidx.compose.ui.unit.sp
 import com.mylive.app.ui.motion.LocalAppMotionPolicy
 import kotlin.math.roundToInt
 
-// Visual reference: FlClash NavigationDock, commit 8d4f9744948751f1273fe871e1d05276fac09b0e.
-// This uses its opaque floating surface, with a single lens around icon and label.
 private val DockEdgeMargin = 21.dp
 private val DockPadding = 4.dp
 private val DockShadowRoom = 8.dp
@@ -105,15 +106,14 @@ internal fun IndexNavigationDock(
 ) {
     if (items.isEmpty()) return
     val height = indexNavigationDockHeight()
+    val hapticFeedback = LocalHapticFeedback.current
     val bottomMargin = indexNavigationDockBottomMargin()
     val scheme = MaterialTheme.colorScheme
-    val dark = scheme.surface.luminance() < 0.5f
-    val barColor = if (dark) scheme.surfaceVariant else scheme.surface
-    val lensColor = if (dark) {
-        androidx.compose.ui.graphics.lerp(barColor, scheme.onSurface, 0.07f)
-    } else {
-        scheme.surfaceVariant
-    }
+    val dark = scheme.background.luminance() < 0.5f
+    // Apple frosted tab bar feel: clean translucent surface, whisper-thin 0.5dp edge, borderless lens.
+    val barColor = if (dark) Color(0xEB1C1C1E) else Color(0xF2FFFFFF)
+    val barBorderColor = if (dark) Color.White.copy(alpha = 0.08f) else Color.Black.copy(alpha = 0.06f)
+    val lensColor = if (dark) Color.White.copy(alpha = 0.10f) else Color.Black.copy(alpha = 0.055f)
 
     Box(
         modifier = modifier
@@ -137,6 +137,8 @@ internal fun IndexNavigationDock(
             val widthPx = with(density) { maxWidth.toPx() }
             val currentItems by rememberUpdatedState(items)
             val currentOnItemClick by rememberUpdatedState(onItemClick)
+            val currentSelectedIndex by rememberUpdatedState(selectedIndex)
+            val currentHapticFeedback by rememberUpdatedState(hapticFeedback)
             var dragPosition by remember { mutableStateOf<Float?>(null) }
             val interactionSource = remember { MutableInteractionSource() }
             val pressed by interactionSource.collectIsPressedAsState()
@@ -147,8 +149,8 @@ internal fun IndexNavigationDock(
                 animateFloatAsState(
                     targetValue = targetPosition,
                     animationSpec = spring(
-                        dampingRatio = 0.78f,
-                        stiffness = if (dragPosition != null) 1_024f else 380f
+                        dampingRatio = 0.80f,
+                        stiffness = if (dragPosition != null) 1_024f else 400f
                     ),
                     label = "dockLensPosition"
                 )
@@ -156,8 +158,8 @@ internal fun IndexNavigationDock(
             val lift = animateFloatAsState(
                 targetValue = if (!reducedMotion && (pressed || dragPosition != null)) 1f else 0f,
                 animationSpec = if (reducedMotion) snap() else spring(
-                    dampingRatio = 0.65f,
-                    stiffness = 311f
+                    dampingRatio = 0.70f,
+                    stiffness = 320f
                 ),
                 label = "dockPressLift"
             )
@@ -167,29 +169,38 @@ internal fun IndexNavigationDock(
                     .fillMaxSize()
                     .testTag("index_navigation_dock")
                     .graphicsLayer {
-                        scaleX = 1f + lift.value * 0.035f
-                        scaleY = 1f + lift.value * 0.035f
+                        scaleX = 1f + lift.value * 0.03f
+                        scaleY = 1f + lift.value * 0.03f
                         shape = CircleShape
-                        shadowElevation = 8.dp.toPx()
-                        ambientShadowColor = Color.Black.copy(alpha = if (dark) 0.24f else 0.08f)
-                        spotShadowColor = Color.Black.copy(alpha = if (dark) 0.12f else 0.04f)
+                        shadowElevation = 10.dp.toPx()
+                        ambientShadowColor = Color.Black.copy(alpha = if (dark) 0.28f else 0.07f)
+                        spotShadowColor = Color.Black.copy(alpha = if (dark) 0.16f else 0.04f)
                     }
                     .background(barColor, CircleShape)
+                    .border(0.5.dp, barBorderColor, CircleShape)
                     .selectableGroup()
                     .pointerInput(geometry, rtl, widthPx) {
                         if (pitchPx <= 0f) return@pointerInput
+                        var hoveredIndex = currentSelectedIndex
+                        fun updateDragPosition(pointerX: Float) {
+                            val x = if (rtl) widthPx - pointerX else pointerX
+                            val position = ((x - startInsetPx) / pitchPx - 0.5f)
+                                .coerceIn(0f, currentItems.lastIndex.toFloat())
+                            dragPosition = position
+                            val index = position.roundToInt()
+                            if (index != hoveredIndex) {
+                                hoveredIndex = index
+                                currentHapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            }
+                        }
                         detectHorizontalDragGestures(
                             onDragStart = { point ->
-                                val x = if (rtl) widthPx - point.x else point.x
-                                dragPosition = ((x - startInsetPx) / pitchPx - 0.5f)
-                                    .coerceIn(0f, currentItems.lastIndex.toFloat())
+                                hoveredIndex = currentSelectedIndex
+                                updateDragPosition(point.x)
                             },
                             onHorizontalDrag = { change, _ ->
                                 change.consume()
-                                // The first delta includes over-slop already present in onDragStart.
-                                val x = if (rtl) widthPx - change.position.x else change.position.x
-                                dragPosition = ((x - startInsetPx) / pitchPx - 0.5f)
-                                    .coerceIn(0f, currentItems.lastIndex.toFloat())
+                                updateDragPosition(change.position.x)
                             },
                             onDragEnd = {
                                 val index = dragPosition?.roundToInt()
@@ -214,8 +225,8 @@ internal fun IndexNavigationDock(
                         .height(height - DockPadding * 2)
                         .testTag("index_navigation_lens")
                         .graphicsLayer {
-                            scaleX = 1f + lift.value * 0.08f
-                            scaleY = 1f + lift.value * 0.08f
+                            scaleX = 1f + lift.value * 0.06f
+                            scaleY = 1f + lift.value * 0.06f
                         }
                         .background(lensColor, CircleShape)
                 )
@@ -225,7 +236,16 @@ internal fun IndexNavigationDock(
                         selected = selectedIndex == index,
                         activeColor = activeColor,
                         interactionSource = interactionSource,
-                        onClick = { onItemClick(item) },
+                        onClick = {
+                            performBottomTabSwitchHapticIfNeeded(
+                                currentKey = items.getOrNull(selectedIndex)?.key.orEmpty(),
+                                clickedKey = item.key,
+                                useSideNavigation = false
+                            ) {
+                                hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            }
+                            onItemClick(item)
+                        },
                         modifier = Modifier
                             .offset(x = DockPadding + geometry.inset.dp + geometry.pitch.dp * index)
                             .width(geometry.pitch.dp)
@@ -247,10 +267,16 @@ private fun DockDestination(
     modifier: Modifier
 ) {
     val label = stringResource(item.labelRes)
+    val motionPolicy = LocalAppMotionPolicy.current
     val color by animateColorAsState(
         targetValue = if (selected) activeColor else MaterialTheme.colorScheme.onSurfaceVariant,
-        animationSpec = LocalAppMotionPolicy.current.effectsSpec(),
+        animationSpec = motionPolicy.effectsSpec(),
         label = "dockDestinationColor"
+    )
+    val iconScale by animateFloatAsState(
+        targetValue = if (selected && !motionPolicy.reducedMotion) 1.06f else 1f,
+        animationSpec = if (motionPolicy.reducedMotion) snap() else motionPolicy.contentSpec(),
+        label = "dockDestinationScale"
     )
     Column(
         modifier = modifier
@@ -269,16 +295,21 @@ private fun DockDestination(
             imageVector = item.icon,
             contentDescription = null,
             tint = color,
-            modifier = Modifier.size(28.dp)
+            modifier = Modifier
+                .size(24.dp)
+                .graphicsLayer {
+                    scaleX = iconScale
+                    scaleY = iconScale
+                }
         )
         Spacer(Modifier.height(2.dp))
         Text(
             text = label,
             color = color,
             style = MaterialTheme.typography.labelSmall.copy(
-                fontWeight = FontWeight.Medium,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
                 fontSize = 10.sp,
-                lineHeight = 14.5.sp
+                lineHeight = 14.sp
             ),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis

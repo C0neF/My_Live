@@ -51,17 +51,4 @@ class PlayerErrorPolicyTest {
         assertFalse(controller.contains("sourceRefreshAttempted"))
         assertFalse(controller.contains("resetSourceRefreshAttempt"))
     }
-
-    @Test
-    fun playerErrorOverlayIsConstrainedAndDoesNotCoverControlsWithRawText() {
-        val source = File("src/main/java/com/mylive/app/ui/screen/room/player/PlayerView.kt").readText()
-        val errorSource = source.substringAfter("// Error state")
-            .substringBefore("// Line switcher bottom sheet")
-
-        assertTrue(errorSource.contains("PlayerErrorOverlay("))
-        assertTrue(source.contains("private fun PlayerErrorOverlay("))
-        assertTrue(source.contains("widthIn(max = 320.dp)"))
-        assertTrue(source.contains("maxLines = 3"))
-        assertTrue(source.contains("TextOverflow.Ellipsis"))
-    }
 }

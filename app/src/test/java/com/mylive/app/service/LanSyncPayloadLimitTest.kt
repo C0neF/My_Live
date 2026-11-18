@@ -10,7 +10,7 @@ import com.mylive.app.core.sync.LanSyncProtocolException
 import com.mylive.app.data.local.datastore.SettingsDataStore
 import com.mylive.app.data.local.entity.HistoryEntity
 import com.mylive.app.data.repository.ProfileBackupManager
-import com.mylive.app.data.sync.LanSyncClient
+import com.mylive.app.core.sync.LanSyncClient
 import com.mylive.app.testing.ReviewRoomFixture
 import fi.iki.elonen.NanoHTTPD
 import io.mockk.every

@@ -37,7 +37,15 @@ class FollowRepository @Inject constructor(
         }
     }
 
-    suspend fun removeFollow(id: String) = followUserDao.delete(id)
+    suspend fun removeFollow(id: String) = database.withTransaction {
+        followUserDao.delete(id)
+        followUserTagDao.getAll().first().forEach { tag ->
+            val members = tag.userIds.filterNot { it == id }
+            if (members != tag.userIds) {
+                followUserTagDao.update(tag.copy(userIds = members))
+            }
+        }
+    }
 
     suspend fun getFollow(siteId: String, roomId: String): FollowUserEntity? =
         followUserDao.getBySiteAndRoom(siteId, roomId)
@@ -123,7 +131,14 @@ class FollowRepository @Inject constructor(
 
     suspend fun updateTag(tag: FollowUserTagEntity) = followUserTagDao.update(tag)
 
-    suspend fun clearAllFollows() = followUserDao.deleteAll()
+    suspend fun clearAllFollows() = database.withTransaction {
+        followUserDao.deleteAll()
+        followUserTagDao.getAll().first().forEach { tag ->
+            if (tag.userIds.isNotEmpty()) {
+                followUserTagDao.update(tag.copy(userIds = emptyList()))
+            }
+        }
+    }
 
     suspend fun clearAllTags() = followUserTagDao.deleteAll()
 

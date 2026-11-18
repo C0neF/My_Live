@@ -67,6 +67,12 @@ internal fun shouldKeepLanSyncServerRunning(backStack: List<Any>): Boolean =
         route is Route.LocalSync || route is Route.SyncScan || route is Route.SyncDevice
     }
 
+internal fun shouldStopLanSyncOnRouteChange(
+    keepRunning: Boolean,
+    wasFlowActive: Boolean,
+    isServiceRunning: Boolean
+): Boolean = !keepRunning && (wasFlowActive || isServiceRunning)
+
 /**
  * Interfaces the LAN sync server must never bind to or advertise: VPN tunnels, cellular data, and
  * tethering/USB links. Publishing the sync endpoints there exposes them to networks well outside
@@ -239,6 +245,8 @@ class LanSyncService : Service() {
                 syncTokenState.value = value
             }
 
+        private val discoveryIoScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
         fun start(context: Context) {
             if (isRunning) return
             val intent = Intent(context, LanSyncService::class.java)
@@ -251,46 +259,46 @@ class LanSyncService : Service() {
         }
 
         fun sendHello() {
-            Thread {
+            discoveryIoScope.launch {
                 try {
-                    val socket = DatagramSocket()
-                    socket.broadcast = true
-                    val payload = LanSyncProtocol
-                        .encodeDiscoveryHello(syncDeviceId)
-                        .toByteArray()
-                    val packet = DatagramPacket(
-                        payload, payload.size,
-                        InetAddress.getByName("255.255.255.255"), UDP_PORT
-                    )
-                    socket.send(packet)
-                    socket.close()
+                    DatagramSocket().use { socket ->
+                        socket.broadcast = true
+                        val payload = LanSyncProtocol
+                            .encodeDiscoveryHello(syncDeviceId)
+                            .toByteArray()
+                        val packet = DatagramPacket(
+                            payload, payload.size,
+                            InetAddress.getByName("255.255.255.255"), UDP_PORT
+                        )
+                        socket.send(packet)
+                    }
                     CoreLog.d("LanSyncService: Broadcast hello sent")
                 } catch (e: Exception) {
                     CoreLog.e("LanSyncService: Broadcast hello failed", e)
                 }
-            }.start()
+            }
         }
 
         fun sendInfo() {
-            Thread {
+            discoveryIoScope.launch {
                 try {
-                    val socket = DatagramSocket()
-                    socket.broadcast = true
-                    val payload = LanSyncProtocol.encodeDiscoveryPeer(
-                        deviceId = syncDeviceId,
-                        name = Build.MODEL
-                    ).toByteArray()
-                    val packet = DatagramPacket(
-                        payload, payload.size,
-                        InetAddress.getByName("255.255.255.255"), UDP_PORT
-                    )
-                    socket.send(packet)
-                    socket.close()
+                    DatagramSocket().use { socket ->
+                        socket.broadcast = true
+                        val payload = LanSyncProtocol.encodeDiscoveryPeer(
+                            deviceId = syncDeviceId,
+                            name = Build.MODEL
+                        ).toByteArray()
+                        val packet = DatagramPacket(
+                            payload, payload.size,
+                            InetAddress.getByName("255.255.255.255"), UDP_PORT
+                        )
+                        socket.send(packet)
+                    }
                     CoreLog.d("LanSyncService: Broadcast info sent")
                 } catch (e: Exception) {
                     CoreLog.e("LanSyncService: Broadcast info failed", e)
                 }
-            }.start()
+            }
         }
     }
 
@@ -309,7 +317,7 @@ class LanSyncService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        return START_STICKY
+        return START_NOT_STICKY
     }
 
     override fun onDestroy() {
@@ -383,21 +391,23 @@ class LanSyncService : Service() {
                         CoreLog.w("LanSyncService: ignoring incompatible discovery peer")
                         return
                     }
-                    val existing = scanClients.find { it.address == senderIp }
-                    if (existing == null) {
-                        if (scanClients.size >= MAX_SCAN_CLIENTS) {
-                            CoreLog.w("LanSyncService: discovery list full, ignoring extra broadcast peer")
-                            return
+                    val discovered = SyncClient(
+                        id = sanitizeBroadcastText(message.deviceId, "unknown"),
+                        name = sanitizeBroadcastText(message.name, "Android Device"),
+                        address = senderIp,
+                        port = HTTP_PORT,
+                        type = sanitizeBroadcastText(message.platform, "unknown")
+                    )
+                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                        if (!isRunning) return@post
+                        val existing = scanClients.find { it.address == senderIp }
+                        if (existing == null) {
+                            if (scanClients.size >= MAX_SCAN_CLIENTS) {
+                                CoreLog.w("LanSyncService: discovery list full, ignoring extra broadcast peer")
+                                return@post
+                            }
+                            scanClients.add(discovered)
                         }
-                        scanClients.add(
-                            SyncClient(
-                                id = sanitizeBroadcastText(message.deviceId, "unknown"),
-                                name = sanitizeBroadcastText(message.name, "Android Device"),
-                                address = senderIp,
-                                port = HTTP_PORT,
-                                type = sanitizeBroadcastText(message.platform, "unknown")
-                            )
-                        )
                     }
                 }
                 null -> Unit

@@ -12,7 +12,10 @@ import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
@@ -45,6 +48,12 @@ import org.robolectric.annotation.Config
 class IndexScreenTest {
     @get:Rule val compose = createComposeRule()
     private val clicks = mutableListOf<String>()
+    private val haptics = mutableListOf<HapticFeedbackType>()
+    private val hapticFeedback = object : HapticFeedback {
+        override fun performHapticFeedback(hapticFeedbackType: HapticFeedbackType) {
+            haptics.add(hapticFeedbackType)
+        }
+    }
     private val destinations = listOf(
         BottomNavItem("recommend", R.string.nav_home, Icons.Default.Home),
         BottomNavItem("follow", R.string.nav_follow, Icons.Default.Favorite),
@@ -62,6 +71,7 @@ class IndexScreenTest {
             val density = LocalDensity.current
             CompositionLocalProvider(
                 LocalDensity provides Density(density.density, fontScale),
+                LocalHapticFeedback provides hapticFeedback,
                 LocalLayoutDirection provides if (rtl) LayoutDirection.Rtl else LayoutDirection.Ltr,
                 LocalAppMotionPolicy provides AppMotionPolicy(reducedMotion)
             ) {
@@ -130,6 +140,77 @@ class IndexScreenTest {
         assertTrue(clicks.isEmpty())
         compose.onNodeWithTag("index_nav_recommend").assertIsSelected()
         assertLensCenteredOn("recommend")
+    }
+
+    @Test fun heldDragTicksOnceWhenEnteringEachIconAndDoesNotTickAgainOnRelease() {
+        showDock()
+        val dock = compose.onNodeWithTag("index_navigation_dock")
+        dock.performTouchInput {
+            down(Offset(width * 0.125f, centerY))
+            advanceEventTime(700)
+            moveTo(Offset(width * 0.375f, centerY), delayMillis = 100)
+        }
+        assertEquals(listOf(HapticFeedbackType.TextHandleMove), haptics)
+        assertTrue(clicks.isEmpty())
+        dock.performTouchInput {
+            moveTo(Offset(width * 0.39f, centerY), delayMillis = 100)
+            moveTo(Offset(width * 0.40f, centerY), delayMillis = 100)
+        }
+        assertEquals(1, haptics.size)
+        dock.performTouchInput { moveTo(Offset(width * 0.625f, centerY), delayMillis = 100) }
+        assertEquals(2, haptics.size)
+        dock.performTouchInput { moveTo(Offset(width * 0.875f, centerY), delayMillis = 100) }
+        assertEquals(3, haptics.size)
+        dock.performTouchInput { up() }
+        compose.waitForIdle()
+        assertEquals(3, haptics.size)
+        assertEquals(listOf("user"), clicks)
+    }
+
+    @Test fun draggingBackIntoAnIconTicksAgainAndCancelDoesNotAddACommitTick() {
+        showDock()
+        val dock = compose.onNodeWithTag("index_navigation_dock")
+        dock.performTouchInput {
+            down(Offset(width * 0.125f, centerY))
+            moveTo(Offset(width * 0.375f, centerY), delayMillis = 100)
+            moveTo(Offset(width * 0.125f, centerY), delayMillis = 100)
+        }
+        assertEquals(2, haptics.size)
+        dock.performTouchInput { cancel() }
+        compose.waitForIdle()
+        assertEquals(2, haptics.size)
+        assertTrue(clicks.isEmpty())
+        dock.performTouchInput {
+            down(Offset(width * 0.125f, centerY))
+            moveTo(Offset(width * 0.375f, centerY), delayMillis = 100)
+            up()
+        }
+        compose.waitForIdle()
+        assertEquals(3, haptics.size)
+        assertEquals(listOf("follow"), clicks)
+    }
+
+    @Test fun clickingAnotherTabTicksOnceAndClickingTheCurrentTabDoesNotTick() {
+        showDock()
+        compose.onNodeWithTag("index_nav_recommend").performClick()
+        assertTrue(haptics.isEmpty())
+        compose.onNodeWithTag("index_nav_follow").performClick()
+        assertEquals(listOf(HapticFeedbackType.TextHandleMove), haptics)
+        compose.onNodeWithTag("index_nav_follow").performClick()
+        assertEquals(1, haptics.size)
+    }
+
+    @Test fun rightToLeftDragAlsoTicksWhenEnteringAnotherIcon() {
+        showDock(rtl = true)
+        val dock = compose.onNodeWithTag("index_navigation_dock")
+        dock.performTouchInput {
+            down(Offset(width * 0.875f, centerY))
+            moveTo(Offset(width * 0.625f, centerY), delayMillis = 100)
+        }
+        assertEquals(listOf(HapticFeedbackType.TextHandleMove), haptics)
+        dock.performTouchInput { up() }
+        assertEquals(1, haptics.size)
+        assertEquals(listOf("follow"), clicks)
     }
 
     @Test fun aSingleDragMoveSelectsTheDestinationUnderTheFinger() {

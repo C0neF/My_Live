@@ -24,6 +24,7 @@ dependencyResolutionManagement {
 
 rootProject.name = "My_Live"
 include(":app")
+include(":shared-model", ":live-core", ":shared-ui", ":desktop")
 
 // Keep performance measurements reproducible from the same revision as the app.
 // Device execution remains an explicit/manual verification step.

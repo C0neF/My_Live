@@ -3,7 +3,11 @@ package com.mylive.app.ui.screen.settings
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -27,7 +31,16 @@ import com.mylive.app.R
 import com.mylive.app.core.common.readUtf8TextWithinLimit
 import com.mylive.app.data.local.entity.ShieldEntity
 import com.mylive.app.data.local.entity.ShieldPresetEntity
+import com.mylive.app.ui.component.settings.SettingsInsetCard
+import com.mylive.app.ui.component.settings.SettingsSegmentedBar
 import com.mylive.app.ui.component.settings.SettingsSwitch
+import com.mylive.app.ui.layout.AdaptivePageFrame
+import com.mylive.app.ui.layout.LocalAppLayout
+import com.mylive.app.ui.motion.AppMotion
+import com.mylive.app.ui.motion.LocalAppMotionPolicy
+import com.mylive.app.ui.motion.expandCollapseEnter
+import com.mylive.app.ui.motion.expandCollapseExit
+import com.mylive.app.ui.motion.horizontalContentTransform
 import com.mylive.app.ui.util.copyPlainText
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -126,9 +139,13 @@ fun ShieldSettingsScreen(
     }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.shield_title)) },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background
+                ),
                 navigationIcon = {
                     IconButton(onClick = handleBack) {
                         Icon(
@@ -140,103 +157,107 @@ fun ShieldSettingsScreen(
             )
         }
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .background(MaterialTheme.colorScheme.background)
-        ) {
-            // Main tabs
-            TabRow(selectedTabIndex = selectedTab) {
-                tabTitles.forEachIndexed { index, title ->
-                    Tab(
-                        selected = selectedTab == index,
-                        onClick = { selectedTab = index },
-                        text = { Text(title) }
-                    )
-                }
-            }
-
-            // Global toggles
-            Card(
+        AdaptivePageFrame(Modifier.padding(padding), LocalAppLayout.current.settingsMaxWidthDp) {
+            Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                shape = RoundedCornerShape(12.dp)
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.background)
             ) {
-                Column(modifier = Modifier.padding(8.dp)) {
+                SettingsSegmentedBar(
+                    titles = tabTitles,
+                    selectedIndex = selectedTab,
+                    onSelect = { selectedTab = it },
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                )
+
+                SettingsInsetCard(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+                ) {
                     SettingsSwitch(
                         title = "启用弹幕屏蔽功能",
                         checked = danmuShieldEnable,
                         onCheckedChange = { viewModel.setDanmuShieldEnable(it) }
                     )
                 }
-            }
 
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-            ) {
-                when (selectedTab) {
-                    0 -> KeywordTabContent(
-                        enabled = danmuShieldEnable && danmuKeywordShieldEnable,
-                        toggleValue = danmuKeywordShieldEnable,
-                        onToggleChange = { viewModel.setDanmuKeywordShieldEnable(it) },
-                        keywords = keywords,
-                        onAdd = { viewModel.addKeyword(it) },
-                        onUpdateKeyword = { entity, keyword -> viewModel.updateKeyword(entity, keyword) },
-                        onDelete = { viewModel.deleteShield(it) },
-                        onClear = { viewModel.clearKeywords() }
-                    )
-                    1 -> UserTabContent(
-                        enabled = danmuShieldEnable && danmuUserShieldEnable,
-                        toggleValue = danmuUserShieldEnable,
-                        onToggleChange = { viewModel.setDanmuUserShieldEnable(it) },
-                        selectedSiteId = selectedUserSiteId,
-                        activeUsers = activeUserShields,
-                        onSiteSelect = { viewModel.selectUserSite(it) },
-                        onAdd = { username -> viewModel.addUserShield(username, selectedUserSiteId) },
-                        onUpdateUser = { entity, username -> viewModel.updateUserShield(entity, username) },
-                        onDelete = { viewModel.deleteShield(it) },
-                        onClearGroup = { viewModel.clearUserShields(selectedUserSiteId) },
-                        onClearAll = { viewModel.clearAllUserShields() }
-                    )
-                    2 -> PresetTabContent(
-                        presets = presets,
-                        importing = importing,
-                        onSaveCurrent = { viewModel.savePreset(it) },
-                        onOverwrite = { viewModel.savePreset(it.name) },
-                        onApply = { viewModel.applyPreset(it) },
-                        onDelete = { viewModel.deletePreset(it.name) },
-                        onExportText = {
-                            coroutineScope.launch {
-                                val json = viewModel.generateExportJson()
-                                if (json.isNotEmpty()) {
-                                    copyPlainText(context, "shield config", json)
-                                    Toast.makeText(context, R.string.shield_preset_copied, Toast.LENGTH_SHORT).show()
+                Spacer(modifier = Modifier.height(6.dp))
+
+                val motionPolicy = LocalAppMotionPolicy.current
+                AnimatedContent(
+                    targetState = selectedTab,
+                    transitionSpec = {
+                        horizontalContentTransform(
+                            AppMotion.indexDirection(initialState, targetState),
+                            motionPolicy
+                        )
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    label = "shieldTabContent"
+                ) { activeTab ->
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        when (activeTab) {
+                            0 -> KeywordTabContent(
+                                enabled = danmuShieldEnable && danmuKeywordShieldEnable,
+                                toggleValue = danmuKeywordShieldEnable,
+                                onToggleChange = { viewModel.setDanmuKeywordShieldEnable(it) },
+                                keywords = keywords,
+                                onAdd = { viewModel.addKeyword(it) },
+                                onUpdateKeyword = { entity, keyword -> viewModel.updateKeyword(entity, keyword) },
+                                onDelete = { viewModel.deleteShield(it) },
+                                onClear = { viewModel.clearKeywords() }
+                            )
+                            1 -> UserTabContent(
+                                enabled = danmuShieldEnable && danmuUserShieldEnable,
+                                toggleValue = danmuUserShieldEnable,
+                                onToggleChange = { viewModel.setDanmuUserShieldEnable(it) },
+                                selectedSiteId = selectedUserSiteId,
+                                activeUsers = activeUserShields,
+                                onSiteSelect = { viewModel.selectUserSite(it) },
+                                onAdd = { username -> viewModel.addUserShield(username, selectedUserSiteId) },
+                                onUpdateUser = { entity, username -> viewModel.updateUserShield(entity, username) },
+                                onDelete = { viewModel.deleteShield(it) },
+                                onClearGroup = { viewModel.clearUserShields(selectedUserSiteId) },
+                                onClearAll = { viewModel.clearAllUserShields() }
+                            )
+                            2 -> PresetTabContent(
+                                presets = presets,
+                                importing = importing,
+                                onSaveCurrent = { viewModel.savePreset(it) },
+                                onOverwrite = { viewModel.savePreset(it.name) },
+                                onApply = { viewModel.applyPreset(it) },
+                                onDelete = { viewModel.deletePreset(it.name) },
+                                onExportText = {
+                                    coroutineScope.launch {
+                                        val json = viewModel.generateExportJson()
+                                        if (json.isNotEmpty()) {
+                                            copyPlainText(context, "shield config", json)
+                                            Toast.makeText(context, R.string.shield_preset_copied, Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                },
+                                onExportFile = {
+                                    coroutineScope.launch {
+                                        val json = viewModel.generateExportJson()
+                                        if (json.isNotEmpty()) {
+                                            exportJsonForFile = json
+                                            exportFileLauncher.launch("my_live_danmu_shield.json")
+                                        }
+                                    }
+                                },
+                                onImportTextClick = {
+                                    if (!importing) {
+                                        importJsonText = ""
+                                        showImportDialog = true
+                                    }
+                                },
+                                onImportFileClick = {
+                                    if (!importing) importFileLauncher.launch(arrayOf("application/json", "text/*"))
                                 }
-                            }
-                        },
-                        onExportFile = {
-                            coroutineScope.launch {
-                                val json = viewModel.generateExportJson()
-                                if (json.isNotEmpty()) {
-                                    exportJsonForFile = json
-                                    exportFileLauncher.launch("my_live_danmu_shield.json")
-                                }
-                            }
-                        },
-                        onImportTextClick = {
-                            if (!importing) {
-                                importJsonText = ""
-                                showImportDialog = true
-                            }
-                        },
-                        onImportFileClick = {
-                            if (!importing) importFileLauncher.launch(arrayOf("application/json", "text/*"))
+                            )
                         }
-                    )
+                    }
                 }
             }
         }
@@ -245,12 +266,15 @@ fun ShieldSettingsScreen(
     if (showImportDialog) {
         AlertDialog(
             onDismissRequest = { showImportDialog = false },
+            shape = RoundedCornerShape(20.dp),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
             title = { Text(stringResource(R.string.shield_preset_import_title)) },
             text = {
                 OutlinedTextField(
                     value = importJsonText,
                     onValueChange = { importJsonText = it },
                     placeholder = { Text(stringResource(R.string.shield_preset_import_hint)) },
+                    shape = RoundedCornerShape(12.dp),
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(180.dp),
@@ -272,6 +296,7 @@ fun ShieldSettingsScreen(
                             }
                         }
                     },
+                    shape = RoundedCornerShape(12.dp),
                     enabled = importJsonText.isNotBlank() && !importing
                 ) {
                     Text(stringResource(R.string.action_confirm))
@@ -302,14 +327,15 @@ private fun KeywordTabContent(
     var editingText by remember { mutableStateOf("") }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        SettingsSwitch(
-            title = "过滤关键词列表",
-            checked = toggleValue,
-            onCheckedChange = onToggleChange,
-            modifier = Modifier.padding(horizontal = 16.dp)
-        )
+        SettingsInsetCard(modifier = Modifier.padding(horizontal = 16.dp)) {
+            SettingsSwitch(
+                title = "过滤关键词列表",
+                checked = toggleValue,
+                onCheckedChange = onToggleChange
+            )
+        }
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
         // Add bar
         Row(
@@ -323,6 +349,7 @@ private fun KeywordTabContent(
                 value = textInput,
                 onValueChange = { textInput = it },
                 placeholder = { Text(stringResource(R.string.shield_keyword_hint)) },
+                shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.weight(1f),
                 singleLine = true,
                 enabled = enabled
@@ -332,6 +359,7 @@ private fun KeywordTabContent(
                     onAdd(textInput)
                     textInput = ""
                 },
+                shape = RoundedCornerShape(12.dp),
                 enabled = enabled && textInput.isNotBlank()
             ) {
                 Icon(Icons.Default.Add, contentDescription = null)
@@ -340,10 +368,15 @@ private fun KeywordTabContent(
             }
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
         // Clear header
-        if (keywords.isNotEmpty()) {
+        val motionPolicy = LocalAppMotionPolicy.current
+        AnimatedVisibility(
+            visible = keywords.isNotEmpty(),
+            enter = expandCollapseEnter(motionPolicy),
+            exit = expandCollapseExit(motionPolicy)
+        ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -377,8 +410,14 @@ private fun KeywordTabContent(
         ) {
             items(keywords, key = { it.id }) { entity ->
                 val keyword = entity.value.removePrefix("keyword:")
-                Card(
-                    modifier = Modifier.fillMaxWidth()
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    border = BorderStroke(
+                        0.5.dp,
+                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                    )
                 ) {
                     Row(
                         modifier = Modifier
@@ -423,12 +462,15 @@ private fun KeywordTabContent(
     editingKeyword?.let { entity ->
         AlertDialog(
             onDismissRequest = { editingKeyword = null },
+            shape = RoundedCornerShape(20.dp),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
             title = { Text("编辑关键词") },
             text = {
                 OutlinedTextField(
                     value = editingText,
                     onValueChange = { editingText = it },
                     placeholder = { Text(stringResource(R.string.shield_keyword_hint)) },
+                    shape = RoundedCornerShape(12.dp),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -479,31 +521,48 @@ private fun UserTabContent(
     )
 
     Column(modifier = Modifier.fillMaxSize()) {
-        SettingsSwitch(
-            title = "屏蔽用户列表",
-            checked = toggleValue,
-            onCheckedChange = onToggleChange,
-            modifier = Modifier.padding(horizontal = 16.dp)
-        )
+        SettingsInsetCard(modifier = Modifier.padding(horizontal = 16.dp)) {
+            SettingsSwitch(
+                title = "屏蔽用户列表",
+                checked = toggleValue,
+                onCheckedChange = onToggleChange
+            )
+        }
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
-        // Platform sub-tabs
-        ScrollableTabRow(
-            selectedTabIndex = siteOptions.indexOfFirst { it.first == selectedSiteId }.coerceAtLeast(0),
-            edgePadding = 16.dp,
-            modifier = Modifier.fillMaxWidth()
+        // Platform filter pills
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             siteOptions.forEach { pair ->
-                Tab(
-                    selected = selectedSiteId == pair.first,
+                val selected = selectedSiteId == pair.first
+                FilterChip(
+                    selected = selected,
                     onClick = { onSiteSelect(pair.first) },
-                    text = { Text(pair.second) }
+                    label = { Text(pair.second) },
+                    shape = RoundedCornerShape(18.dp),
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
+                        selectedLabelColor = MaterialTheme.colorScheme.primary
+                    ),
+                    border = FilterChipDefaults.filterChipBorder(
+                        enabled = true,
+                        selected = selected,
+                        borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+                        selectedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f),
+                        borderWidth = 0.5.dp,
+                        selectedBorderWidth = 0.5.dp
+                    )
                 )
             }
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
         // Add user bar
         Row(
@@ -517,6 +576,7 @@ private fun UserTabContent(
                 value = textInput,
                 onValueChange = { textInput = it },
                 placeholder = { Text(stringResource(R.string.shield_user_hint)) },
+                shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.weight(1f),
                 singleLine = true,
                 enabled = enabled
@@ -526,6 +586,7 @@ private fun UserTabContent(
                     onAdd(textInput)
                     textInput = ""
                 },
+                shape = RoundedCornerShape(12.dp),
                 enabled = enabled && textInput.isNotBlank()
             ) {
                 Icon(Icons.Default.Add, contentDescription = null)
@@ -534,7 +595,7 @@ private fun UserTabContent(
             }
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
         // Clear header buttons
         Row(
@@ -572,8 +633,14 @@ private fun UserTabContent(
         ) {
             items(activeUsers, key = { it.id }) { entity ->
                 val username = entity.value.substringAfterLast(":")
-                Card(
-                    modifier = Modifier.fillMaxWidth()
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    border = BorderStroke(
+                        0.5.dp,
+                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                    )
                 ) {
                     Row(
                         modifier = Modifier
@@ -618,12 +685,15 @@ private fun UserTabContent(
     editingUser?.let { entity ->
         AlertDialog(
             onDismissRequest = { editingUser = null },
+            shape = RoundedCornerShape(20.dp),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
             title = { Text("编辑屏蔽用户") },
             text = {
                 OutlinedTextField(
                     value = editingText,
                     onValueChange = { editingText = it },
                     placeholder = { Text(stringResource(R.string.shield_user_hint)) },
+                    shape = RoundedCornerShape(12.dp),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -679,6 +749,7 @@ private fun PresetTabContent(
                 OutlinedButton(
                     onClick = { showImportMenu = true },
                     enabled = !importing,
+                    shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Icon(Icons.Default.Download, contentDescription = null)
@@ -708,6 +779,7 @@ private fun PresetTabContent(
             Box(modifier = Modifier.weight(1f)) {
                 OutlinedButton(
                     onClick = { showExportMenu = true },
+                    shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Icon(Icons.Default.Upload, contentDescription = null)
@@ -736,20 +808,17 @@ private fun PresetTabContent(
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(14.dp))
 
         // Save current as preset card
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp)
-        ) {
+        SettingsInsetCard {
             Column(
                 modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(
                     text = stringResource(R.string.shield_preset_save),
-                    style = MaterialTheme.typography.titleMedium
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
                 )
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -760,6 +829,7 @@ private fun PresetTabContent(
                         value = textInput,
                         onValueChange = { textInput = it },
                         placeholder = { Text(stringResource(R.string.shield_preset_name_hint)) },
+                        shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.weight(1f),
                         singleLine = true
                     )
@@ -768,6 +838,7 @@ private fun PresetTabContent(
                             onSaveCurrent(textInput)
                             textInput = ""
                         },
+                        shape = RoundedCornerShape(12.dp),
                         enabled = textInput.isNotBlank()
                     ) {
                         Text(stringResource(R.string.shield_add))
@@ -776,7 +847,7 @@ private fun PresetTabContent(
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(14.dp))
 
         // Presets list
         LazyColumn(
@@ -787,8 +858,14 @@ private fun PresetTabContent(
             contentPadding = PaddingValues(bottom = 16.dp)
         ) {
             items(presets, key = { it.name }) { preset ->
-                Card(
-                    modifier = Modifier.fillMaxWidth()
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    border = BorderStroke(
+                        0.5.dp,
+                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                    )
                 ) {
                     Row(
                         modifier = Modifier
@@ -799,7 +876,7 @@ private fun PresetTabContent(
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = preset.name,
-                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
                             )
                         }
                         Row(

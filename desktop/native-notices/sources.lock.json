@@ -1,0 +1,1106 @@
+{
+  "format": 1,
+  "mpvCommit": "41f6a645068483470267271e1d09966ca3b9f413",
+  "mediampCommit": "d7d4d9e81979cb0549e55805adb64f3cb1c1e689",
+  "ffmpegCommit": "29e619e767cde9045a75c29bc9a8278ae7b3a98b",
+  "ffmpegBase": "n8.1.3",
+  "ffmpegPatchedBlobHashes": {
+    "libavcodec/aacsbr_template.c": "b6fa464f9370ef172ade90d6f369eaf05157d0f0",
+    "libavcodec/liboapvenc.c": "7159955c1fea20ceb098d696988f88c1c8efd131",
+    "libavcodec/vulkan_decode.c": "b4df8b971eabbd14377b43b7cfb9d9fbfd81454c",
+    "libavfilter/vf_convolution.c": "cc55beb0be11cdec5e5e30a7818845efba824056",
+    "libavformat/avformat.h": "2e68e47929b08bcaf2b9c2e5c43fc087c8e40a3b",
+    "libavformat/dashenc.c": "fcb857b101399e061cbe8f30117538437fd3b6fc",
+    "libavformat/mov.c": "e998a01ef257989aca0a9e7322485d83a504eb71",
+    "libavformat/mux.c": "4a68c19f6026f28748f493bc16d5e9e8ddffdd39",
+    "libavutil/hwcontext_vulkan.c": "9e53c2347cdfbf2a73b14416fdc623581c594a7a"
+  },
+  "ffmpegPatch": "ffmpeg-n8.1.3-to-29e619e767.patch",
+  "archives": [
+    {
+      "name": "mediamp.zip",
+      "url": "https://codeload.github.com/open-ani/mediamp/zip/d7d4d9e81979cb0549e55805adb64f3cb1c1e689",
+      "sha256": "e7517143cd1e483a2a7ed32b0d5d4422c9d88c889bd0d37a5c53122030ab2af9"
+    },
+    {
+      "name": "mpv.zip",
+      "url": "https://codeload.github.com/mpv-player/mpv/zip/41f6a645068483470267271e1d09966ca3b9f413",
+      "sha256": "56116d55aab308c0f1c6d7e48a2e8a34ff50f516f7f06ec863e1eef82a5b6ccc"
+    },
+    {
+      "name": "ffmpeg-build-recipes.zip",
+      "url": "https://codeload.github.com/BtbN/FFmpeg-Builds/zip/6c9aec5fc9a72ec3abedd1fa84db141fa18cf52b",
+      "sha256": "a3c33d42d85429cf42b93b31d4fad9b186ac343ff66cb9452ecfb47b4bca73d8"
+    },
+    {
+      "name": "ffmpeg-8.1.3.tar.xz",
+      "url": "https://ffmpeg.org/releases/ffmpeg-8.1.3.tar.xz",
+      "sha256": "7138d28c96d9d3e3af4ee3d8cad72741f8ffb40da90c1112235dea3ecd3178a3"
+    },
+    {
+      "name": "mingw-w64-libass-0.17.5-1.src.tar.zst",
+      "url": "https://repo.msys2.org/mingw/sources/mingw-w64-libass-0.17.5-1.src.tar.zst",
+      "sha256": "4a68edae2c1454ffcf7cf0a6fccf6930c876caa5fe2422cdb0b34d1fc0f5fb03"
+    },
+    {
+      "name": "mingw-w64-brotli-1.2.0-1.src.tar.zst",
+      "url": "https://repo.msys2.org/mingw/sources/mingw-w64-brotli-1.2.0-1.src.tar.zst",
+      "sha256": "2f0f93875aac21990d20f1eaf0ad8b970eb6f186c663c77ae47aaaf9e5711fcf"
+    },
+    {
+      "name": "mingw-w64-bzip2-1.0.8-4.src.tar.zst",
+      "url": "https://repo.msys2.org/mingw/sources/mingw-w64-bzip2-1.0.8-4.src.tar.zst",
+      "sha256": "fd9360917314d1cbccb3cb15ed8450d1e56b8a9f733b606504aba52c52159e54"
+    },
+    {
+      "name": "mingw-w64-openssl-3.6.3-1.src.tar.zst",
+      "url": "https://repo.msys2.org/mingw/sources/mingw-w64-openssl-3.6.3-1.src.tar.zst",
+      "sha256": "b8e8625cf89996d32c3d6c4db8a98c46de6558f5a4e7e98ae1287ec2d6a97e51"
+    },
+    {
+      "name": "mingw-w64-libdovi-3.4.0-1.src.tar.zst",
+      "url": "https://repo.msys2.org/mingw/sources/mingw-w64-libdovi-3.4.0-1.src.tar.zst",
+      "sha256": "50e7303249bd57b9bb543e87e5de4b6331d744b22d2d26861bc8968ee60a70a3"
+    },
+    {
+      "name": "mingw-w64-expat-2.8.3-1.src.tar.zst",
+      "url": "https://repo.msys2.org/mingw/sources/mingw-w64-expat-2.8.3-1.src.tar.zst",
+      "sha256": "b90d711ec1020ecb00a64698833a0ecec19f655114d5bdf41a5c2975ad93fe2b"
+    },
+    {
+      "name": "mingw-w64-fontconfig-2.18.3-1.src.tar.zst",
+      "url": "https://repo.msys2.org/mingw/sources/mingw-w64-fontconfig-2.18.3-1.src.tar.zst",
+      "sha256": "7df65dbf84397f4f71c6aa0bd39fac93f839d6b87f04a935773b69828740230d"
+    },
+    {
+      "name": "mingw-w64-freetype-2.14.3-1.src.tar.zst",
+      "url": "https://repo.msys2.org/mingw/sources/mingw-w64-freetype-2.14.3-1.src.tar.zst",
+      "sha256": "ee8071d0a6e82a274e959902898115f4c9c376a2a8e209d83dfe746c18004ec0"
+    },
+    {
+      "name": "mingw-w64-fribidi-1.0.16-1.src.tar.zst",
+      "url": "https://repo.msys2.org/mingw/sources/mingw-w64-fribidi-1.0.16-1.src.tar.zst",
+      "sha256": "a496fd3c7973d443e741626e1be7af58d8adcbc1d4a1c056d07a011f0edc6d0b"
+    },
+    {
+      "name": "mingw-w64-gcc-16.2.0-3.src.tar.zst",
+      "url": "https://repo.msys2.org/mingw/sources/mingw-w64-gcc-16.2.0-3.src.tar.zst",
+      "sha256": "eb3479a8b0b23810fbbbc25ef76879e867e88d09960a40145d73f5505fda4da0"
+    },
+    {
+      "name": "mingw-w64-glib2-2.88.3-1.src.tar.zst",
+      "url": "https://repo.msys2.org/mingw/sources/mingw-w64-glib2-2.88.3-1.src.tar.zst",
+      "sha256": "9e0662759cf5412c2a2da94a69f7bdc04380a77819999401b20800baa6cae539"
+    },
+    {
+      "name": "mingw-w64-graphite2-1.3.15-1.src.tar.zst",
+      "url": "https://repo.msys2.org/mingw/sources/mingw-w64-graphite2-1.3.15-1.src.tar.zst",
+      "sha256": "eb76ce274c68ea6bad0883144c21e44a803ec94fed9dc0f6584feb0a8415a1d6"
+    },
+    {
+      "name": "mingw-w64-harfbuzz-14.3.1-1.src.tar.zst",
+      "url": "https://repo.msys2.org/mingw/sources/mingw-w64-harfbuzz-14.3.1-1.src.tar.zst",
+      "sha256": "21c345c8a1dc057162da7711146ccc8ca7ecb022000e7507c7bf71cedff81f63"
+    },
+    {
+      "name": "mingw-w64-libiconv-1.19-1.src.tar.zst",
+      "url": "https://repo.msys2.org/mingw/sources/mingw-w64-libiconv-1.19-1.src.tar.zst",
+      "sha256": "74428280c17094da5b702c29b2e1a0abae59556ea5dfdd65705cc8ccc1e000fb"
+    },
+    {
+      "name": "mingw-w64-gettext-1.0-1.src.tar.zst",
+      "url": "https://repo.msys2.org/mingw/sources/mingw-w64-gettext-1.0-1.src.tar.zst",
+      "sha256": "cca0d0c8f60353faccc5ad40405240014e4a7ccc8b1c6ca9f4626aef3097d26e"
+    },
+    {
+      "name": "mingw-w64-lcms2-2.19.1-1.src.tar.zst",
+      "url": "https://repo.msys2.org/mingw/sources/mingw-w64-lcms2-2.19.1-1.src.tar.zst",
+      "sha256": "83414d0d95c5cb2548d3050670694e9efc64304a52190f42bcad951efa038b41"
+    },
+    {
+      "name": "mingw-w64-pcre2-10.47-1.src.tar.zst",
+      "url": "https://repo.msys2.org/mingw/sources/mingw-w64-pcre2-10.47-1.src.tar.zst",
+      "sha256": "d1af57f4346ec9542f1d191c94c470340f6268bfa732718f6db1b89d75fd6502"
+    },
+    {
+      "name": "mingw-w64-libplacebo-7.360.1-2.src.tar.zst",
+      "url": "https://repo.msys2.org/mingw/sources/mingw-w64-libplacebo-7.360.1-2.src.tar.zst",
+      "sha256": "2abe10f1d16981407e8108c5ccb2e13cbeb28ce62f702a4caf1165b732e85bf0"
+    },
+    {
+      "name": "mingw-w64-libpng-1.6.58-1.src.tar.zst",
+      "url": "https://repo.msys2.org/mingw/sources/mingw-w64-libpng-1.6.58-1.src.tar.zst",
+      "sha256": "9e985fc4cef509ec689f982dc6a948e9a8ee5184db25d65e9dd4c21872092348"
+    },
+    {
+      "name": "mingw-w64-shaderc-2026.3-1.src.tar.zst",
+      "url": "https://repo.msys2.org/mingw/sources/mingw-w64-shaderc-2026.3-1.src.tar.zst",
+      "sha256": "847da728a130dd9b59c1d8228877f564ae7160483070894bf0536442b59a14c8"
+    },
+    {
+      "name": "mingw-w64-spirv-cross-1~1.4.357.0-1.src.tar.zst",
+      "url": "https://repo.msys2.org/mingw/sources/mingw-w64-spirv-cross-1~1.4.357.0-1.src.tar.zst",
+      "sha256": "4082735b9f40527966fcadd19dfdcafd8313d5187abae5d53c270af448aa7c4f"
+    },
+    {
+      "name": "mingw-w64-winpthreads-14.0.0.r283.ga7cb47123-1.src.tar.zst",
+      "url": "https://repo.msys2.org/mingw/sources/mingw-w64-winpthreads-14.0.0.r283.ga7cb47123-1.src.tar.zst",
+      "sha256": "ecb4adb183884eb97cfc4a4dd6f29d52df9422492512a8d30b2f95523ce8984e"
+    },
+    {
+      "name": "mingw-w64-libunibreak-7.0-1.src.tar.zst",
+      "url": "https://repo.msys2.org/mingw/sources/mingw-w64-libunibreak-7.0-1.src.tar.zst",
+      "sha256": "3d51ed18b20deb475c6947ea8fdabb7d6107962e2e6e690de90e5227537728ad"
+    },
+    {
+      "name": "mingw-w64-vulkan-loader-1~1.4.357.0-1.src.tar.zst",
+      "url": "https://repo.msys2.org/mingw/sources/mingw-w64-vulkan-loader-1~1.4.357.0-1.src.tar.zst",
+      "sha256": "af28ead397f61609c07a8260279441b3e3113a42cbaaf04cec86933b65c60dc4"
+    },
+    {
+      "name": "mingw-w64-zlib-1.3.2-2.src.tar.zst",
+      "url": "https://repo.msys2.org/mingw/sources/mingw-w64-zlib-1.3.2-2.src.tar.zst",
+      "sha256": "eef69dea52357e01b272d6fd6dc4d7c0773f71260cb7bcde6047c8c383518db3"
+    }
+  ],
+  "msys2": [
+    {
+      "package": "libass",
+      "binaryArchive": "mingw-w64-ucrt-x86_64-libass-0.17.5-1-any.pkg.tar.zst",
+      "binarySha256": "4385fd47a77784478878f0f03f2d9afa59a5ac71facb7cad1dfe19c555e75762",
+      "sourceArchive": "mingw-w64-libass-0.17.5-1.src.tar.zst",
+      "sourceSha256": "4a68edae2c1454ffcf7cf0a6fccf6930c876caa5fe2422cdb0b34d1fc0f5fb03",
+      "dlls": {
+        "libass-9.dll": "cb2b46133b3bd9630384148bd7229e987af9703208d4329fc2215f4170b8dc6b"
+      }
+    },
+    {
+      "package": "brotli",
+      "binaryArchive": "mingw-w64-ucrt-x86_64-brotli-1.2.0-1-any.pkg.tar.zst",
+      "binarySha256": "9cc89665496ea504751476eafba15c71c554aaf3004babc2004f7c07ffd60514",
+      "sourceArchive": "mingw-w64-brotli-1.2.0-1.src.tar.zst",
+      "sourceSha256": "2f0f93875aac21990d20f1eaf0ad8b970eb6f186c663c77ae47aaaf9e5711fcf",
+      "dlls": {
+        "libbrotlicommon.dll": "c62c08223e450dfc2fff33c752cc228505ffd9d755201958ba800d5d30481a2c",
+        "libbrotlidec.dll": "e270b6e576594ee8ee6e33ccc54e34a54304616dd6225652e11e49d6f17ef896"
+      }
+    },
+    {
+      "package": "bzip2",
+      "binaryArchive": "mingw-w64-ucrt-x86_64-bzip2-1.0.8-4-any.pkg.tar.zst",
+      "binarySha256": "f03a2174034ddd2d96cecd34f617c5f8e2ef86c812b8d2bb3b8875257f2c8bfa",
+      "sourceArchive": "mingw-w64-bzip2-1.0.8-4.src.tar.zst",
+      "sourceSha256": "fd9360917314d1cbccb3cb15ed8450d1e56b8a9f733b606504aba52c52159e54",
+      "dlls": {
+        "libbz2-1.dll": "1790bf6473c9d48db14c1f0ee8124142327556d281299ea2a72ee361118ee01a"
+      }
+    },
+    {
+      "package": "openssl",
+      "binaryArchive": "mingw-w64-ucrt-x86_64-openssl-3.6.3-1-any.pkg.tar.zst",
+      "binarySha256": "6cab3e35b2b05da3a34126f3fdb7a4d0c942842c8cde355f53a07a717684313a",
+      "sourceArchive": "mingw-w64-openssl-3.6.3-1.src.tar.zst",
+      "sourceSha256": "b8e8625cf89996d32c3d6c4db8a98c46de6558f5a4e7e98ae1287ec2d6a97e51",
+      "dlls": {
+        "libcrypto-3-x64.dll": "616e5c9cfd5c6f786fd81238198ec479076f5bf6702127f81686f46b31b2464d",
+        "libssl-3-x64.dll": "7f53951cf786e299521e46d860f7764d6bd671ce85d2a03dc929a8184792e2ab"
+      }
+    },
+    {
+      "package": "libdovi",
+      "binaryArchive": "mingw-w64-ucrt-x86_64-libdovi-3.4.0-1-any.pkg.tar.zst",
+      "binarySha256": "fd683eb03572f56db2cbdf0ffc2131bb93a21a0edbbda44862e3ef7eb98ebf00",
+      "sourceArchive": "mingw-w64-libdovi-3.4.0-1.src.tar.zst",
+      "sourceSha256": "50e7303249bd57b9bb543e87e5de4b6331d744b22d2d26861bc8968ee60a70a3",
+      "dlls": {
+        "libdovi.dll": "75988509f0d2166e2060ed548913bd7b34556bc16b3f9a02469de1dd2347a7fb"
+      }
+    },
+    {
+      "package": "expat",
+      "binaryArchive": "mingw-w64-ucrt-x86_64-expat-2.8.3-1-any.pkg.tar.zst",
+      "binarySha256": "42de5478073c2ac3c3293d4d15e5136e8978d958f3f2bd6ae462e81f4ade0118",
+      "sourceArchive": "mingw-w64-expat-2.8.3-1.src.tar.zst",
+      "sourceSha256": "b90d711ec1020ecb00a64698833a0ecec19f655114d5bdf41a5c2975ad93fe2b",
+      "dlls": {
+        "libexpat-1.dll": "fc7b969c07c4a5b7e0426bdee4ac247a8840eac34a217fbe3303a5b21f25280a"
+      }
+    },
+    {
+      "package": "fontconfig",
+      "binaryArchive": "mingw-w64-ucrt-x86_64-fontconfig-2.18.3-1-any.pkg.tar.zst",
+      "binarySha256": "d0b364f3ee37e3b6f6c136688ce8fa909bb6d8a69df7e08de1aa40870d9e1d60",
+      "sourceArchive": "mingw-w64-fontconfig-2.18.3-1.src.tar.zst",
+      "sourceSha256": "7df65dbf84397f4f71c6aa0bd39fac93f839d6b87f04a935773b69828740230d",
+      "dlls": {
+        "libfontconfig-1.dll": "be30a200fa4000d0a7a1d3911391969627440148f01d0028a319bcb9fa112202"
+      }
+    },
+    {
+      "package": "freetype",
+      "binaryArchive": "mingw-w64-ucrt-x86_64-freetype-2.14.3-1-any.pkg.tar.zst",
+      "binarySha256": "f502bdf9ed07aa95e223e1aba17ce8cb2d975aab5066eec17a2d7dc4fb8a1c20",
+      "sourceArchive": "mingw-w64-freetype-2.14.3-1.src.tar.zst",
+      "sourceSha256": "ee8071d0a6e82a274e959902898115f4c9c376a2a8e209d83dfe746c18004ec0",
+      "dlls": {
+        "libfreetype-6.dll": "a3271784f8366b3c6412e0c35474884fa12899c392bacb08bc8eac00f4be7e64"
+      }
+    },
+    {
+      "package": "fribidi",
+      "binaryArchive": "mingw-w64-ucrt-x86_64-fribidi-1.0.16-1-any.pkg.tar.zst",
+      "binarySha256": "c7fe0850b68dea80c430df8c2c9baacf361b2564dd9edea1b0f13d6da22dac08",
+      "sourceArchive": "mingw-w64-fribidi-1.0.16-1.src.tar.zst",
+      "sourceSha256": "a496fd3c7973d443e741626e1be7af58d8adcbc1d4a1c056d07a011f0edc6d0b",
+      "dlls": {
+        "libfribidi-0.dll": "73a712fd51fa0085e8660084743a821ae7388de138069cd6cd8c171d4487da84"
+      }
+    },
+    {
+      "package": "gcc-libs",
+      "binaryArchive": "mingw-w64-ucrt-x86_64-gcc-libs-16.2.0-3-any.pkg.tar.zst",
+      "binarySha256": "5763fabf86fa13a4449ee765006d3446384ed66af7bf827459710eb777e0b11c",
+      "sourceArchive": "mingw-w64-gcc-16.2.0-3.src.tar.zst",
+      "sourceSha256": "eb3479a8b0b23810fbbbc25ef76879e867e88d09960a40145d73f5505fda4da0",
+      "dlls": {
+        "libgcc_s_seh-1.dll": "80940372431cc76224dfda06e2d33f01e49af3b4e7c499c535be856ebcadd273",
+        "libstdc++-6.dll": "69200d6d96b903dac4c873031813485a0455828be8101479efc56008862420cc"
+      }
+    },
+    {
+      "package": "glib2",
+      "binaryArchive": "mingw-w64-ucrt-x86_64-glib2-2.88.3-1-any.pkg.tar.zst",
+      "binarySha256": "0733a674ecf5282088158b8e458cb2ad3359bf42fb7dbe9561b4bcfe0267f5bf",
+      "sourceArchive": "mingw-w64-glib2-2.88.3-1.src.tar.zst",
+      "sourceSha256": "9e0662759cf5412c2a2da94a69f7bdc04380a77819999401b20800baa6cae539",
+      "dlls": {
+        "libglib-2.0-0.dll": "052e1d5e9cb072c7d2fb9db3ea6c29c1889b05110b1228e4fb846884eed387dd"
+      }
+    },
+    {
+      "package": "graphite2",
+      "binaryArchive": "mingw-w64-ucrt-x86_64-graphite2-1.3.15-1-any.pkg.tar.zst",
+      "binarySha256": "34ca1f88bff10ef182a6b1c8e5622d5029f13b05748e361af13b552b422ea849",
+      "sourceArchive": "mingw-w64-graphite2-1.3.15-1.src.tar.zst",
+      "sourceSha256": "eb76ce274c68ea6bad0883144c21e44a803ec94fed9dc0f6584feb0a8415a1d6",
+      "dlls": {
+        "libgraphite2.dll": "93953e4744bcfce9a7bc439b956544bc213095cb1349c3602a58370f32b25c18"
+      }
+    },
+    {
+      "package": "harfbuzz",
+      "binaryArchive": "mingw-w64-ucrt-x86_64-harfbuzz-14.3.1-1-any.pkg.tar.zst",
+      "binarySha256": "b1dc4a9b4e7ae5449f7bbe75b7127ddba18a85bd8e55c5265ad146cde6a9a8bb",
+      "sourceArchive": "mingw-w64-harfbuzz-14.3.1-1.src.tar.zst",
+      "sourceSha256": "21c345c8a1dc057162da7711146ccc8ca7ecb022000e7507c7bf71cedff81f63",
+      "dlls": {
+        "libharfbuzz-0.dll": "c46184dba5b5420206b8caa4176e284092b9e2580088a61455ba1ff9d3238a92"
+      }
+    },
+    {
+      "package": "libiconv",
+      "binaryArchive": "mingw-w64-ucrt-x86_64-libiconv-1.19-1-any.pkg.tar.zst",
+      "binarySha256": "9a500f38c2b91808741c62fae746b3e9110b33a1ecf5c30fa0c66dbedddf7e16",
+      "sourceArchive": "mingw-w64-libiconv-1.19-1.src.tar.zst",
+      "sourceSha256": "74428280c17094da5b702c29b2e1a0abae59556ea5dfdd65705cc8ccc1e000fb",
+      "dlls": {
+        "libiconv-2.dll": "94ec68fb8d342b6c91b6b48a8d95092819cdcd006a7166e0b68062f946afd08a"
+      }
+    },
+    {
+      "package": "gettext-runtime",
+      "binaryArchive": "mingw-w64-ucrt-x86_64-gettext-runtime-1.0-1-any.pkg.tar.zst",
+      "binarySha256": "ba693dda4ac375af76ce481ff3a6e7481286546cc7dc6d56c7021dae34084157",
+      "sourceArchive": "mingw-w64-gettext-1.0-1.src.tar.zst",
+      "sourceSha256": "cca0d0c8f60353faccc5ad40405240014e4a7ccc8b1c6ca9f4626aef3097d26e",
+      "dlls": {
+        "libintl-8.dll": "0e5a178731e6be6d115442a6ade3df7f03265cd1fc4338f8b6f86a8001cbf582"
+      }
+    },
+    {
+      "package": "lcms2",
+      "binaryArchive": "mingw-w64-ucrt-x86_64-lcms2-2.19.1-1-any.pkg.tar.zst",
+      "binarySha256": "144518cc80679f7bcc1d31b5dd7ec92e8737a1d8162014e30c8c1c181f47a156",
+      "sourceArchive": "mingw-w64-lcms2-2.19.1-1.src.tar.zst",
+      "sourceSha256": "83414d0d95c5cb2548d3050670694e9efc64304a52190f42bcad951efa038b41",
+      "dlls": {
+        "liblcms2-2.dll": "03314471fadd04cdd63c108472ff85d058903d236a0356c14eda363f0e1ccb65"
+      }
+    },
+    {
+      "package": "pcre2",
+      "binaryArchive": "mingw-w64-ucrt-x86_64-pcre2-10.47-1-any.pkg.tar.zst",
+      "binarySha256": "839bc4642f94c44e94e331c9092c6d186b1edc54dfdf6a81cb2062f638417023",
+      "sourceArchive": "mingw-w64-pcre2-10.47-1.src.tar.zst",
+      "sourceSha256": "d1af57f4346ec9542f1d191c94c470340f6268bfa732718f6db1b89d75fd6502",
+      "dlls": {
+        "libpcre2-8-0.dll": "52ccc7e4ec5ad0aecf307c0328826340f5d504aa59f7c4143b9a1b9fff16ccda"
+      }
+    },
+    {
+      "package": "libplacebo",
+      "binaryArchive": "mingw-w64-ucrt-x86_64-libplacebo-7.360.1-2-any.pkg.tar.zst",
+      "binarySha256": "ef183923c29475320d75a3b06fff5729172fcfdcefc45b660ed28c41107d4de4",
+      "sourceArchive": "mingw-w64-libplacebo-7.360.1-2.src.tar.zst",
+      "sourceSha256": "2abe10f1d16981407e8108c5ccb2e13cbeb28ce62f702a4caf1165b732e85bf0",
+      "dlls": {
+        "libplacebo-360.dll": "8eb2c3fe24a124d9dbf0383d60ac7dde6c0dd5607b2451cad0d924271e46d5b8"
+      }
+    },
+    {
+      "package": "libpng",
+      "binaryArchive": "mingw-w64-ucrt-x86_64-libpng-1.6.58-1-any.pkg.tar.zst",
+      "binarySha256": "bbfb6eb6246b01df90d82d6cff84f0a4e98dad029a4a2753898c96fcaadb66c7",
+      "sourceArchive": "mingw-w64-libpng-1.6.58-1.src.tar.zst",
+      "sourceSha256": "9e985fc4cef509ec689f982dc6a948e9a8ee5184db25d65e9dd4c21872092348",
+      "dlls": {
+        "libpng16-16.dll": "5c1dd5410af563f4a3c4aee10d1f749aa71e0d7fb3b4fac240eb9e96cadebd26"
+      }
+    },
+    {
+      "package": "shaderc",
+      "binaryArchive": "mingw-w64-ucrt-x86_64-shaderc-2026.3-1-any.pkg.tar.zst",
+      "binarySha256": "0af3be0981f194806859a521c8ea944e084a69bb720d59aae2adedfd88c14adc",
+      "sourceArchive": "mingw-w64-shaderc-2026.3-1.src.tar.zst",
+      "sourceSha256": "847da728a130dd9b59c1d8228877f564ae7160483070894bf0536442b59a14c8",
+      "dlls": {
+        "libshaderc_shared.dll": "31a24d149f9c3f716eda4277abf6fff8023e2fe1c0f8dfa3ce9f83231fbe4bbe"
+      }
+    },
+    {
+      "package": "spirv-cross",
+      "binaryArchive": "mingw-w64-ucrt-x86_64-spirv-cross-1~1.4.357.0-1-any.pkg.tar.zst",
+      "binarySha256": "78f74990ac05623ebbefea310cb9ab96f4058f5c88d68255fc102b89077503d9",
+      "sourceArchive": "mingw-w64-spirv-cross-1~1.4.357.0-1.src.tar.zst",
+      "sourceSha256": "4082735b9f40527966fcadd19dfdcafd8313d5187abae5d53c270af448aa7c4f",
+      "dlls": {
+        "libspirv-cross-c-shared.dll": "9c833af0fe70795d3635739fc3c279d1969b6c00dccd51161f48cea055db1bcc"
+      }
+    },
+    {
+      "package": "libwinpthread",
+      "binaryArchive": "mingw-w64-ucrt-x86_64-libwinpthread-14.0.0.r283.ga7cb47123-1-any.pkg.tar.zst",
+      "binarySha256": "58f7212d053a029f2f19672ebbd12f8c8142ae26ed47b57b1450a5128682188a",
+      "sourceArchive": "mingw-w64-winpthreads-14.0.0.r283.ga7cb47123-1.src.tar.zst",
+      "sourceSha256": "ecb4adb183884eb97cfc4a4dd6f29d52df9422492512a8d30b2f95523ce8984e",
+      "dlls": {
+        "libwinpthread-1.dll": "0bf76de7b957fc1f87f8be9c8c46af4588db204b0600a3e7abe7243c790f8dfd"
+      }
+    },
+    {
+      "package": "libunibreak",
+      "binaryArchive": "mingw-w64-ucrt-x86_64-libunibreak-7.0-1-any.pkg.tar.zst",
+      "binarySha256": "de657828b41248a2fd67fa6e8348402a61ef130b0444f1f006c6545c43ad86d8",
+      "sourceArchive": "mingw-w64-libunibreak-7.0-1.src.tar.zst",
+      "sourceSha256": "3d51ed18b20deb475c6947ea8fdabb7d6107962e2e6e690de90e5227537728ad",
+      "dlls": {
+        "libunibreak-7.dll": "f1f4bb5b5bb3dbf8d142df3012f13e4b5b0246565496d43718a6f33321e96283"
+      }
+    },
+    {
+      "package": "vulkan-loader",
+      "binaryArchive": "mingw-w64-ucrt-x86_64-vulkan-loader-1~1.4.357.0-1-any.pkg.tar.zst",
+      "binarySha256": "4d34983aea34116582700b285279df21cd0ee8519025330e7ac0650bb02f138f",
+      "sourceArchive": "mingw-w64-vulkan-loader-1~1.4.357.0-1.src.tar.zst",
+      "sourceSha256": "af28ead397f61609c07a8260279441b3e3113a42cbaaf04cec86933b65c60dc4",
+      "dlls": {
+        "vulkan-1.dll": "2286e6152a76b1f3283b3d274b7602b739cfeb41a8af670754b7688a198fca46"
+      }
+    },
+    {
+      "package": "zlib",
+      "binaryArchive": "mingw-w64-ucrt-x86_64-zlib-1.3.2-2-any.pkg.tar.zst",
+      "binarySha256": "841401182976d2f9e17e5c0ebaac51f2a8014140ea53d67625e91c8fb3c85ea0",
+      "sourceArchive": "mingw-w64-zlib-1.3.2-2.src.tar.zst",
+      "sourceSha256": "eef69dea52357e01b272d6fd6dc4d7c0773f71260cb7bcde6047c8c383518db3",
+      "dlls": {
+        "zlib1.dll": "11cd91171765cd65f1c3362e3df67e5f5a618a6b88c8cdec899b802eaf1c7b0d"
+      }
+    }
+  ],
+  "ffmpegDependencySources": [
+    {
+      "recipe": "scripts.d/10-mingw-std-threads.sh",
+      "repository": "https://github.com/meganz/mingw-std-threads.git",
+      "revision": "c931bac289dd431f1dd30fc4a5d1a7be36668073"
+    },
+    {
+      "recipe": "scripts.d/10-mingw.sh",
+      "repository": "https://git.code.sf.net/p/mingw-w64/mingw-w64.git",
+      "revision": "57b595039040eaa15bece85b7cc71d952281b269"
+    },
+    {
+      "recipe": "scripts.d/10-xorg-macros.sh",
+      "repository": "https://gitlab.freedesktop.org/xorg/util/macros.git",
+      "revision": "ea1e15a4909ac8b03b2c5a08ac3810b385985157"
+    },
+    {
+      "recipe": "scripts.d/20-libiconv.sh",
+      "repository": "https://git.savannah.gnu.org/git/libiconv.git",
+      "revision": "1df3087ba8110c7f3ed3eb5f8869b814dbbe00b0"
+    },
+    {
+      "recipe": "scripts.d/20-zlib.sh",
+      "repository": "https://github.com/madler/zlib.git",
+      "revision": "767c4c947852e143f582c85f14cf573411df1b35"
+    },
+    {
+      "recipe": "scripts.d/25-fftw3.sh",
+      "repository": "https://github.com/FFTW/fftw3.git",
+      "revision": "93ed4c786934aec9946f8dda4b4e3eb08f8be41c"
+    },
+    {
+      "recipe": "scripts.d/25-fribidi.sh",
+      "repository": "https://github.com/fribidi/fribidi.git",
+      "revision": "4c914a92e94a9fe4f30ae83a1130099841566448"
+    },
+    {
+      "recipe": "scripts.d/25-gmp.sh",
+      "repository": "https://github.com/BtbN/gmplib.git",
+      "revision": "763b40df71c0f4d5f5d7b33dc55038c8c9377ecf"
+    },
+    {
+      "recipe": "scripts.d/25-libogg.sh",
+      "repository": "https://github.com/xiph/ogg.git",
+      "revision": "06a5e0262cdc28aa4ae6797627a783b5010440f0"
+    },
+    {
+      "recipe": "scripts.d/25-libpng.sh",
+      "repository": "https://github.com/glennrp/libpng.git",
+      "revision": "964b4135949703b705fc760fc3fb546b86e5ab47"
+    },
+    {
+      "recipe": "scripts.d/25-libxml2.sh",
+      "repository": "https://github.com/GNOME/libxml2.git",
+      "revision": "91586dc6742ab335682235120363f6e126eea5e2"
+    },
+    {
+      "recipe": "scripts.d/25-openssl.sh",
+      "repository": "https://github.com/openssl/openssl.git",
+      "revision": "openssl-3.6.4"
+    },
+    {
+      "recipe": "scripts.d/25-xz.sh",
+      "repository": "https://github.com/tukaani-project/xz.git",
+      "revision": "3b1efb04d17c3a9ef7f473d73af13f1531428ffe"
+    },
+    {
+      "recipe": "scripts.d/45-brotli.sh",
+      "repository": "https://github.com/google/brotli.git",
+      "revision": "a3abcbee0d945e51dddeec81e647ffe0cde182c2"
+    },
+    {
+      "recipe": "scripts.d/45-fonts/25-freetype.sh",
+      "repository": "https://gitlab.freedesktop.org/freetype/freetype.git",
+      "revision": "d333439633039de426f943f28a2926c7f97b5ae5"
+    },
+    {
+      "recipe": "scripts.d/45-fonts/35-fontconfig.sh",
+      "repository": "https://gitlab.freedesktop.org/fontconfig/fontconfig.git",
+      "revision": "bd8f7b597de96761750d0365abb49b19d2f8d5c3"
+    },
+    {
+      "recipe": "scripts.d/45-fonts/45-harfbuzz.sh",
+      "repository": "https://github.com/harfbuzz/harfbuzz.git",
+      "revision": "b3bab62307017934dd7f532c52a696fefb12b3ad"
+    },
+    {
+      "recipe": "scripts.d/45-fonts/50-freetype.sh",
+      "repository": "https://gitlab.freedesktop.org/freetype/freetype.git",
+      "revision": "d333439633039de426f943f28a2926c7f97b5ae5"
+    },
+    {
+      "recipe": "scripts.d/45-libffi.sh",
+      "repository": "https://github.com/libffi/libffi.git",
+      "revision": "bc553867367246d140cd156f060bd0409f57f157"
+    },
+    {
+      "recipe": "scripts.d/45-libsamplerate.sh",
+      "repository": "https://github.com/libsndfile/libsamplerate.git",
+      "revision": "0844c208f683527c08ea8a80acc13b398aa9c8bf"
+    },
+    {
+      "recipe": "scripts.d/45-libudfread.sh",
+      "repository": "https://code.videolan.org/videolan/libudfread.git",
+      "revision": "b0bc6957e7e07d5f35391f210596d9eb71cffdd9"
+    },
+    {
+      "recipe": "scripts.d/45-libunibreak.sh",
+      "repository": "https://github.com/adah1972/libunibreak.git",
+      "revision": "28a2756b864c343f438cd22537d49d394d4666a5"
+    },
+    {
+      "recipe": "scripts.d/45-libvorbis.sh",
+      "repository": "https://github.com/xiph/vorbis.git",
+      "revision": "1b75110b5a2754ba1931d82dd83cb822b266a21d"
+    },
+    {
+      "recipe": "scripts.d/45-opencl.sh",
+      "repository": "https://github.com/KhronosGroup/OpenCL-Headers.git",
+      "revision": "e6060189f4ebe8b52d885c37af71b9a50c272154"
+    },
+    {
+      "recipe": "scripts.d/45-pcre2.sh",
+      "repository": "https://github.com/PCRE2Project/pcre2.git",
+      "revision": "09eb19dc1102b34e7557408f33318364cb97d2b0"
+    },
+    {
+      "recipe": "scripts.d/45-pixman.sh",
+      "repository": "https://gitlab.freedesktop.org/pixman/pixman.git",
+      "revision": "96c04d1b87934dc4b9396197a2dff737698ab310"
+    },
+    {
+      "recipe": "scripts.d/45-pulseaudio.sh",
+      "repository": "https://gitlab.freedesktop.org/pulseaudio/pulseaudio.git",
+      "revision": "77d25a1e613095bdf87a1d13b65e7c330565077a"
+    },
+    {
+      "recipe": "scripts.d/45-vmaf.sh",
+      "repository": "https://github.com/Netflix/vmaf.git",
+      "revision": "86da14d0306a138fd3f01319860b905169746516"
+    },
+    {
+      "recipe": "scripts.d/45-x11/10-xcbproto.sh",
+      "repository": "https://gitlab.freedesktop.org/xorg/proto/xcbproto.git",
+      "revision": "cf7e2581b613802f2f8ec2a4b50a6a20aad4bf52"
+    },
+    {
+      "recipe": "scripts.d/45-x11/10-xproto.sh",
+      "repository": "https://gitlab.freedesktop.org/xorg/proto/xorgproto.git",
+      "revision": "fd86fbff46eb7ab8e193c12b8a529e90bae31835"
+    },
+    {
+      "recipe": "scripts.d/45-x11/10-xtrans.sh",
+      "repository": "https://gitlab.freedesktop.org/xorg/lib/libxtrans.git",
+      "revision": "79f6b0bfe2170496e8c37626043d009f4cd3f1e1"
+    },
+    {
+      "recipe": "scripts.d/45-x11/20-libxau.sh",
+      "repository": "https://gitlab.freedesktop.org/xorg/lib/libxau.git",
+      "revision": "be1daeb909f1d678e7859ac1555e90b4e768d5c4"
+    },
+    {
+      "recipe": "scripts.d/45-x11/30-libxcb.sh",
+      "repository": "https://gitlab.freedesktop.org/xorg/lib/libxcb.git",
+      "revision": "d4e07bab5729c7d7cc3d2b95568cd9a661a53c4f"
+    },
+    {
+      "recipe": "scripts.d/45-x11/40-libx11.sh",
+      "repository": "https://gitlab.freedesktop.org/xorg/lib/libx11.git",
+      "revision": "13f9b8de400335f4b86bb0672da02f8166c0e796"
+    },
+    {
+      "recipe": "scripts.d/45-x11/50-libxext.sh",
+      "repository": "https://gitlab.freedesktop.org/xorg/lib/libxext.git",
+      "revision": "508f8adca2540ff8926ac8456cb1c553a8caae76"
+    },
+    {
+      "recipe": "scripts.d/45-x11/50-libxfixes.sh",
+      "repository": "https://gitlab.freedesktop.org/xorg/lib/libxfixes.git",
+      "revision": "55bb2d1d57d43e0595ce45393f26eb433d75a7cc"
+    },
+    {
+      "recipe": "scripts.d/45-x11/50-libxi.sh",
+      "repository": "https://gitlab.freedesktop.org/xorg/lib/libxi.git",
+      "revision": "3a0adabd16d8bf19c772061ad67f25c51281edf3"
+    },
+    {
+      "recipe": "scripts.d/45-x11/50-libxinerama.sh",
+      "repository": "https://gitlab.freedesktop.org/xorg/lib/libxinerama.git",
+      "revision": "d7162b962710bc724b41cabab4e7cea303c4b541"
+    },
+    {
+      "recipe": "scripts.d/45-x11/50-libxrender.sh",
+      "repository": "https://gitlab.freedesktop.org/xorg/lib/libxrender.git",
+      "revision": "f32afe9f877ae032c6bc9c27b17b7978b1b4c856"
+    },
+    {
+      "recipe": "scripts.d/45-x11/50-libxscrnsaver.sh",
+      "repository": "https://gitlab.freedesktop.org/xorg/lib/libxscrnsaver.git",
+      "revision": "3f753e7a4050db083474444ae91cc17a849eaa4d"
+    },
+    {
+      "recipe": "scripts.d/45-x11/50-libxxf86vm.sh",
+      "repository": "https://gitlab.freedesktop.org/xorg/lib/libxxf86vm.git",
+      "revision": "c76fde6bffcc87e5dd98d8196bb01a299bdc3236"
+    },
+    {
+      "recipe": "scripts.d/45-x11/60-libglvnd.sh",
+      "repository": "https://gitlab.freedesktop.org/glvnd/libglvnd.git",
+      "revision": "c046a760d845416e98ac4128757b2b356c47fdaa"
+    },
+    {
+      "recipe": "scripts.d/45-x11/60-libxcursor.sh",
+      "repository": "https://gitlab.freedesktop.org/xorg/lib/libxcursor.git",
+      "revision": "15efad7ccd035f5d1ddc8d437e047569d1775fa7"
+    },
+    {
+      "recipe": "scripts.d/45-x11/60-libxrandr.sh",
+      "repository": "https://gitlab.freedesktop.org/xorg/lib/libxrandr.git",
+      "revision": "8a4ba1974bcf07057cf891128d86ae1ab5303574"
+    },
+    {
+      "recipe": "scripts.d/45-x11/60-libxv.sh",
+      "repository": "https://gitlab.freedesktop.org/xorg/lib/libxv.git",
+      "revision": "f315ec50fcad9bdbaed46c3e78dc5e7fe209f933"
+    },
+    {
+      "recipe": "scripts.d/45-zstd.sh",
+      "repository": "https://github.com/facebook/zstd.git",
+      "revision": "01b7154f1172432f8abe9b3bb9909e14a1176b7d"
+    },
+    {
+      "recipe": "scripts.d/47-vulkan/40-vulkan-headers.sh",
+      "repository": "https://github.com/KhronosGroup/Vulkan-Headers.git",
+      "revision": "v1.4.363"
+    },
+    {
+      "recipe": "scripts.d/47-vulkan/45-vulkan-loader.sh",
+      "repository": "https://github.com/BtbN/Vulkan-Shim-Loader.git",
+      "revision": "65b3936528cd92eb4ea3de485d03f858a3850484"
+    },
+    {
+      "recipe": "scripts.d/47-vulkan/50-shaderc.sh",
+      "repository": "https://github.com/google/shaderc.git",
+      "revision": "a8abeb0b8a9d4b11e3d59ca9f4550b8213e733ab"
+    },
+    {
+      "recipe": "scripts.d/47-vulkan/55-spirv-cross.sh",
+      "repository": "https://github.com/KhronosGroup/SPIRV-Cross.git",
+      "revision": "aa217aeb6c9f0ace7a0ab233b28807edf45eb165"
+    },
+    {
+      "recipe": "scripts.d/47-vulkan/60-spirv-headers.sh",
+      "repository": "https://github.com/KhronosGroup/SPIRV-Headers.git",
+      "revision": "2b7475f6d664efbad4d4315c94ecec9640831e5b"
+    },
+    {
+      "recipe": "scripts.d/50-amf.sh",
+      "repository": "https://github.com/GPUOpen-LibrariesAndSDKs/AMF.git",
+      "revision": "6277e353fd625121a8f627b1d0540323ef372a49"
+    },
+    {
+      "recipe": "scripts.d/50-aom.sh",
+      "repository": "https://aomedia.googlesource.com/aom",
+      "revision": "b4ce2cd097b00921b0327bfb5f07b5f8361ade99"
+    },
+    {
+      "recipe": "scripts.d/50-avisynth.sh",
+      "repository": "https://github.com/AviSynth/AviSynthPlus.git",
+      "revision": "5c82777b374bdef16e13007a11e77d735ac1e4eb"
+    },
+    {
+      "recipe": "scripts.d/50-chromaprint.sh",
+      "repository": "https://github.com/acoustid/chromaprint.git",
+      "revision": "aed8eba2202dd9d7b3b0a56c77904cc805490d72"
+    },
+    {
+      "recipe": "scripts.d/50-dav1d.sh",
+      "repository": "https://code.videolan.org/videolan/dav1d.git",
+      "revision": "9711965b60bb692ae24004659acf61f5c7d9ed61"
+    },
+    {
+      "recipe": "scripts.d/50-davs2.sh",
+      "repository": "https://github.com/pkuvcl/davs2.git",
+      "revision": "b41cf117452e2d73d827f02d3e30aa20f1c721ac"
+    },
+    {
+      "recipe": "scripts.d/50-dvd/30-libdvdcss.sh",
+      "repository": "https://code.videolan.org/videolan/libdvdcss.git",
+      "revision": "811ce97a1d4d1c9d936f4b2707f533a9ef768251"
+    },
+    {
+      "recipe": "scripts.d/50-dvd/40-libdvdread.sh",
+      "repository": "https://code.videolan.org/videolan/libdvdread.git",
+      "revision": "0f30df53125b564ef45903714403ce0a1e6c5e9e"
+    },
+    {
+      "recipe": "scripts.d/50-dvd/50-libdvdnav.sh",
+      "repository": "https://code.videolan.org/videolan/libdvdnav.git",
+      "revision": "8147ccd35e5aae4afdd21171cf7b6b4d8f179d28"
+    },
+    {
+      "recipe": "scripts.d/50-fdk-aac.sh",
+      "repository": "https://github.com/mstorsjo/fdk-aac.git",
+      "revision": "7c83d08002332b2730c845eec3497e6bf585dd28"
+    },
+    {
+      "recipe": "scripts.d/50-ffnvcodec.sh",
+      "repository": "https://github.com/FFmpeg/nv-codec-headers.git",
+      "revision": "eddcea9e27f6b772057c9b3f87de2cc1737faffc"
+    },
+    {
+      "recipe": "scripts.d/50-frei0r.sh",
+      "repository": "https://github.com/dyne/frei0r.git",
+      "revision": "4c95b2a02b2d03c71d5f6d7980d16c99acfd5a5f"
+    },
+    {
+      "recipe": "scripts.d/50-gme.sh",
+      "repository": "https://github.com/libgme/game-music-emu.git",
+      "revision": "f68963b1de0633149b05732113d3c3113c6f63a1"
+    },
+    {
+      "recipe": "scripts.d/50-kvazaar.sh",
+      "repository": "https://github.com/ultravideo/kvazaar.git",
+      "revision": "2b06691bb5844404c0e703f12a5d7b0fee914ec7"
+    },
+    {
+      "recipe": "scripts.d/50-lcevcdec.sh",
+      "repository": "https://github.com/v-novaltd/LCEVCdec.git",
+      "revision": "17804ac54db8fbb42717f3275b1e73f3c0b067d3"
+    },
+    {
+      "recipe": "scripts.d/50-libaribb24.sh",
+      "repository": "https://github.com/nkoriyama/aribb24.git",
+      "revision": "5e9be272f96e00f15a2f3c5f8ba7e124862aec38"
+    },
+    {
+      "recipe": "scripts.d/50-libaribcaption.sh",
+      "repository": "https://github.com/xqq/libaribcaption.git",
+      "revision": "c64c23b8905ba514b87c9789269e9f66f949ffe0"
+    },
+    {
+      "recipe": "scripts.d/50-libass.sh",
+      "repository": "https://github.com/libass/libass.git",
+      "revision": "f61db567e6593df3470e91594bcd4ad2d0473aff"
+    },
+    {
+      "recipe": "scripts.d/50-libbluray.sh",
+      "repository": "https://code.videolan.org/videolan/libbluray.git",
+      "revision": "a24f4fad4d62893de647abc8671397747b2359dd"
+    },
+    {
+      "recipe": "scripts.d/50-libcurl/40-libpsl.sh",
+      "repository": "https://github.com/rockdaboot/libpsl.git",
+      "revision": "a629c831d09011f76974d931be7f6167be90673e"
+    },
+    {
+      "recipe": "scripts.d/50-libcurl/40-nghttp2.sh",
+      "repository": "https://github.com/nghttp2/nghttp2.git",
+      "revision": "19d06e62185d93d2398d85241cdbb460349bfe44"
+    },
+    {
+      "recipe": "scripts.d/50-libcurl/40-nghttp3.sh",
+      "repository": "https://github.com/ngtcp2/nghttp3.git",
+      "revision": "2304973e5a0c8b1fa4bb380b47945a000357f87f"
+    },
+    {
+      "recipe": "scripts.d/50-libcurl/40-ngtcp2.sh",
+      "repository": "https://github.com/ngtcp2/ngtcp2.git",
+      "revision": "a4925d70647b75286b28c37be260de3729c2de3d"
+    },
+    {
+      "recipe": "scripts.d/50-libcurl/50-libcurl.sh",
+      "repository": "https://github.com/curl/curl.git",
+      "revision": "4c67658f953751de9e66bb5f9729af821a641341"
+    },
+    {
+      "recipe": "scripts.d/50-libjxl/45-lcms2.sh",
+      "repository": "https://github.com/mm2/Little-CMS.git",
+      "revision": "a0b0d7a69b13b461bdbd9cff9f7f1d59ccd1858c"
+    },
+    {
+      "recipe": "scripts.d/50-libjxl/50-libjxl.sh",
+      "repository": "https://github.com/libjxl/libjxl.git",
+      "revision": "b87738951c1254cd8cccaa6d47712ba735da56d8"
+    },
+    {
+      "recipe": "scripts.d/50-libopus.sh",
+      "repository": "https://github.com/xiph/opus.git",
+      "revision": "503d81b138d76621aae4b12786e90de48aa8db3a"
+    },
+    {
+      "recipe": "scripts.d/50-libplacebo.sh",
+      "repository": "https://code.videolan.org/videolan/libplacebo.git",
+      "revision": "e2972fdd09adacd383656738d7d280f0cd84a761"
+    },
+    {
+      "recipe": "scripts.d/50-librist/40-mbedtls.sh",
+      "repository": "https://github.com/ARMmbed/mbedtls.git",
+      "revision": "v4.2.0"
+    },
+    {
+      "recipe": "scripts.d/50-librist/50-librist.sh",
+      "repository": "https://code.videolan.org/rist/librist.git",
+      "revision": "4f45ef8f78983892d52ccd52d9f675435b23738f"
+    },
+    {
+      "recipe": "scripts.d/50-librsvg/10-glib.sh",
+      "repository": "https://github.com/GNOME/glib.git",
+      "revision": "5a124d1e66a6c2dc56989303b4d6d4781c2952ed"
+    },
+    {
+      "recipe": "scripts.d/50-librsvg/20-cairo.sh",
+      "repository": "https://gitlab.freedesktop.org/cairo/cairo.git",
+      "revision": "74755964edef651691d5cd36ff140108298e4e6e"
+    },
+    {
+      "recipe": "scripts.d/50-librsvg/30-pango.sh",
+      "repository": "https://github.com/GNOME/pango.git",
+      "revision": "8e74c27c113c98664b77272d16b14bbce542c184"
+    },
+    {
+      "recipe": "scripts.d/50-librsvg/99-librsvg.sh",
+      "repository": "https://github.com/GNOME/librsvg.git",
+      "revision": "7612431eb02dc009319094f8513d63c1faaecfb4"
+    },
+    {
+      "recipe": "scripts.d/50-libssh.sh",
+      "repository": "https://gitlab.com/libssh/libssh-mirror.git",
+      "revision": "76e0a8639e61436c28d877586f65a7707edc6ee5"
+    },
+    {
+      "recipe": "scripts.d/50-libtheora.sh",
+      "repository": "https://github.com/xiph/theora.git",
+      "revision": "28fd5ec77f0ad0e07a371cef1047828116f6bd8a"
+    },
+    {
+      "recipe": "scripts.d/50-libvpx.sh",
+      "repository": "https://chromium.googlesource.com/webm/libvpx",
+      "revision": "5e680f30801d03c21078f8c4b772464752516211"
+    },
+    {
+      "recipe": "scripts.d/50-libwebp.sh",
+      "repository": "https://chromium.googlesource.com/webm/libwebp",
+      "revision": "5c168cd23b1872969c38e34b01b04dcf29849288"
+    },
+    {
+      "recipe": "scripts.d/50-libzmq.sh",
+      "repository": "https://github.com/zeromq/libzmq.git",
+      "revision": "46493370217ac135246617fa2f6ac819d8b61bfc"
+    },
+    {
+      "recipe": "scripts.d/50-lilv/96-lv2.sh",
+      "repository": "https://github.com/lv2/lv2.git",
+      "revision": "3c57dae600a5ad8d05acd53ee3490f7d91cb7be6"
+    },
+    {
+      "recipe": "scripts.d/50-lilv/96-serd.sh",
+      "repository": "https://github.com/drobilla/serd.git",
+      "revision": "b6053bb2a4533e6a8e3821c1061f140d5e666938"
+    },
+    {
+      "recipe": "scripts.d/50-lilv/96-zix.sh",
+      "repository": "https://github.com/drobilla/zix.git",
+      "revision": "17d632393f5addb6fa24dda2927b96515407cca7"
+    },
+    {
+      "recipe": "scripts.d/50-lilv/97-sord.sh",
+      "repository": "https://github.com/drobilla/sord.git",
+      "revision": "4b5232bb91e7f2f1b84df384494d073fabbcd312"
+    },
+    {
+      "recipe": "scripts.d/50-lilv/98-sratom.sh",
+      "repository": "https://github.com/lv2/sratom.git",
+      "revision": "9e8ee84eed502e6030ce8bb49694fd28542b08fc"
+    },
+    {
+      "recipe": "scripts.d/50-lilv/99-lilv.sh",
+      "repository": "https://github.com/lv2/lilv.git",
+      "revision": "4b8f30055fa5cb4134a2eb45fc1555bc04289314"
+    },
+    {
+      "recipe": "scripts.d/50-onevpl.sh",
+      "repository": "https://github.com/intel/libvpl.git",
+      "revision": "674d015bcb294bc39fa276e99a652ea045423e82"
+    },
+    {
+      "recipe": "scripts.d/50-openal.sh",
+      "repository": "https://github.com/kcat/openal-soft.git",
+      "revision": "c89b8cf7bba4822f230c69f0a6696a52e5322dca"
+    },
+    {
+      "recipe": "scripts.d/50-openapv.sh",
+      "repository": "https://github.com/AcademySoftwareFoundation/openapv.git",
+      "revision": "a58ce739be0dfb083643d929aee8f0e0ba9bdf63"
+    },
+    {
+      "recipe": "scripts.d/50-opencore-amr.sh",
+      "repository": "https://git.code.sf.net/p/opencore-amr/code",
+      "revision": "7dba8c32238418ce0b316a852b2224df586ca896"
+    },
+    {
+      "recipe": "scripts.d/50-openh264.sh",
+      "repository": "https://github.com/cisco/openh264.git",
+      "revision": "8b2d28faade10d74d99ac80e199aef664c9c5a3b"
+    },
+    {
+      "recipe": "scripts.d/50-openjpeg.sh",
+      "repository": "https://github.com/uclouvain/openjpeg.git",
+      "revision": "8314119b067c0fc77834731168daaebd379fdb12"
+    },
+    {
+      "recipe": "scripts.d/50-openmpt.sh",
+      "repository": "https://github.com/OpenMPT/openmpt.git",
+      "revision": "f83cedb0cd5446e4dfaa83ac97e3087107e26767"
+    },
+    {
+      "recipe": "scripts.d/50-rav1e.sh",
+      "repository": "https://github.com/xiph/rav1e.git",
+      "revision": "31435de9d76fddd38f6dcc31d4014574cebb2092"
+    },
+    {
+      "recipe": "scripts.d/50-rubberband.sh",
+      "repository": "https://github.com/breakfastquay/rubberband.git",
+      "revision": "e4296ac80b1170018a110bc326fd0d45a0eb27d6"
+    },
+    {
+      "recipe": "scripts.d/50-sdl.sh",
+      "repository": "https://github.com/libsdl-org/SDL.git",
+      "revision": "b90ac95029d801c5abc59472ba8e2200dff31e1e"
+    },
+    {
+      "recipe": "scripts.d/50-snappy.sh",
+      "repository": "https://github.com/google/snappy.git",
+      "revision": "9c28114a38866f6deeaa826db918293bc28ae410"
+    },
+    {
+      "recipe": "scripts.d/50-soxr.sh",
+      "repository": "https://git.code.sf.net/p/soxr/code",
+      "revision": "945b592b70470e29f917f4de89b4281fbbd540c0"
+    },
+    {
+      "recipe": "scripts.d/50-srt.sh",
+      "repository": "https://github.com/Haivision/srt.git",
+      "revision": "ff8ab25c57aece5b7351defe36dacc94fc28527f"
+    },
+    {
+      "recipe": "scripts.d/50-svtav1.sh",
+      "repository": "https://gitlab.com/AOMediaCodec/SVT-AV1.git",
+      "revision": "5ed9ffbcb5086da23f30fe9bc5b00145358462da"
+    },
+    {
+      "recipe": "scripts.d/50-twolame.sh",
+      "repository": "https://github.com/njh/twolame.git",
+      "revision": "6fced852d4d5cfad58cf9dbe3ea619b08e87d398"
+    },
+    {
+      "recipe": "scripts.d/50-uavs3d.sh",
+      "repository": "https://github.com/uavs3/uavs3d.git",
+      "revision": "0e20d2c291853f196c68922a264bcd8471d75b68"
+    },
+    {
+      "recipe": "scripts.d/50-vaapi/30-libpciaccess.sh",
+      "repository": "https://gitlab.freedesktop.org/xorg/lib/libpciaccess.git",
+      "revision": "38e6f15f839fba2c49982e7ad61cde681fd5d4d6"
+    },
+    {
+      "recipe": "scripts.d/50-vaapi/40-libdrm.sh",
+      "repository": "https://gitlab.freedesktop.org/mesa/drm.git",
+      "revision": "b97cbde15c5c3abfe44d78e8f57139e50f612fec"
+    },
+    {
+      "recipe": "scripts.d/50-vaapi/50-libva.sh",
+      "repository": "https://github.com/intel/libva.git",
+      "revision": "6b07f7100512817f736967e899b8c26313c20623"
+    },
+    {
+      "recipe": "scripts.d/50-vidstab.sh",
+      "repository": "https://github.com/georgmartius/vid.stab.git",
+      "revision": "e2445c4081658318223762a696eb1c645c2d7168"
+    },
+    {
+      "recipe": "scripts.d/50-vvenc.sh",
+      "repository": "https://github.com/fraunhoferhhi/vvenc.git",
+      "revision": "b1cfb2ad495af6ae4cc214b7a060e8b4166c4629"
+    },
+    {
+      "recipe": "scripts.d/50-whisper.sh",
+      "repository": "https://github.com/ggml-org/whisper.cpp.git",
+      "revision": "a44e07845931421bb6f3447ce0010ed9dc76a118"
+    },
+    {
+      "recipe": "scripts.d/50-x264.sh",
+      "repository": "https://code.videolan.org/videolan/x264.git",
+      "revision": "0480cb05fa188d37ae87e8f4fd8f1aea3711f7ee"
+    },
+    {
+      "recipe": "scripts.d/50-x265.sh",
+      "repository": "https://github.com/Multicorewareinc/x265.git",
+      "revision": "020d7054dbecfd3be8e62efe33ff8a305d41856e"
+    },
+    {
+      "recipe": "scripts.d/50-xavs2.sh",
+      "repository": "https://github.com/pkuvcl/xavs2.git",
+      "revision": "eae1e8b9d12468059bdd7dee893508e470fa83d8"
+    },
+    {
+      "recipe": "scripts.d/50-zimg.sh",
+      "repository": "https://github.com/sekrit-twc/zimg.git",
+      "revision": "67e0603271c080e22c8429856dd4a8a56587e61e"
+    },
+    {
+      "recipe": "scripts.d/50-zvbi.sh",
+      "repository": "https://github.com/zapping-vbi/zvbi",
+      "revision": "d3a5ee9f2b047bf16cd1ee5ccf6ec05ee75409d0"
+    }
+  ],
+  "runtimeDlls": {
+    "avcodec-62.dll": "4f817870cfaeaced3e34a083c50a1b4be0389202d7fb821632d47cf9b3f4d82a",
+    "avdevice-62.dll": "34bc695cfdd3106de29551c6868f1c2cdc0fa36903494506f1708251e6a3075e",
+    "avfilter-11.dll": "28e202431dc0643af97c307dc6437da13f8c08aa016fc28d1f9ec8fd0336e172",
+    "avformat-62.dll": "bcf514a394dc5ec43fe64e4f1624ba63b23e9c25967081ea2d03d95b0dc359ef",
+    "avutil-60.dll": "481620c7b5cd8e831a50762fae55699c821091e96c42226d04fee725a4aae2f5",
+    "libass-9.dll": "cb2b46133b3bd9630384148bd7229e987af9703208d4329fc2215f4170b8dc6b",
+    "libbrotlicommon.dll": "c62c08223e450dfc2fff33c752cc228505ffd9d755201958ba800d5d30481a2c",
+    "libbrotlidec.dll": "e270b6e576594ee8ee6e33ccc54e34a54304616dd6225652e11e49d6f17ef896",
+    "libbz2-1.dll": "1790bf6473c9d48db14c1f0ee8124142327556d281299ea2a72ee361118ee01a",
+    "libcrypto-3-x64.dll": "616e5c9cfd5c6f786fd81238198ec479076f5bf6702127f81686f46b31b2464d",
+    "libdovi.dll": "75988509f0d2166e2060ed548913bd7b34556bc16b3f9a02469de1dd2347a7fb",
+    "libexpat-1.dll": "fc7b969c07c4a5b7e0426bdee4ac247a8840eac34a217fbe3303a5b21f25280a",
+    "libfontconfig-1.dll": "be30a200fa4000d0a7a1d3911391969627440148f01d0028a319bcb9fa112202",
+    "libfreetype-6.dll": "a3271784f8366b3c6412e0c35474884fa12899c392bacb08bc8eac00f4be7e64",
+    "libfribidi-0.dll": "73a712fd51fa0085e8660084743a821ae7388de138069cd6cd8c171d4487da84",
+    "libgcc_s_seh-1.dll": "80940372431cc76224dfda06e2d33f01e49af3b4e7c499c535be856ebcadd273",
+    "libglib-2.0-0.dll": "052e1d5e9cb072c7d2fb9db3ea6c29c1889b05110b1228e4fb846884eed387dd",
+    "libgraphite2.dll": "93953e4744bcfce9a7bc439b956544bc213095cb1349c3602a58370f32b25c18",
+    "libharfbuzz-0.dll": "c46184dba5b5420206b8caa4176e284092b9e2580088a61455ba1ff9d3238a92",
+    "libiconv-2.dll": "94ec68fb8d342b6c91b6b48a8d95092819cdcd006a7166e0b68062f946afd08a",
+    "libintl-8.dll": "0e5a178731e6be6d115442a6ade3df7f03265cd1fc4338f8b6f86a8001cbf582",
+    "liblcms2-2.dll": "03314471fadd04cdd63c108472ff85d058903d236a0356c14eda363f0e1ccb65",
+    "libmpv-2.dll": "7c43d9cc92ed57c9b0e76ba27007e3431ebaa569e248479ed5d4f3accfec66b5",
+    "libpcre2-8-0.dll": "52ccc7e4ec5ad0aecf307c0328826340f5d504aa59f7c4143b9a1b9fff16ccda",
+    "libplacebo-360.dll": "8eb2c3fe24a124d9dbf0383d60ac7dde6c0dd5607b2451cad0d924271e46d5b8",
+    "libpng16-16.dll": "5c1dd5410af563f4a3c4aee10d1f749aa71e0d7fb3b4fac240eb9e96cadebd26",
+    "libshaderc_shared.dll": "31a24d149f9c3f716eda4277abf6fff8023e2fe1c0f8dfa3ce9f83231fbe4bbe",
+    "libspirv-cross-c-shared.dll": "9c833af0fe70795d3635739fc3c279d1969b6c00dccd51161f48cea055db1bcc",
+    "libssl-3-x64.dll": "7f53951cf786e299521e46d860f7764d6bd671ce85d2a03dc929a8184792e2ab",
+    "libstdc++-6.dll": "69200d6d96b903dac4c873031813485a0455828be8101479efc56008862420cc",
+    "libunibreak-7.dll": "f1f4bb5b5bb3dbf8d142df3012f13e4b5b0246565496d43718a6f33321e96283",
+    "libwinpthread-1.dll": "0bf76de7b957fc1f87f8be9c8c46af4588db204b0600a3e7abe7243c790f8dfd",
+    "mediampv.dll": "a8631943c4c9dd7696e438b1df4af63fdf1fd9a5e81b443ecdac3f13c2209a72",
+    "swresample-6.dll": "3baad8ac0c8f0050cfd5742f5104603a27127397521409bf7d1742e6d02f955b",
+    "swscale-9.dll": "d217a08bcd92b3a4b7ecb02e841724460a5c94a103d957370cfe75e892ac3dc2",
+    "vulkan-1.dll": "2286e6152a76b1f3283b3d274b7602b739cfeb41a8af670754b7688a198fca46",
+    "zlib1.dll": "11cd91171765cd65f1c3362e3df67e5f5a618a6b88c8cdec899b802eaf1c7b0d"
+  },
+  "runtimeSourceReferences": [
+    {
+      "component": "JavaFX 21.0.13 (21.0.13+1)",
+      "repository": "https://github.com/openjdk/jfx21u",
+      "revision": "ba6a406466297926dc39fa7df7b3ac3402fdda12"
+    },
+    {
+      "component": "Temurin JDK 21.0.12.1+1",
+      "repository": "https://github.com/adoptium/jdk21u",
+      "revision": "1c417fbfc2f7",
+      "buildRepository": "https://github.com/adoptium/temurin-build",
+      "buildRevision": "e6ba7dec3d07654074559310376a3ae89da5f4ac"
+    },
+    {
+      "component": ".NET 10.0.13",
+      "repository": "https://github.com/dotnet/runtime",
+      "revision": "v10.0.13"
+    },
+    {
+      "component": "MediaMP original FFmpeg build input",
+      "repository": "https://github.com/FFmpeg/FFmpeg",
+      "revision": "449453a9713aa1af31a12e148fb0caba80ed02d7"
+    },
+    {
+      "component": "MediaMP dav1d build input",
+      "repository": "https://code.videolan.org/videolan/dav1d",
+      "revision": "54706fc6bc0cdecab7e9593974a4039cc038fca7"
+    }
+  ]
+}

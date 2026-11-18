@@ -1,5 +1,6 @@
 package com.mylive.app.ui.screen.category
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
@@ -8,7 +9,6 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
@@ -21,7 +21,6 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -30,6 +29,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -56,6 +56,7 @@ import com.mylive.app.ui.component.status.EmptyState
 import com.mylive.app.ui.component.status.ErrorState
 import com.mylive.app.ui.motion.AppMotion
 import com.mylive.app.ui.motion.LocalAppMotionPolicy
+import com.mylive.app.ui.motion.verticalContentTransform
 import com.mylive.app.ui.theme.Icons
 import com.mylive.app.ui.theme.livePlatformAccentColor
 import com.mylive.app.ui.theme.livePlatformOnAccentColor
@@ -82,7 +83,6 @@ fun CategoryScreen(
     val latestSelectedTab by rememberUpdatedState(selectedTab)
     val pagerState = rememberPagerState(initialPage = 0, pageCount = { siteTabs.size })
     val coroutineScope = rememberCoroutineScope()
-    val platformScrollState = rememberScrollState()
 
     LaunchedEffect(refreshSignal) {
         if (refreshSignal > 0) {
@@ -121,67 +121,123 @@ fun CategoryScreen(
         }
     }
 
+    val isTablet = LocalAppLayout.current.tablet
+    val handleSiteTabClick: (Int) -> Unit = { siteIndex ->
+        coroutineScope.launch {
+            val targetIndex = siteIndex.coerceIn(0, siteTabs.lastIndex)
+            if (pagerState.currentPage == targetIndex) {
+                selectCategorySite(targetIndex)
+                return@launch
+            }
+            if (motionPolicy.reducedMotion) {
+                pagerState.scrollToPage(targetIndex)
+            } else {
+                AppMotion.preJumpPageForTarget(
+                    currentPage = pagerState.currentPage,
+                    targetPage = targetIndex
+                )?.let { preJumpPage ->
+                    pagerState.scrollToPage(preJumpPage)
+                }
+                pagerState.animateScrollToPage(
+                    page = targetIndex,
+                    animationSpec = AppMotion.pagerSpec()
+                )
+            }
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
-        // Header
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = stringResource(R.string.nav_category),
-                style = MaterialTheme.typography.titleLarge.copy(
-                    fontWeight = FontWeight.ExtraBold,
-                    letterSpacing = 0.5.sp
-                ),
-                color = MaterialTheme.colorScheme.onSurface
-            )
-        }
-
-        // Platform selector: scrollable tab row + brand underline (same as HomeScreen).
-        if (siteTabs.isNotEmpty()) {
+        if (isTablet) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .horizontalScroll(platformScrollState)
-                    .padding(horizontal = 12.dp)
-                    .padding(bottom = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    .padding(horizontal = 20.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                siteTabs.forEachIndexed { siteIndex, site ->
-                    CategoryPlatformTab(
-                        platformId = site.id,
-                        name = categoryPlatformDisplayName(site.name),
-                        isSelected = selectedTab == siteIndex,
-                        onClick = {
-                            coroutineScope.launch {
-                                val targetIndex = siteIndex.coerceIn(0, siteTabs.lastIndex)
-                                if (pagerState.currentPage == targetIndex) {
-                                    selectCategorySite(targetIndex)
-                                    return@launch
-                                }
-                                if (motionPolicy.reducedMotion) {
-                                    pagerState.scrollToPage(targetIndex)
-                                } else {
-                                    AppMotion.preJumpPageForTarget(
-                                        currentPage = pagerState.currentPage,
-                                        targetPage = targetIndex
-                                    )?.let { preJumpPage ->
-                                        pagerState.scrollToPage(preJumpPage)
-                                    }
-                                    pagerState.animateScrollToPage(
-                                        page = targetIndex,
-                                        animationSpec = AppMotion.pagerSpec()
-                                    )
-                                }
-                            }
+                Text(
+                    text = stringResource(R.string.nav_category),
+                    style = MaterialTheme.typography.titleLarge.copy(
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = (-0.3).sp
+                    ),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                if (siteTabs.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(10.dp))
+                            .padding(3.dp),
+                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        siteTabs.forEachIndexed { siteIndex, site ->
+                            CategoryPlatformTab(
+                                platformId = site.id,
+                                name = categoryPlatformDisplayName(site.name).removeSuffix("直播"),
+                                isSelected = selectedTab == siteIndex,
+                                onClick = { handleSiteTabClick(siteIndex) }
+                            )
                         }
+                    }
+                }
+                Spacer(Modifier.weight(1f))
+                IconButton(
+                    onClick = { navigator.navigate(Route.Search) },
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = stringResource(R.string.cd_search),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp)
                     )
+                }
+            }
+        } else {
+            // Header
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = stringResource(R.string.nav_category),
+                    style = MaterialTheme.typography.titleLarge.copy(
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = (-0.3).sp
+                    ),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+
+            // Segmented control style platform selector on phone.
+            if (siteTabs.isNotEmpty()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp)
+                        .padding(bottom = 8.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(10.dp))
+                        .padding(3.dp),
+                    horizontalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    siteTabs.forEachIndexed { siteIndex, site ->
+                        CategoryPlatformTab(
+                            platformId = site.id,
+                            name = categoryPlatformDisplayName(site.name).removeSuffix("直播"),
+                            isSelected = selectedTab == siteIndex,
+                            modifier = Modifier.weight(1f),
+                            onClick = { handleSiteTabClick(siteIndex) }
+                        )
+                    }
                 }
             }
         }
@@ -257,52 +313,16 @@ private fun CategoryPlatformTab(
     platformId: String,
     name: String,
     isSelected: Boolean,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
-    val brandColor = categoryPlatformAccentColor(platformId) ?: MaterialTheme.colorScheme.primary
-    val contentColor by animateColorAsState(
-        targetValue = if (isSelected) {
-            MaterialTheme.colorScheme.onSurface
-        } else {
-            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-        },
-        label = "catTabContentColor"
+    com.mylive.shared.ui.PlatformTab(
+        name = name,
+        isSelected = isSelected,
+        accentColor = categoryPlatformAccentColor(platformId) ?: MaterialTheme.colorScheme.primary,
+        modifier = modifier.testTag("category_platform_$platformId"),
+        onClick = onClick
     )
-    val indicatorColor by animateColorAsState(
-        targetValue = if (isSelected) brandColor else Color.Transparent,
-        label = "catTabIndicatorColor"
-    )
-
-    Column(
-        modifier = Modifier
-            .testTag("category_platform_$platformId")
-            .semantics { selected = isSelected }
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onClick
-            )
-            .padding(horizontal = 8.dp, vertical = 6.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text(
-            text = name,
-            color = contentColor,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            style = MaterialTheme.typography.titleMedium.copy(
-                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
-            ),
-            fontSize = 15.sp
-        )
-        Spacer(modifier = Modifier.height(5.dp))
-        Box(
-            modifier = Modifier
-                .height(2.dp)
-                .width(20.dp)
-                .background(indicatorColor, shape = RoundedCornerShape(1.dp))
-        )
-    }
 }
 
 @Composable
@@ -313,14 +333,25 @@ private fun CategoryList(
     onSubCategoryClick: (LiveSubCategory) -> Unit
 ) {
     var selectedParentIndex by rememberSaveable(categories) { mutableIntStateOf(0) }
+    val isTablet = LocalAppLayout.current.tablet
+    val motionPolicy = LocalAppMotionPolicy.current
 
-    Row(modifier = Modifier.fillMaxSize()) {
-        // Left: parent category tabs
+    Row(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(start = if (isTablet) 16.dp else 0.dp)
+    ) {
+        // Left: parent category rail
         LazyColumn(
             modifier = Modifier
-                .width(104.dp)
+                .width(if (isTablet) 152.dp else 108.dp)
                 .fillMaxHeight()
-                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.12f))
+                .background(
+                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (isTablet) 0.35f else 0.22f),
+                    shape = if (isTablet) RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp) else RoundedCornerShape(0.dp)
+                ),
+            contentPadding = PaddingValues(vertical = 8.dp, horizontal = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             itemsIndexed(
                 items = categories,
@@ -331,48 +362,39 @@ private fun CategoryList(
 
                 val textColor by animateColorAsState(
                     targetValue = if (isSelected) {
-                        accentColor
+                        MaterialTheme.colorScheme.onSurface
                     } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f)
                     },
+                    animationSpec = motionPolicy.effectsSpec(),
                     label = "parentTabTextColor"
                 )
 
                 val backgroundColor = categoryParentTabBackgroundColor(
                     isSelected = isSelected,
-                    selectedColor = MaterialTheme.colorScheme.background,
+                    selectedColor = MaterialTheme.colorScheme.surfaceContainerLow,
                     unselectedColor = Color.Transparent
                 )
+                val itemShape = RoundedCornerShape(10.dp)
 
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(56.dp)
-                        .background(backgroundColor)
+                        .height(if (isTablet) 44.dp else 42.dp)
+                        .clip(itemShape)
+                        .background(backgroundColor, itemShape)
                         .clickable { selectedParentIndex = index },
                     contentAlignment = Alignment.CenterStart
                 ) {
-                    if (isSelected) {
-                        Box(
-                            modifier = Modifier
-                                .width(4.dp)
-                                .height(20.dp)
-                                .background(
-                                    color = accentColor,
-                                    shape = RoundedCornerShape(topEnd = 2.dp, bottomEnd = 2.dp)
-                                )
-                        )
-                    }
-
                     Text(
                         text = category.name,
                         color = textColor,
                         style = MaterialTheme.typography.bodyMedium.copy(
-                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                            fontSize = 13.sp
+                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                            fontSize = if (isTablet) 14.sp else 13.sp
                         ),
                         modifier = Modifier
-                            .padding(start = 12.dp, end = 8.dp)
+                            .padding(horizontal = 12.dp)
                             .fillMaxWidth(),
                         textAlign = TextAlign.Start,
                         maxLines = 1,
@@ -383,58 +405,68 @@ private fun CategoryList(
         }
 
         // Right: subcategory grid
-        val currentCategory = categories.getOrNull(selectedParentIndex)
-        val subCategories = currentCategory?.children.orEmpty()
+        val boundedParentIndex = selectedParentIndex.coerceIn(0, categories.lastIndex.coerceAtLeast(0))
+        AnimatedContent(
+            targetState = boundedParentIndex,
+            transitionSpec = {
+                verticalContentTransform(
+                    AppMotion.indexDirection(initialState, targetState),
+                    motionPolicy
+                )
+            },
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight(),
+            label = "subCategoryGrid"
+        ) { activeParentIndex ->
+            val currentCategory = categories.getOrNull(activeParentIndex)
+            val subCategories = currentCategory?.children.orEmpty()
 
-        if (subCategories.isEmpty() && currentCategory != null) {
-            LazyVerticalGrid(
-                columns = GridCells.Adaptive(((if (LocalAppLayout.current.tablet) 136 else 100) * readableFontScale(LocalAppLayout.current.fontScale)).dp),
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight(),
-                contentPadding = PaddingValues(
-                    start = 12.dp,
-                    top = 8.dp,
-                    end = 12.dp,
-                    bottom = contentBottomPadding
-                ),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                item(
-                    key = currentCategory.id,
-                    contentType = "category_current"
+            if (subCategories.isEmpty() && currentCategory != null) {
+                LazyVerticalGrid(
+                    columns = GridCells.Adaptive(((if (LocalAppLayout.current.tablet) 136 else 100) * readableFontScale(LocalAppLayout.current.fontScale)).dp),
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(
+                        start = 12.dp,
+                        top = 8.dp,
+                        end = 12.dp,
+                        bottom = contentBottomPadding
+                    ),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    CategoryCard(
-                        name = currentCategory.name,
-                        imageUrl = null,
-                        onClick = {
-                            onSubCategoryClick(
-                                LiveSubCategory(
-                                    name = currentCategory.name,
-                                    id = currentCategory.id,
-                                    parentId = currentCategory.id
+                    item(
+                        key = currentCategory.id,
+                        contentType = "category_current"
+                    ) {
+                        CategoryCard(
+                            name = currentCategory.name,
+                            imageUrl = null,
+                            onClick = {
+                                onSubCategoryClick(
+                                    LiveSubCategory(
+                                        name = currentCategory.name,
+                                        id = currentCategory.id,
+                                        parentId = currentCategory.id
+                                    )
                                 )
-                            )
-                        }
-                    )
+                            }
+                        )
+                    }
                 }
-            }
-        } else {
-            LazyVerticalGrid(
-                columns = GridCells.Adaptive(((if (LocalAppLayout.current.tablet) 136 else 100) * readableFontScale(LocalAppLayout.current.fontScale)).dp),
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight(),
-                contentPadding = PaddingValues(
-                    start = 12.dp,
-                    top = 8.dp,
-                    end = 12.dp,
-                    bottom = contentBottomPadding
-                ),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
+            } else {
+                LazyVerticalGrid(
+                    columns = GridCells.Adaptive(((if (LocalAppLayout.current.tablet) 136 else 100) * readableFontScale(LocalAppLayout.current.fontScale)).dp),
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(
+                        start = 12.dp,
+                        top = 8.dp,
+                        end = 12.dp,
+                        bottom = contentBottomPadding
+                    ),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                 items(
                     items = subCategories,
                     key = { it.id },
@@ -445,6 +477,7 @@ private fun CategoryList(
                         imageUrl = subCategory.pic,
                         onClick = { onSubCategoryClick(subCategory) }
                     )
+                }
                 }
             }
         }
@@ -470,7 +503,10 @@ private fun CategoryCard(
         label = "scale"
     )
 
-    // Flat tile: a rounded icon badge + label on the bare background, no card chrome.
+    val isTablet = LocalAppLayout.current.tablet
+    val badgeSize = if (isTablet) 60.dp else 52.dp
+    val badgeShape = RoundedCornerShape(if (isTablet) 15.dp else 13.dp)
+
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -483,37 +519,38 @@ private fun CategoryCard(
                 indication = null,
                 onClick = onClick
             )
-            .padding(vertical = 8.dp),
+            .padding(horizontal = 4.dp, vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Box(
-            modifier = Modifier
-                .size(52.dp)
-                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), CircleShape),
-            contentAlignment = Alignment.Center
+        Surface(
+            modifier = Modifier.size(badgeSize),
+            shape = badgeShape,
+            color = MaterialTheme.colorScheme.surfaceContainerLow
         ) {
-            if (!imageUrl.isNullOrBlank()) {
-                NetImage(
-                    url = imageUrl,
-                    contentDescription = name,
-                    size = 52.dp,
-                    isCircle = true
-                )
-            } else {
-                Icon(
-                    imageVector = categoryFallbackIcon(name),
-                    contentDescription = name,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(24.dp)
-                )
+            Box(contentAlignment = Alignment.Center) {
+                if (!imageUrl.isNullOrBlank()) {
+                    NetImage(
+                        url = imageUrl,
+                        modifier = Modifier.clip(badgeShape),
+                        contentDescription = name,
+                        size = badgeSize
+                    )
+                } else {
+                    Icon(
+                        imageVector = categoryFallbackIcon(name),
+                        contentDescription = name,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(if (isTablet) 26.dp else 22.dp)
+                    )
+                }
             }
         }
-        Spacer(modifier = Modifier.height(6.dp))
+        Spacer(modifier = Modifier.height(7.dp))
         Text(
             text = name,
             style = MaterialTheme.typography.labelSmall.copy(
-                fontWeight = FontWeight.Medium,
-                fontSize = 11.sp
+                fontWeight = FontWeight.Normal,
+                fontSize = if (isTablet) 12.5.sp else 11.5.sp
             ),
             textAlign = TextAlign.Center,
             maxLines = 1,

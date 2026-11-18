@@ -3,6 +3,8 @@ package com.mylive.app.ui.screen
 import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -17,7 +19,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
@@ -26,7 +27,6 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -80,7 +80,9 @@ fun IndexScreen(
     navigator: Navigator,
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
-    val homeSortStr by viewModel.homeSort.collectAsStateWithLifecycle()
+    val persistedHomeSort by viewModel.settingsRepository.homeSort
+        .collectAsStateWithLifecycle(initialValue = null)
+    val homeSortStr = persistedHomeSort ?: "recommend,follow,category,user"
     val sortedKeys = remember(homeSortStr) {
         val keys = homeSortStr.split(",").filter { it.isNotBlank() }
         val full = keys.toMutableList()
@@ -90,18 +92,23 @@ fun IndexScreen(
     val bottomNavItems = remember(sortedKeys) {
         sortedKeys.mapNotNull { key -> allBottomNavItems[key] }
     }
-    var selectedPageKey by rememberSaveable { mutableStateOf("recommend") }
+    var selectedPageKey by rememberSaveable { mutableStateOf("") }
     var homeRefreshSignal by rememberSaveable { mutableIntStateOf(0) }
     var followRefreshSignal by rememberSaveable { mutableIntStateOf(0) }
     var categoryRefreshSignal by rememberSaveable { mutableIntStateOf(0) }
     val tabStateHolder = rememberSaveableStateHolder()
     var homePlatformAccentColor by remember { mutableStateOf<Color?>(null) }
-    LaunchedEffect(bottomNavItems) {
-        if (bottomNavItems.none { it.key == selectedPageKey }) {
+    LaunchedEffect(persistedHomeSort, bottomNavItems) {
+        if (persistedHomeSort != null &&
+            (selectedPageKey.isEmpty() || bottomNavItems.none { it.key == selectedPageKey })
+        ) {
             selectedPageKey = bottomNavItems.firstOrNull()?.key ?: "recommend"
         }
     }
-    val selectedIndex = bottomNavItems.indexOfFirst { it.key == selectedPageKey }
+    val effectiveSelectedKey = selectedPageKey.ifEmpty {
+        bottomNavItems.firstOrNull()?.key ?: "recommend"
+    }
+    val selectedIndex = bottomNavItems.indexOfFirst { it.key == effectiveSelectedKey }
         .takeIf { it >= 0 }
         ?: 0
     val selectedContent = BottomNavSelection(
@@ -113,7 +120,6 @@ fun IndexScreen(
         defaultActiveColor = MaterialTheme.colorScheme.primary
     )
     val configuration = LocalConfiguration.current
-    val hapticFeedback = LocalHapticFeedback.current
     val motionPolicy = LocalAppMotionPolicy.current
     val appLayout = LocalAppLayout.current
     val useSideNavigation = appLayout.useNavigationRail
@@ -178,15 +184,8 @@ fun IndexScreen(
     }
 
     fun handleMainTabClick(item: BottomNavItem) {
-        performBottomTabSwitchHapticIfNeeded(
-            currentKey = selectedPageKey,
-            clickedKey = item.key,
-            useSideNavigation = useSideNavigation
-        ) {
-            hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-        }
         val repeatAction = bottomTabRepeatAction(
-            currentKey = selectedPageKey,
+            currentKey = effectiveSelectedKey,
             clickedKey = item.key,
             isCurrentPageAtTop = true
         )
@@ -208,7 +207,7 @@ fun IndexScreen(
                 IndexNavigationDock(
                     items = bottomNavItems,
                     selectedIndex = selectedIndex,
-                    activeColor = bottomNavActiveColor,
+                    activeColor = MaterialTheme.colorScheme.primary,
                     onItemClick = { handleMainTabClick(it) },
                     modifier = Modifier
                         .offset { IntOffset(x = 0, y = bottomBarOffsetPx.toInt()) }
@@ -221,7 +220,7 @@ fun IndexScreen(
                 IndexSideNavigationRail(
                     items = bottomNavItems,
                     selectedIndex = selectedIndex,
-                    activeColor = bottomNavActiveColor,
+                    activeColor = MaterialTheme.colorScheme.primary,
                     onItemClick = { handleMainTabClick(it) },
                     tabletOrientationMode = tabletOrientationMode,
                     onToggleTabletOrientation = tabletOrientationMode?.let { currentMode ->
@@ -266,7 +265,7 @@ fun IndexScreen(
                         .fillMaxSize()
                         .testTag("index_screen_${selection.key}")
                 ) {
-                    if (composeIndexTabContent) {
+                    if (composeIndexTabContent && (persistedHomeSort != null || selectedPageKey.isNotEmpty())) {
                         tabStateHolder.SaveableStateProvider(selection.key) {
                             when (selection.key) {
                                 "recommend" -> HomeScreen(
@@ -336,12 +335,14 @@ private fun IndexNavigationItem(
 ) {
     val label = stringResource(item.labelRes)
     val selectionState = selected
+    val motionPolicy = LocalAppMotionPolicy.current
     val contentColor by animateColorAsState(
         targetValue = if (selected) {
             activeColor
         } else {
             MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
         },
+        animationSpec = motionPolicy.effectsSpec(),
         label = "navColor"
     )
     val indicatorColor by animateColorAsState(
@@ -350,7 +351,13 @@ private fun IndexNavigationItem(
         } else {
             Color.Transparent
         },
+        animationSpec = motionPolicy.effectsSpec(),
         label = "navIndicator"
+    )
+    val iconScale by animateFloatAsState(
+        targetValue = if (selected && !motionPolicy.reducedMotion) 1.06f else 1f,
+        animationSpec = if (motionPolicy.reducedMotion) snap() else motionPolicy.contentSpec(),
+        label = "navIconScale"
     )
 
     Column(
@@ -364,28 +371,37 @@ private fun IndexNavigationItem(
             ),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Box(
-            modifier = Modifier
-                .width(52.dp)
-                .height(28.dp)
-                .background(indicatorColor, shape = RoundedCornerShape(14.dp)),
-            contentAlignment = Alignment.Center
-        ) {
+    Surface(
+        modifier = Modifier
+            .width(54.dp)
+            .height(30.dp),
+        shape = RoundedCornerShape(15.dp),
+        color = indicatorColor
+    ) {
+        Box(contentAlignment = Alignment.Center) {
             Icon(
                 imageVector = item.icon,
                 contentDescription = label,
                 tint = contentColor,
-                modifier = Modifier.size(22.dp)
+                modifier = Modifier
+                    .size(21.dp)
+                    .rotate(0f)
+                    .let { mod ->
+                        if (iconScale != 1f) {
+                            mod.width(21.dp * iconScale).height(21.dp * iconScale)
+                        } else mod
+                    }
             )
         }
-        Spacer(modifier = Modifier.height(3.dp))
+    }
+        Spacer(modifier = Modifier.height(4.dp))
         Text(
             text = label,
             color = contentColor,
             style = MaterialTheme.typography.labelSmall.copy(
                 fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium
             ),
-            fontSize = if (LocalAppLayout.current.tablet) 12.sp else 10.sp
+            fontSize = if (LocalAppLayout.current.tablet) 11.5.sp else 10.sp
         )
     }
 }
@@ -407,13 +423,12 @@ private fun IndexSideNavigationRail(
             .navigationBarsPadding()
             .padding(start = 10.dp, top = 12.dp, bottom = 12.dp),
         shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+        color = MaterialTheme.colorScheme.surfaceVariant
     ) {
         Column(
             modifier = Modifier
                 .fillMaxHeight()
-                .padding(vertical = 12.dp),
+                .padding(vertical = 14.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Column(
@@ -422,7 +437,7 @@ private fun IndexSideNavigationRail(
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState()),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically)
             ) {
                 items.forEachIndexed { index, item ->
                     IndexNavigationItem(
@@ -439,10 +454,6 @@ private fun IndexSideNavigationRail(
             }
 
             if (tabletOrientationMode != null && onToggleTabletOrientation != null) {
-                HorizontalDivider(
-                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp),
-                    color = MaterialTheme.colorScheme.outlineVariant
-                )
                 TabletOrientationToggleButton(
                     currentMode = tabletOrientationMode,
                     onClick = onToggleTabletOrientation
@@ -475,6 +486,13 @@ private fun TabletOrientationToggleButton(
         }
     )
 
+    val motionPolicy = LocalAppMotionPolicy.current
+    val iconRotation by animateFloatAsState(
+        targetValue = if (targetMode == TabletOrientationMode.Landscape) 90f else 0f,
+        animationSpec = if (motionPolicy.reducedMotion) snap() else motionPolicy.contentSpec(),
+        label = "tabletOrientationRotation"
+    )
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -492,9 +510,7 @@ private fun TabletOrientationToggleButton(
                 contentDescription = switchDescription,
                 modifier = Modifier
                     .size(22.dp)
-                    .rotate(
-                        if (targetMode == TabletOrientationMode.Landscape) 90f else 0f
-                    )
+                    .rotate(iconRotation)
             )
         }
         Spacer(modifier = Modifier.height(4.dp))

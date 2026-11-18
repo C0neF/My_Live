@@ -102,9 +102,17 @@ class HomeHeaderInteractionTest {
         assertFourEqualSlots()
     }
 
-    @Test fun tabletPlatformsUseTheWholeAvailableWidth() {
+    @Test fun tabletCombinesCompactPlatformCapsulesAndInlineSearchInSingleTopBar() {
         showHome(widthDp = 900)
-        assertFourEqualSlots()
+        val platformBar = compose.onNodeWithTag("home_platform_bar").fetchSemanticsNode().boundsInRoot
+        val search = compose.onNodeWithTag("home_search").fetchSemanticsNode().boundsInRoot
+        assertTrue("Tablet platform capsules must not stretch across the whole screen", platformBar.width < 600f)
+        assertTrue("Tablet platform capsules sit to the left of inline search", platformBar.right <= search.left)
+        assertEquals(platformBar.center.y, search.center.y, 12f)
+        compose.onNodeWithTag("home_platform_douyu").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag("home_platform_douyu").assertIsSelected()
+        assertEquals("douyu", state.value.siteId)
     }
 
     @Test fun doubleSizeTextWrapsWithoutClippingPlatformNames() {

@@ -26,6 +26,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -33,6 +34,7 @@ import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.first
@@ -408,9 +410,15 @@ class LiveRoomViewModel @Inject constructor(
         }
 
         viewModelScope.launch {
-            while (true) {
-                removeExpiredSuperChats()
-                kotlinx.coroutines.delay(1000L)
+            _superChats.collectLatest { chats ->
+                var current = chats
+                while (current.isNotEmpty()) {
+                    val waitMs = (current.minOf { it.endTime } - System.currentTimeMillis() + 50L)
+                        .coerceAtLeast(50L)
+                    kotlinx.coroutines.delay(waitMs)
+                    removeExpiredSuperChats()
+                    current = _superChats.value
+                }
             }
         }
 
@@ -501,12 +509,13 @@ class LiveRoomViewModel @Inject constructor(
                 }
             }
 
-            // Add to history
+            // Add to history using canonical room ID when available so ephemeral session IDs remain reopenable
+            val historyRoomId = detail.roomId.ifBlank { routeRoomId }
             try {
                 historyRepository.addHistory(
                     HistoryEntity(
-                        id = "${site.id}_$routeRoomId",
-                        roomId = routeRoomId,
+                        id = "${site.id}_$historyRoomId",
+                        roomId = historyRoomId,
                         siteId = site.id,
                         userName = detail.userName,
                         face = detail.userAvatar,
@@ -526,6 +535,11 @@ class LiveRoomViewModel @Inject constructor(
                 isFollowStatusKnown = true
             )
             observeCurrentRoomFollowStatus(site.id, routeRoomId, route)
+
+            if (!detail.status && !detail.isRecord) {
+                showPlaybackError("主播暂未开播")
+                return
+            }
 
             refreshSuperChats(detail, route)
 
@@ -894,12 +908,14 @@ class LiveRoomViewModel @Inject constructor(
         super.onCleared()
         activeRoute = null
         // viewModelScope is already cancelled at this point; use the cleanup scope
-        // so the suspend danmaku.stop() can complete.
+        // so the suspend danmaku.stop() can complete, then cancel cleanupScope.
         cleanupScope.launch {
             try {
                 currentDanmaku?.stop()
             } catch (e: Exception) {
                 Timber.e(e, "Failed to stop danmaku")
+            } finally {
+                cleanupScope.cancel()
             }
         }
         // playbackEngine is owned by LivePlaybackSession (created from LiveRoomScreen)

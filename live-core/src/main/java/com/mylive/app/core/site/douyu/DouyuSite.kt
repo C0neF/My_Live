@@ -607,6 +607,8 @@ class DouyuSite @Inject constructor(
                 else -> result as JSONObject
             }
             return jsonResult.getJSONObject("room")
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             CoreLog.w("Failed to get room info from betard API, falling back to open API: ${e.message}")
             try {
@@ -640,6 +642,8 @@ class DouyuSite @Inject constructor(
                 } else {
                     throw Exception("Open API returned error: " + openResult.optString("data"))
                 }
+            } catch (fallbackEx: CancellationException) {
+                throw fallbackEx
             } catch (fallbackEx: Exception) {
                 CoreLog.e("Fallback to Open API also failed", fallbackEx)
                 throw fallbackEx

@@ -24,9 +24,9 @@ import java.nio.ByteOrder
 class DouyuDanmaku(private val webSocketUtils: WebSocketUtils) : LiveDanmaku {
 
     override var heartbeatTime: Int = 45 * 1000
-    override var onMessage: ((LiveMessage) -> Unit)? = null
-    override var onClose: ((String) -> Unit)? = null
-    override var onReady: (() -> Unit)? = null
+    @Volatile override var onMessage: ((LiveMessage) -> Unit)? = null
+    @Volatile override var onClose: ((String) -> Unit)? = null
+    @Volatile override var onReady: (() -> Unit)? = null
 
     override suspend fun start(args: DanmakuArgs) {
         val douyuArgs = args as DanmakuArgs.Douyu
@@ -70,6 +70,7 @@ class DouyuDanmaku(private val webSocketUtils: WebSocketUtils) : LiveDanmaku {
     override suspend fun stop() {
         onMessage = null
         onClose = null
+        onReady = null
         webSocketUtils.close()
     }
 
@@ -109,33 +110,32 @@ class DouyuDanmaku(private val webSocketUtils: WebSocketUtils) : LiveDanmaku {
     }
 
     /**
-     * Deserialize a Douyu binary frame into a UTF-8 string.
-     *
-     * Header (Little-Endian):
-     *   [0-3]  full message length (4 bytes)
-     *   [4-7]  full message length repeated (4 bytes)
-     *   [8-9]  pack type (2 bytes)
-     *   [10]   encrypted (1 byte)
-     *   [11]   reserved (1 byte)
-     *   [12..] body (fullMsgLength - 9 bytes)
-     *   [last] null terminator (1 byte)
+     * Deserialize one or more concatenated Douyu binary frames into UTF-8 strings.
      */
-    private fun deserializeDouyu(buffer: ByteArray): String? {
-        return try {
-            val reader = BinaryReader(buffer, ByteOrder.LITTLE_ENDIAN)
-            val fullMsgLength = reader.readInt32()
-            reader.readInt32()  // fullMsgLength2 (repeated)
-            val bodyLength = fullMsgLength - 9
-            reader.readShort()  // packType
-            reader.readByte()   // encrypted
-            reader.readByte()   // reserved
-            val bytes = reader.readBytes(bodyLength)
-            reader.readByte()   // null terminator (0)
-            String(bytes, Charsets.UTF_8)
-        } catch (e: Exception) {
-            CoreLog.error(e)
-            null
+    internal fun deserializeDouyuFrames(buffer: ByteArray): List<String> {
+        val messages = mutableListOf<String>()
+        var offset = 0
+        while (offset + 12 <= buffer.size) {
+            try {
+                val frameReader = BinaryReader(buffer.copyOfRange(offset, offset + 12), ByteOrder.LITTLE_ENDIAN)
+                val fullMsgLength = frameReader.readInt32()
+                frameReader.readInt32() // repeated length
+                val bodyLength = fullMsgLength - 9
+                val totalFrameBytes = 4L + fullMsgLength.toLong()
+                if (fullMsgLength < 9 || bodyLength < 0 || totalFrameBytes <= 12L || offset + totalFrameBytes > buffer.size) {
+                    break
+                }
+                val bodyStart = offset + 12
+                val bodyEnd = bodyStart + bodyLength
+                if (bodyEnd > buffer.size) break
+                messages.add(String(buffer, bodyStart, bodyLength, Charsets.UTF_8))
+                offset += totalFrameBytes.toInt()
+            } catch (e: Exception) {
+                CoreLog.error(e)
+                break
+            }
         }
+        return messages
     }
 
     // ── STT format parsing ──────────────────────────────────────────────
@@ -171,22 +171,24 @@ class DouyuDanmaku(private val webSocketUtils: WebSocketUtils) : LiveDanmaku {
      */
     private fun decodeMessage(data: ByteArray) {
         try {
-            val result = deserializeDouyu(data) ?: return
-            val jsonData = parseStt(result)
+            val results = deserializeDouyuFrames(data)
+            for (result in results) {
+                val jsonData = parseStt(result)
 
-            val type = jsonData.optString("type", "")
-            if (type == "chatmsg") {
-                // Filter out blocked danmaku (dms == null means blocked)
-                if (jsonData.isNull("dms")) return
+                val type = jsonData.optString("type", "")
+                if (type == "chatmsg") {
+                    // Filter out blocked danmaku (dms == null means blocked)
+                    if (jsonData.isNull("dms")) continue
 
-                val col = jsonData.optString("col", "0").toIntOrNull() ?: 0
-                val liveMsg = LiveMessage(
-                    type = LiveMessageType.CHAT,
-                    userName = jsonData.optString("nn", ""),
-                    message = jsonData.optString("txt", ""),
-                    color = getColor(col)
-                )
-                onMessage?.invoke(liveMsg)
+                    val col = jsonData.optString("col", "0").toIntOrNull() ?: 0
+                    val liveMsg = LiveMessage(
+                        type = LiveMessageType.CHAT,
+                        userName = jsonData.optString("nn", ""),
+                        message = jsonData.optString("txt", ""),
+                        color = getColor(col)
+                    )
+                    onMessage?.invoke(liveMsg)
+                }
             }
         } catch (e: Exception) {
             CoreLog.error(e)

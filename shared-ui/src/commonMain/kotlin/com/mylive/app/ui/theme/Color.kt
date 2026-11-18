@@ -2,31 +2,31 @@ package com.mylive.app.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// Neutral system for the V2 redesign. These are FIXED and do not derive from the
-// user's seed color — only `primary` (the accent) follows the user's styleColor.
-// Values computed from OKLCH; see docs/redesign/plan-ab-hybrid.md.
+// Apple HIG-inspired neutral system: calm, borderless surface hierarchy where content
+// leads and chrome stays whisper-quiet.
 
-// Dark — primary identity, near-black content-forward shell.
-val DarkBg = Color(0xFF0C0D0F)
-val DarkSurface = Color(0xFF17181B)
-val DarkElevated = Color(0xFF222427)
-val DarkInk = Color(0xFFF0F2F4)
-val DarkMuted = Color(0xFFA1A5A9)
-val DarkHairline = Color(0xFF2A2C30)
-val DarkHairlineStrong = Color(0xFF3A3D42)
-val DarkAccent = Color(0xFF58A5E4)
+// Dark — Apple iOS / Apple TV Dark: deep obsidian canvas with elevated charcoal cards.
+val DarkBg = Color(0xFF0A0A0C)
+val DarkSurface = Color(0xFF1C1C1E)
+val DarkElevated = Color(0xFF2C2C2E)
+val DarkInk = Color(0xFFF5F5F7)
+val DarkMuted = Color(0xFF8E8E93)
+val DarkHairline = Color(0xFF2C2C2E)
+val DarkHairlineStrong = Color(0xFF3A3A3C)
+val DarkAccent = Color(0xFF0A84FF)
 
-// Light — first-class, non-pure-white neutral.
-val LightBg = Color(0xFFFAFAFA)
-val LightSurface = Color(0xFFF2F2F2)
-val LightInk = Color(0xFF1B1D1F)
-val LightMuted = Color(0xFF606468)
-val LightHairline = Color(0xFFE4E4E6)
-val LightHairlineStrong = Color(0xFFD2D2D4)
-val LightAccent = Color(0xFF1777B8)
+// Light — Apple Gallery Light: airy off-white canvas (#F5F5F7) with pure white cards.
+val LightBg = Color(0xFFF5F5F7)
+val LightSurface = Color(0xFFEEEEF2)
+val LightInk = Color(0xFF1D1D1F)
+val LightMuted = Color(0xFF86868B)
+val LightHairline = Color(0xFFE5E5EA)
+val LightHairlineStrong = Color(0xFFD1D1D6)
+val LightAccent = Color(0xFF007AFF)
 
-// Status colors (kept semantic).
-val DangerDark = Color(0xFFFFB4AB)
-val OnDangerDark = Color(0xFF690005)
-val DangerLight = Color(0xFFBA1A1A)
+// Semantic status colors (Apple System Green / Red).
+val LiveSuccessGreen = Color(0xFF34C759)
+val DangerDark = Color(0xFFFF453A)
+val OnDangerDark = Color(0xFFFFFFFF)
+val DangerLight = Color(0xFFFF3B30)
 val OnDangerLight = Color(0xFFFFFFFF)

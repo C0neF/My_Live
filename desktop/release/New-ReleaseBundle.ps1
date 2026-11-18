@@ -25,6 +25,8 @@ $files = [ordered]@{
     'RELEASE-NOTES.md' = (Join-Path $ProjectRoot 'desktop/release/NOTES.md')
 }
 foreach ($file in $files.Values) { if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw "Missing release input: $file" } }
+$notesHeading = ((Get-Content -LiteralPath $files['RELEASE-NOTES.md'] -TotalCount 1) ?? '').Trim()
+if ($notesHeading -ne "# My Live Windows $version") { throw "Release notes heading '$notesHeading' does not match version $version." }
 if ((Get-FileHash -LiteralPath $files["MyLive.exe"] -Algorithm SHA256).Hash -ne $singleCheck.executableSha256 -or
     (Get-FileHash -LiteralPath $files["MyLive-Windows-x64-$version.msi"] -Algorithm SHA256).Hash -ne $installerCheck.msiSha256) { throw 'Packages changed after acceptance.' }
 if ((Get-FileHash -LiteralPath $files["MyLive-Setup-Windows-x64-$version.exe"] -Algorithm SHA256).Hash -ne $installerCheck.setupExeSha256 -or

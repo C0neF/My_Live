@@ -27,6 +27,8 @@ import com.mylive.app.core.site.FollowPresence
 import com.mylive.app.core.site.optNullableStringValue
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
 import okhttp3.OkHttpClient
 import org.json.JSONArray
@@ -34,7 +36,6 @@ import org.json.JSONObject
 import java.net.URI
 import java.net.URLEncoder
 import java.security.SecureRandom
-import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Provider
 import javax.inject.Singleton
@@ -135,6 +136,9 @@ class DouyinSite @Inject constructor(
     override val name: String = "抖音直播"
 
     /** User-provided cookie. When non-empty, overrides the default ttwid cookie. */
+    private val stateLock = Any()
+
+    @Volatile
     private var cookie: String = ""
 
     /** DouyinSign helper for A-Bogus and signature generation. */
@@ -199,8 +203,9 @@ class DouyinSite @Inject constructor(
         /** Upper bound on per-room entries retained by this singleton. */
         private const val MAX_CACHED_ROOMS = 32
 
-        /** Timestamp of the last room detail request (companion-level, shared across instances). */
-        private val lastRoomDetailRequestAt = AtomicLong(0L)
+        /** Monotonic throttle lock & timestamp for room detail requests (shared across instances). */
+        private val roomDetailThrottleMutex = Mutex()
+        private var lastRoomDetailRequestNano: Long? = null
     }
 
     // ── Danmaku ─────────────────────────────────────────────────────────────
@@ -209,24 +214,34 @@ class DouyinSite @Inject constructor(
 
     override fun updateAccountCookie(cookie: String) {
         val nextCookie = cookie.trim()
-        if (this.cookie == nextCookie) return
-        this.cookie = nextCookie
-        webCookieCache.clear()
-        webCookieCacheAt.clear()
-        danmakuArgsByRoom.clear()
+        synchronized(stateLock) {
+            if (this.cookie == nextCookie) return
+            this.cookie = nextCookie
+            webCookieCache.clear()
+            webCookieCacheAt.clear()
+            danmakuArgsByRoom.clear()
+        }
     }
 
     override fun createDanmakuSession(
         requestedRoomId: String,
         detail: LiveRoomDetail
     ): LiveDanmakuSession {
-        val args = danmakuArgsByRoom[detail.roomId]
-            ?: danmakuArgsByRoom[requestedRoomId]
-            ?: error("Missing Douyin danmaku handshake for room ${detail.roomId}")
-        return LiveDanmakuSession(
-            danmaku = DouyinDanmaku(WebSocketUtils(okHttpClient), jsEngineProvider.get()),
-            args = args
-        )
+        val danmaku = DouyinDanmaku(WebSocketUtils(okHttpClient), jsEngineProvider.get())
+        val cached = danmakuArgsByRoom[detail.roomId] ?: danmakuArgsByRoom[requestedRoomId]
+        if (cached != null) {
+            return LiveDanmakuSession(danmaku = danmaku, args = cached)
+        }
+        return LiveDanmakuSession(danmaku = danmaku) {
+            danmakuArgsByRoom[detail.roomId]
+                ?: danmakuArgsByRoom[requestedRoomId]
+                ?: run {
+                    val refreshed = getRoomDetail(detail.roomId.ifBlank { requestedRoomId })
+                    danmakuArgsByRoom[refreshed.roomId]
+                        ?: danmakuArgsByRoom[detail.roomId]
+                        ?: error("Missing Douyin danmaku handshake for room ${detail.roomId}")
+                }
+        }
     }
 
     // ── Headers & Cookie management ─────────────────────────────────────────
@@ -259,6 +274,8 @@ class DouyinSite @Inject constructor(
         return try {
             val webCookie = withTimeout(5000L) { getWebCookie(webRid) }
             mergeCookieValues(baseCookie, webCookie, preferBase = cookie.isNotEmpty())
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             CoreLog.error(e)
             baseCookie
@@ -294,6 +311,8 @@ class DouyinSite @Inject constructor(
                 "https://live.douyin.com/$webRid",
                 header = requestHeaders
             )
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             if (baseCookie.isNotEmpty()) {
                 logDebug("获取直播间 Web Cookie 的 HEAD 请求失败，使用已保存 Cookie 继续：$e")
@@ -376,15 +395,15 @@ class DouyinSite @Inject constructor(
      * Douyin's servers return HTTP 444 when requests are too frequent.
      */
     private suspend fun throttleRoomDetailRequest() {
-        while (true) {
-            val now = System.currentTimeMillis()
-            val last = lastRoomDetailRequestAt.get()
-            val elapsed = now - last
-            if (elapsed >= ROOM_DETAIL_THROTTLE_MS) {
-                if (lastRoomDetailRequestAt.compareAndSet(last, now)) break
-            } else {
-                delay(ROOM_DETAIL_THROTTLE_MS - elapsed)
+        roomDetailThrottleMutex.withLock {
+            val prevNano = lastRoomDetailRequestNano
+            if (prevNano != null) {
+                val elapsedMs = (System.nanoTime() - prevNano) / 1_000_000L
+                if (elapsedMs < ROOM_DETAIL_THROTTLE_MS) {
+                    delay(ROOM_DETAIL_THROTTLE_MS - elapsedMs)
+                }
             }
+            lastRoomDetailRequestNano = System.nanoTime()
         }
     }
 
@@ -521,8 +540,8 @@ class DouyinSite @Inject constructor(
         page: Int
     ): LiveCategoryResult {
         val ids = category.id.split(',')
-        val partitionId = ids[0]
-        val partitionType = ids[1]
+        val partitionId = ids.firstOrNull().orEmpty()
+        val partitionType = ids.getOrNull(1)?.takeIf { it.isNotBlank() } ?: "1"
 
         val uri = URI("https://live.douyin.com/webcast/web/partition/detail/room/v2/").let { base ->
             val params = buildCommonQueryParams() + linkedMapOf(
@@ -633,13 +652,13 @@ class DouyinSite @Inject constructor(
         val status = room.optInt("status", 0)
         val categoryInfo = resolveDouyinCategoryInfo(room)
 
-        // If the room is offline (status != 2), fall back to webRid lookup
-        if (status == 4) {
+        // If the room is offline (status != 2), fall back to webRid lookup when available
+        if (status == 4 && webRid.isNotBlank()) {
             return getRoomDetailByWebRid(webRid)
         }
 
         val roomStatus = status == 2
-        val danmakuCookie = getDanmakuCookie(webRid)
+        val danmakuCookie = if (webRid.isNotBlank()) getDanmakuCookie(webRid) else (getRequestHeaders()["cookie"] ?: "")
         val owner = room.optJSONObject("owner") ?: JSONObject()
 
         val danmakuArgs = DanmakuArgs.Douyin(
@@ -649,11 +668,14 @@ class DouyinSite @Inject constructor(
             cookie = danmakuCookie
         )
         danmakuArgsByRoom[roomId] = danmakuArgs
-        danmakuArgsByRoom[webRid] = danmakuArgs
-        streamDataByRoom[webRid] = (if (roomStatus) room.optJSONObject("stream_url") else null) ?: JSONObject()
+        if (webRid.isNotBlank()) {
+            danmakuArgsByRoom[webRid] = danmakuArgs
+        }
+        val effectiveKey = webRid.ifBlank { roomId }
+        streamDataByRoom[effectiveKey] = (if (roomStatus) room.optJSONObject("stream_url") else null) ?: JSONObject()
 
         return LiveRoomDetail(
-            roomId = webRid,
+            roomId = effectiveKey,
             title = room.optString("title", ""),
             cover = if (roomStatus) {
                 room.optJSONObject("cover")?.optJSONArray("url_list")?.optString(0, "") ?: ""
@@ -706,6 +728,8 @@ class DouyinSite @Inject constructor(
     private suspend fun getRoomDetailByWebRid(webRid: String): LiveRoomDetail {
         try {
             return getRoomDetailByWebRidApi(webRid)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: CoreError) {
             CoreLog.error(e)
             if (e.statusCode == 444) throw e
@@ -838,8 +862,9 @@ class DouyinSite @Inject constructor(
         val roomId = roomData.optJSONObject("roomStore")
             ?.optJSONObject("roomInfo")?.optJSONObject("room")
             ?.optString("id_str", "") ?: ""
-        val userUniqueId = roomData.optJSONObject("userStore")
-            ?.optJSONObject("odin")?.optString("user_unique_id", "") ?: ""
+        val userUniqueId = (roomData.optJSONObject("userStore")
+            ?.optJSONObject("odin")?.optString("user_unique_id", "") ?: "")
+            .ifBlank { generateRandomNumberString(12) }
 
         val room = roomData.optJSONObject("roomStore")
             ?.optJSONObject("roomInfo")?.optJSONObject("room") ?: JSONObject()
@@ -857,7 +882,9 @@ class DouyinSite @Inject constructor(
             cookie = danmakuCookie
         )
         danmakuArgsByRoom[webRid] = danmakuArgs
-        danmakuArgsByRoom[roomId] = danmakuArgs
+        if (roomId.isNotBlank()) {
+            danmakuArgsByRoom[roomId] = danmakuArgs
+        }
         streamDataByRoom[webRid] = (if (roomStatus) room.optJSONObject("stream_url") else null) ?: JSONObject()
 
         return LiveRoomDetail(
@@ -1095,6 +1122,8 @@ class DouyinSite @Inject constructor(
             } finally {
                 headResp.close()
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             if (dyCookie.isEmpty()) throw e
             logDebug("抖音搜索预取 Cookie 的 HEAD 请求失败，使用已保存 Cookie 继续：$e")

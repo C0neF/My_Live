@@ -479,6 +479,9 @@ class DanmakuController(
         val delay = danmuDelayMs.coerceIn(0, 5000)
         var admitted = 0
         repeat(checks) {
+            if (admitted >= MAX_ADMISSIONS_PER_FRAME || activeDanmakus.size >= MAX_ACTIVE_DANMAKU) {
+                return
+            }
             val item = pending.poll() ?: return
             val due = item.receivedAtMs + delay
             if (nowMs - due > MAX_PENDING_WAIT_MILLIS) {
@@ -486,7 +489,7 @@ class DanmakuController(
                 return@repeat
             }
             if (!config.shows(item.position)) return@repeat
-            if (nowMs < due || admitted >= MAX_ADMISSIONS_PER_FRAME || activeDanmakus.size >= MAX_ACTIVE_DANMAKU) {
+            if (nowMs < due) {
                 requeue(item)
                 return@repeat
             }

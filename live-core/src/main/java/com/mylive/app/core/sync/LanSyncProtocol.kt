@@ -126,13 +126,14 @@ object LanSyncProtocol {
         name: String? = null,
         appVersion: String? = null,
         address: String? = null,
-        supportsFollowBundle: Boolean = false
+        supportsFollowBundle: Boolean = false,
+        platform: String = "android"
     ): String {
         return JSONObject().apply {
             put("protocol", CURRENT_PROTOCOL)
             put("paired", paired)
             if (paired) {
-                put("type", "android")
+                put("type", platform)
                 put("app", "My Live")
                 put("port", port)
                 put("id", deviceId)

@@ -11,6 +11,7 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
@@ -121,7 +122,9 @@ class SettingsDataStore(private val context: Context) {
     // === 通用读取/写入方法 ===
 
     fun <T> getFlow(key: Preferences.Key<T>, defaultValue: T): Flow<T> {
-        return context.dataStore.data.map { it[key] ?: defaultValue }
+        return context.dataStore.data
+            .map { it[key] ?: defaultValue }
+            .distinctUntilChanged()
     }
 
     fun preferencesFlow(): Flow<Preferences> {
@@ -145,10 +148,7 @@ class SettingsDataStore(private val context: Context) {
     }
 
     // === 批量写入（用于 Profile 导入）===
-    suspend fun batchEdit(block: (Preferences) -> Unit) {
-        context.dataStore.edit { prefs ->
-            // 通过 Preferences 的 edit builder 无法直接传递，使用 edit lambda
-            block(prefs)
-        }
+    suspend fun batchEdit(block: (MutablePreferences) -> Unit) {
+        edit(block)
     }
 }

@@ -96,7 +96,7 @@ class DanmakuSurfaceView @JvmOverloads constructor(
         val stoppedThread = renderThread
         renderThread = null
         stoppedThread?.let {
-            it.running = false
+            it.detachSurface()
             it.wake()
             joinStoppedRenderThread(it)
         }
@@ -119,9 +119,14 @@ class DanmakuSurfaceView @JvmOverloads constructor(
         private val onFrameFinished: () -> Unit
     ) : Thread("DanmakuRenderThread") {
         @Volatile var running = false
+        private val surfaceLock = Any()
         private val frameSignal = java.lang.Object()
         private var hasFrameSignal = false
         private var frameTimeNanos = 0L
+
+        fun detachSurface() = synchronized(surfaceLock) {
+            running = false
+        }
 
         fun onVsync(nanos: Long) = synchronized(frameSignal) {
             frameTimeNanos = nanos
@@ -146,11 +151,14 @@ class DanmakuSurfaceView @JvmOverloads constructor(
                 }
                 if (!running) break
                 try {
-                    val canvas = surfaceHolder.lockCanvas() ?: continue
-                    try {
-                        synchronized(surfaceHolder) { controller.draw(canvas, nanos) }
-                    } finally {
-                        surfaceHolder.unlockCanvasAndPost(canvas)
+                    synchronized(surfaceLock) {
+                        if (!running) return@synchronized
+                        val canvas = surfaceHolder.lockCanvas() ?: return@synchronized
+                        try {
+                            synchronized(surfaceHolder) { controller.draw(canvas, nanos) }
+                        } finally {
+                            surfaceHolder.unlockCanvasAndPost(canvas)
+                        }
                     }
                 } catch (e: Exception) {
                     Timber.e(e, "Error in danmaku render loop")

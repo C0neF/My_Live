@@ -30,7 +30,11 @@ fun SyncScanScreen(navigator: Navigator) {
     val scanLauncher = rememberLauncherForActivityResult(
         contract = ScanContract()
     ) { result ->
-        val content = result.contents ?: return@rememberLauncherForActivityResult
+        val content = result.contents
+        if (content == null) {
+            handleBack()
+            return@rememberLauncherForActivityResult
+        }
         handleScanResult(content, navigator, context)
     }
 
@@ -114,12 +118,14 @@ private fun handleScanResult(
         val port = if (uri.port != -1) uri.port else LanSyncService.HTTP_PORT
         val token = uri.getQueryParameter("token") ?: ""
         navigator.navigate(
-            Route.SyncDevice(
+            route = Route.SyncDevice(
                 address = host,
                 port = port.toString(),
                 name = "Scanned Device",
                 token = token
-            )
+            ),
+            popUpToRoute = Route.SyncScan::class.java,
+            inclusive = true
         )
         return
     }
@@ -128,10 +134,12 @@ private fun handleScanResult(
     val remoteInvite = com.mylive.app.core.common.RemoteSyncCrypto.parseInvite(trimmed)
     if (remoteInvite != null) {
         navigator.navigate(
-            Route.RemoteSyncRoom(
+            route = Route.RemoteSyncRoom(
                 roomId = remoteInvite.roomId,
                 roomKey = remoteInvite.roomKey
-            )
+            ),
+            popUpToRoute = Route.SyncScan::class.java,
+            inclusive = true
         )
         return
     }
@@ -182,6 +190,8 @@ private fun navigateToDevice(
     val port = if (uri.port != -1) uri.port else LanSyncService.HTTP_PORT
 
     navigator.navigate(
-        Route.SyncDevice(address = host, port = port.toString(), name = "Scanned Device")
+        route = Route.SyncDevice(address = host, port = port.toString(), name = "Scanned Device"),
+        popUpToRoute = Route.SyncScan::class.java,
+        inclusive = true
     )
 }

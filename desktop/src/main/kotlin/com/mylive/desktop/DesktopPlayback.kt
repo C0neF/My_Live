@@ -123,6 +123,14 @@ class MpvDesktopPlayback(context: Any, scope: CoroutineScope) : DesktopPlayback 
     override fun beginRoom() { intent.request(true) }
     fun pause() { intent.request(false); if (playerInitialized) player.pause() }
     fun resume() { intent.request(true); if (playerInitialized) player.play() }
+    fun togglePlayPause() {
+        val currentlyPlaying = if (playerInitialized && player.state.value.mediaStatus != MediaStatus.Idle) {
+            player.state.value.playWhenReady
+        } else {
+            playbackRequested
+        }
+        if (currentlyPlaying) pause() else resume()
+    }
     fun setVolume(value: Float) {
         applyPreferences(preferences.copy(volume = value.coerceIn(0f, 100f)))
     }

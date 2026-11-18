@@ -20,21 +20,23 @@ import java.util.zip.InflaterInputStream
 
 class BiliBiliDanmaku(private val webSocketUtils: WebSocketUtils) : LiveDanmaku {
 
-    override var heartbeatTime: Int = 60 * 1000
-    override var onMessage: ((LiveMessage) -> Unit)? = null
-    override var onClose: ((String) -> Unit)? = null
-    override var onReady: (() -> Unit)? = null
+    override var heartbeatTime: Int = 30 * 1000
+    @Volatile override var onMessage: ((LiveMessage) -> Unit)? = null
+    @Volatile override var onClose: ((String) -> Unit)? = null
+    @Volatile override var onReady: (() -> Unit)? = null
 
     override suspend fun start(args: DanmakuArgs) {
         val biliArgs = args as DanmakuArgs.BiliBili
         webSocketUtils.connect(
             url = "wss://${biliArgs.serverHost}/sub",
+            backupUrls = biliArgs.backupHosts.map { "wss://$it/sub" },
             heartBeatTime = heartbeatTime.toLong(),
             headers = if (biliArgs.cookie.isEmpty()) null else mapOf("cookie" to biliArgs.cookie),
             onMessage = { e -> decodeMessage(e) },
             onReady = {
                 onReady?.invoke()
                 joinRoom(biliArgs)
+                heartbeat()
             },
             onHeartBeat = { heartbeat() },
             onReconnect = { onClose?.invoke("与服务器断开连接，正在尝试重连") },
@@ -70,6 +72,7 @@ class BiliBiliDanmaku(private val webSocketUtils: WebSocketUtils) : LiveDanmaku 
     override suspend fun stop() {
         onMessage = null
         onClose = null
+        onReady = null
         webSocketUtils.close()
     }
 
@@ -123,40 +126,45 @@ class BiliBiliDanmaku(private val webSocketUtils: WebSocketUtils) : LiveDanmaku 
             }
 
             if (bytes.size < 16) return
-            val reader = BinaryReader(bytes)
-            // Read header fields at their fixed offsets
-            reader.position = 6
-            val protocolVersion = reader.readShort()
-            val operation = reader.readInt32()
-            val body = bytes.copyOfRange(16, bytes.size)
-
-            when (operation) {
-                3 -> {
-                    // Heartbeat reply: body contains online count as 4-byte int32
-                    val bodyReader = BinaryReader(body)
-                    val online = bodyReader.readInt32()
-                    onMessage?.invoke(
-                        LiveMessage(
-                            type = LiveMessageType.ONLINE,
-                            userName = "",
-                            message = "",
-                            color = LiveMessageColor.WHITE,
-                            onlineCount = online
-                        )
-                    )
+            var offset = 0
+            while (offset + 16 <= bytes.size) {
+                val reader = BinaryReader(bytes)
+                reader.position = offset
+                val packetLen = reader.readInt32()
+                val headerLen = reader.readShort()
+                val protocolVersion = reader.readShort()
+                val operation = reader.readInt32()
+                if (headerLen < 16 || packetLen < headerLen || offset.toLong() + packetLen > bytes.size) {
+                    break
                 }
-                5 -> {
-                    // Notification: may be compressed
-                    val decompressedBody = decompressBiliBiliDanmakuBody(protocolVersion, body)
+                val body = bytes.copyOfRange(offset + headerLen, offset + packetLen)
 
-                    val text = String(decompressedBody, Charsets.UTF_8)
-
-                    // Split on control characters (0x00-0x1f)
-                    val group = text.split(Regex("[\\x00-\\x1f]+"))
-                    for (item in group.filter { it.length > 2 && it.startsWith('{') }) {
-                        parseMessage(item)
+                when (operation) {
+                    3 -> {
+                        // Heartbeat reply: body contains online count as 4-byte int32
+                        if (body.size >= 4) {
+                            val bodyReader = BinaryReader(body)
+                            val online = bodyReader.readInt32()
+                            onMessage?.invoke(
+                                LiveMessage(
+                                    type = LiveMessageType.ONLINE,
+                                    userName = "",
+                                    message = "",
+                                    color = LiveMessageColor.WHITE,
+                                    onlineCount = online
+                                )
+                            )
+                        }
+                    }
+                    5 -> {
+                        // Notification: may be compressed
+                        val decompressedBody = decompressBiliBiliDanmakuBody(protocolVersion, body)
+                        for (item in extractBiliBiliNotificationJsons(protocolVersion, decompressedBody)) {
+                            parseMessage(item)
+                        }
                     }
                 }
+                offset += packetLen
             }
         } catch (e: Exception) {
             CoreLog.error(e)
@@ -281,8 +289,7 @@ class BiliBiliDanmaku(private val webSocketUtils: WebSocketUtils) : LiveDanmaku 
         // Fallback: if a bracket pattern in the message has no emots entry but a
         // sticker URL exists from info[0][13], assign it to uncovered brackets.
         if (stickerUrl != null) {
-            val bracketRegex = Regex("\\[[^\\[\\]]{1,32}]")
-            for (match in bracketRegex.findAll(message)) {
+            for (match in BRACKET_EMOJI_REGEX.findAll(message)) {
                 val bracket = match.value
                 if (!map.containsKey(bracket)) {
                     map[bracket] = stickerUrl
@@ -293,6 +300,9 @@ class BiliBiliDanmaku(private val webSocketUtils: WebSocketUtils) : LiveDanmaku 
         return map
     }
 }
+
+private val BRACKET_EMOJI_REGEX = Regex("\\[[^\\[\\]]{1,32}]")
+private val CONTROL_CHAR_SPLIT_REGEX = Regex("[\\x00-\\x1f]+")
 
 internal fun resolveBiliBiliDanmakuPosition(mode: Int): LiveMessageDanmakuPosition {
     return when (mode) {
@@ -319,4 +329,49 @@ internal fun decompressBiliBiliDanmakuBody(
             body
         }
     }
+}
+
+internal fun extractBiliBiliNotificationJsons(
+    protocolVersion: Int,
+    decompressedBody: ByteArray
+): List<String> {
+    if ((protocolVersion == 2 || protocolVersion == 3) && decompressedBody.size >= 16) {
+        val packets = mutableListOf<String>()
+        var offset = 0
+        var parsedFramedPacket = false
+        while (offset + 16 <= decompressedBody.size) {
+            val packetLen = ((decompressedBody[offset].toInt() and 0xFF) shl 24) or
+                ((decompressedBody[offset + 1].toInt() and 0xFF) shl 16) or
+                ((decompressedBody[offset + 2].toInt() and 0xFF) shl 8) or
+                (decompressedBody[offset + 3].toInt() and 0xFF)
+            val headerLen = ((decompressedBody[offset + 4].toInt() and 0xFF) shl 8) or
+                (decompressedBody[offset + 5].toInt() and 0xFF)
+            val operation = ((decompressedBody[offset + 8].toInt() and 0xFF) shl 24) or
+                ((decompressedBody[offset + 9].toInt() and 0xFF) shl 16) or
+                ((decompressedBody[offset + 10].toInt() and 0xFF) shl 8) or
+                (decompressedBody[offset + 11].toInt() and 0xFF)
+            if (headerLen < 16 || packetLen < headerLen || offset.toLong() + packetLen > decompressedBody.size) {
+                break
+            }
+            parsedFramedPacket = true
+            if (operation == 5 && packetLen > headerLen) {
+                val json = String(
+                    decompressedBody,
+                    offset + headerLen,
+                    packetLen - headerLen,
+                    Charsets.UTF_8
+                ).trim()
+                if (json.length > 2 && json.startsWith('{')) {
+                    packets.add(json)
+                }
+            }
+            offset += packetLen
+        }
+        if (parsedFramedPacket) {
+            return packets
+        }
+    }
+    val text = String(decompressedBody, Charsets.UTF_8)
+    return text.split(CONTROL_CHAR_SPLIT_REGEX)
+        .filter { it.length > 2 && it.startsWith('{') }
 }

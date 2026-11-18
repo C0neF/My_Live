@@ -27,6 +27,16 @@ jobs:
         with:
           ref: ${{ env.RELEASE_TAG }}
 
+      - name: Verify release tag matches app versionName
+        shell: bash
+        run: |
+          expected_version="${RELEASE_TAG#v}"
+          actual_version=$(grep -E '^\s*versionName\s*=\s*"' app/build.gradle.kts | head -n1 | sed -E 's/.*"([^"]+)".*/\1/')
+          if [ -z "$actual_version" ] || [ "$actual_version" != "$expected_version" ]; then
+            echo "::error::Tag $RELEASE_TAG expects versionName $expected_version, found '$actual_version'"
+            exit 1
+          fi
+
       - name: Set up JDK
         uses: actions/setup-java@v4
         with:
@@ -84,11 +94,21 @@ jobs:
             echo "::error::Expected signed APK was not created at $apk_path"
             exit 1
           fi
+          sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          apksigner_bin=$(find "$sdk_root/build-tools" -maxdepth 2 -type f -name apksigner 2>/dev/null | sort -V | tail -n1)
+          if [ -z "$apksigner_bin" ] || [ ! -x "$apksigner_bin" ]; then
+            echo "::error::apksigner not found under $sdk_root/build-tools"
+            exit 1
+          fi
+          "$apksigner_bin" verify --verbose "$apk_path"
           mkdir -p release-artifacts
           cp "$apk_path" "release-artifacts/MyLive-${RELEASE_TAG}.apk"
+          (cd release-artifacts && sha256sum "MyLive-${RELEASE_TAG}.apk" > SHA256SUMS.txt)
 
       - name: Upload APK to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
-          files: release-artifacts/*.apk
+          files: |
+            release-artifacts/*.apk
+            release-artifacts/SHA256SUMS.txt

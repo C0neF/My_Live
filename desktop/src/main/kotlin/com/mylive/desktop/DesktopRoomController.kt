@@ -222,7 +222,7 @@ class DesktopRoomController(
     fun leave() { reset(); _state.value = DesktopRoomState() }
 
     private fun publishSuperChats(incoming: List<LiveSuperChatMessage>) {
-        val now = System.currentTimeMillis() / 1000
+        val now = System.currentTimeMillis()
         _superChats.value = (_superChats.value + incoming).filter { it.endTime == 0L || it.endTime > now }
             .distinctBy { it.id ?: "${it.userName}\u0000${it.message}\u0000${it.startTime}" }
             .sortedByDescending { it.startTime }.take(50)

@@ -1,6 +1,7 @@
 package com.mylive.app.ui.screen.room.player
 
 import androidx.compose.ui.graphics.Color
+import com.mylive.app.core.model.LivePlayQuality
 
 /**
  * Everything PlayerView renders that is owned by its caller.
@@ -8,6 +9,8 @@ import androidx.compose.ui.graphics.Color
 data class PlayerViewUiState(
     val title: String = "",
     val currentQualityName: String = "画质",
+    val qualities: List<LivePlayQuality> = emptyList(),
+    val currentQualityIndex: Int = 0,
     val danmakuEnabled: Boolean = true,
     val danmaku: DanmakuConfig = DanmakuConfig(),
     val accentColor: Color? = null,
@@ -67,6 +70,7 @@ data class PlayerDanmakuActions(
 data class PlayerViewActions(
     val onBack: (() -> Unit)? = null,
     val onQualityClick: (() -> Unit)? = null,
+    val onQualitySelect: ((Int) -> Unit)? = null,
     val onRefreshClick: (() -> Unit)? = null,
     val danmaku: PlayerDanmakuActions = PlayerDanmakuActions(),
     val onFullscreenClick: (() -> Unit)? = null,

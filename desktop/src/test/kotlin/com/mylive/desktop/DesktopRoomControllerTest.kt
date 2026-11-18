@@ -48,13 +48,13 @@ class DesktopRoomControllerTest {
 
     @Test fun superChatsAreDeduplicatedPrunedAndClearedWhenLeaving() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
-        val now = System.currentTimeMillis() / 1000
-        val paid = LiveSuperChatMessage("id", "payer", message = "paid", endTime = now + 60)
+        val now = System.currentTimeMillis()
+        val paid = LiveSuperChatMessage("id", "payer", message = "paid", endTime = now + 60_000L)
         val site = object : StubLiveSite() {
             override suspend fun getPlayQualites(detail: LiveRoomDetail) = listOf(HIGH)
             override suspend fun getPlayUrls(detail: LiveRoomDetail, quality: LivePlayQuality) = LivePlayUrl(listOf("fixture"))
             override suspend fun getSuperChatMessage(roomId: String, detail: LiveRoomDetail?) =
-                listOf(paid, paid, paid.copy(id = "expired", endTime = now - 1))
+                listOf(paid, paid, paid.copy(id = "expired", endTime = now - 1_000L))
         }
         val controller = DesktopRoomController(listOf(site), FakePlayback(), dispatcher, dispatcher)
         controller.open(RoomAddress("douyu", "1")); runCurrent()

@@ -33,6 +33,7 @@ import com.mylive.app.ui.component.status.EmptyState
 import com.mylive.app.ui.component.status.ErrorState
 import com.mylive.app.ui.component.status.LiveRoomCardSkeleton
 import com.mylive.app.ui.component.status.LiveRoomGridSkeleton
+import com.mylive.app.ui.layout.LocalAppLayout
 import com.mylive.app.ui.motion.AppMotion
 import com.mylive.app.ui.motion.LocalAppMotionPolicy
 import com.mylive.app.ui.screen.backToTopButtonVisible
@@ -94,17 +95,14 @@ fun HomeScreen(
         if (uiState.rooms.isEmpty()) headerScrollBehavior.state.heightOffset = 0f
     }
 
+    val isTablet = LocalAppLayout.current.tablet
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
-            .nestedScroll(headerScrollBehavior.nestedScrollConnection)
+            .then(if (isTablet) Modifier else Modifier.nestedScroll(headerScrollBehavior.nestedScrollConnection))
     ) {
-        HomeSearchHeader(
-            scrollState = headerScrollBehavior.state,
-            onSearchClick = { navigator.navigate(Route.Search) }
-        )
-
         // Platform selector: show all platforms and let the content pager handle swipes.
         val pagerState = rememberPagerState(initialPage = selectedTab, pageCount = { siteTabs.size })
         val coroutineScope = rememberCoroutineScope()
@@ -114,6 +112,30 @@ fun HomeScreen(
             val boundedIndex = index.coerceIn(0, siteTabs.lastIndex)
             if (selectedTab == boundedIndex && uiState.siteId == siteTabs[boundedIndex].id) return
             viewModel.selectSite(boundedIndex)
+        }
+
+        val handlePlatformSelect: (Int) -> Unit = { siteIndex ->
+            coroutineScope.launch {
+                val targetIndex = siteIndex.coerceIn(0, siteTabs.lastIndex)
+                if (pagerState.currentPage == targetIndex) {
+                    selectHomeSite(targetIndex)
+                    return@launch
+                }
+                if (motionPolicy.reducedMotion) {
+                    pagerState.scrollToPage(targetIndex)
+                } else {
+                    homePlatformPreJumpPageForTarget(
+                        currentPage = pagerState.currentPage,
+                        targetPage = targetIndex
+                    )?.let { preJumpPage ->
+                        pagerState.scrollToPage(preJumpPage)
+                    }
+                    pagerState.animateScrollToPage(
+                        page = targetIndex,
+                        animationSpec = AppMotion.pagerSpec()
+                    )
+                }
+            }
         }
 
         LaunchedEffect(siteTabs, uiState.siteId) {
@@ -139,34 +161,25 @@ fun HomeScreen(
             }
         }
 
-        if (siteTabs.isNotEmpty()) {
-            HomePlatformBar(
+        if (isTablet) {
+            HomeTabletTopBar(
                 items = platformItems,
                 selectedIndex = selectedTab,
-                onSelect = { siteIndex ->
-                    coroutineScope.launch {
-                        val targetIndex = siteIndex.coerceIn(0, siteTabs.lastIndex)
-                        if (pagerState.currentPage == targetIndex) {
-                            selectHomeSite(targetIndex)
-                            return@launch
-                        }
-                        if (motionPolicy.reducedMotion) {
-                            pagerState.scrollToPage(targetIndex)
-                        } else {
-                            homePlatformPreJumpPageForTarget(
-                                currentPage = pagerState.currentPage,
-                                targetPage = targetIndex
-                            )?.let { preJumpPage ->
-                                pagerState.scrollToPage(preJumpPage)
-                            }
-                            pagerState.animateScrollToPage(
-                                page = targetIndex,
-                                animationSpec = AppMotion.pagerSpec()
-                            )
-                        }
-                    }
-                }
+                onSelect = handlePlatformSelect,
+                onSearchClick = { navigator.navigate(Route.Search) }
             )
+        } else {
+            HomeSearchHeader(
+                scrollState = headerScrollBehavior.state,
+                onSearchClick = { navigator.navigate(Route.Search) }
+            )
+            if (siteTabs.isNotEmpty()) {
+                HomePlatformBar(
+                    items = platformItems,
+                    selectedIndex = selectedTab,
+                    onSelect = handlePlatformSelect
+                )
+            }
         }
 
         HorizontalPager(
@@ -290,17 +303,20 @@ private fun HomeRoomsPage(
                 )
             }
             else -> {
+                val isTablet = LocalAppLayout.current.tablet
+                val gridPadding = if (isTablet) 20.dp else 16.dp
+                val gridSpacing = if (isTablet) 16.dp else 12.dp
                 LazyVerticalGrid(
                     columns = liveRoomGridColumns,
                     state = gridState,
                     contentPadding = PaddingValues(
-                        start = 16.dp,
+                        start = gridPadding,
                         top = 8.dp,
-                        end = 16.dp,
+                        end = gridPadding,
                         bottom = contentBottomPadding
                     ),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                    horizontalArrangement = Arrangement.spacedBy(gridSpacing),
+                    verticalArrangement = Arrangement.spacedBy(gridSpacing)
                 ) {
                     items(
                         items = uiState.rooms,

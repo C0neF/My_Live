@@ -53,7 +53,11 @@ data class QuickAccessLibrary(
     val loading: Boolean = true
 )
 
-data class QuickAccessRecommendationSource(val siteId: String, val categoryId: String?)
+data class QuickAccessRecommendationSource(
+    val siteId: String,
+    val categoryId: String?,
+    val categoryParentId: String? = null
+)
 
 data class QuickAccessRecommendations(
     val source: QuickAccessRecommendationSource? = null,
@@ -219,8 +223,12 @@ class QuickAccessViewModel @Inject constructor(
     private val recommendationGate = LatestCatalogRequestGate()
 
     /** Called only when the recommendation tab becomes active; reopening reuses its loaded page. */
-    fun ensureRecommendations(siteId: String, categoryId: String?) {
-        val source = QuickAccessRecommendationSource(siteId, categoryId?.takeIf(String::isNotBlank))
+    fun ensureRecommendations(siteId: String, categoryId: String?, categoryParentId: String? = null) {
+        val source = QuickAccessRecommendationSource(
+            siteId = siteId,
+            categoryId = categoryId?.takeIf(String::isNotBlank),
+            categoryParentId = categoryParentId?.takeIf(String::isNotBlank)
+        )
         if (_recommendations.value.source == source &&
             (_recommendations.value.hasLoaded || _recommendations.value.loading || _recommendations.value.error != null)) return
         requestRecommendations(source, reset = true)
@@ -253,8 +261,18 @@ class QuickAccessViewModel @Inject constructor(
         recommendationJob = viewModelScope.launch {
             try {
                 val site = sites.firstOrNull { it.id == source.siteId } ?: error("平台不可用")
-                val result = if (source.categoryId == null) site.getRecommendRooms(page) else
-                    site.getCategoryRooms(LiveSubCategory(id = source.categoryId, name = ""), page)
+                val result = if (source.categoryId == null) {
+                    site.getRecommendRooms(page)
+                } else {
+                    site.getCategoryRooms(
+                        LiveSubCategory(
+                            id = source.categoryId,
+                            name = "",
+                            parentId = source.categoryParentId.orEmpty()
+                        ),
+                        page
+                    )
+                }
                 if (!recommendationGate.isCurrent(token)) return@launch
                 val rooms = mergeRoomCatalogPage(base.rooms, result.items.filter { it.roomId.isNotBlank() }, reset)
                 _recommendations.value = QuickAccessRecommendations(

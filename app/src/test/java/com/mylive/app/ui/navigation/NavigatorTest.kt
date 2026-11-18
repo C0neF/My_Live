@@ -112,4 +112,14 @@ class NavigatorTest {
 
         assertEquals(listOf(Route.Index, fullscreenRoom), restoredNavigator.backStack.toList())
     }
+
+    @Test
+    fun duplicateAdjacentRoutePushIsIgnored() {
+        val navigator = Navigator()
+        navigator.navigate(Route.Settings)
+        navigator.navigate(Route.SettingsDanmu)
+        navigator.navigate(Route.SettingsDanmu)
+
+        assertEquals(listOf(Route.Index, Route.Settings, Route.SettingsDanmu), navigator.backStack.toList())
+    }
 }

@@ -121,6 +121,7 @@
     <string name="sync_join_room_title">加入房间</string>
     <string name="sync_join_room_subtitle">加入其他设备创建的同步房间</string>
     <string name="sync_scan_action">扫一扫</string>
+    <string name="sync_scan_pair">扫码配对</string>
 
     <string name="sync_webdav_subtitle">通过 WebDAV 服务器备份和恢复数据</string>
     <string name="sync_profile_title">配置导入导出</string>

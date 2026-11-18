@@ -45,13 +45,13 @@ class HomeViewModel @Inject constructor(
         .combine(kotlinx.coroutines.flow.flowOf(sites)) { sortStr, siteSet ->
             siteSet.sortedByUserOrder(sortStr)
         }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), sites.sortedByDefaultOrder())
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private var currentSiteIndex = 0
     private var loadJob: Job? = null
     private var failedPage: Int? = null
     private val loadRequestGate = LatestCatalogRequestGate()
-    private var previousSiteIds = sites.sortedByDefaultOrder().map { it.id }
+    private var previousSiteIds: List<String> = emptyList()
 
     fun selectSite(index: Int) {
         currentSiteIndex = index
@@ -139,12 +139,17 @@ class HomeViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             siteTabs.collect { tabs ->
+                if (tabs.isEmpty()) return@collect
                 val reorderedSiteIds = tabs.map { it.id }
-                currentSiteIndex = preserveSelectedSiteIndex(
-                    previousSiteIds = previousSiteIds,
-                    reorderedSiteIds = reorderedSiteIds,
-                    selectedIndex = currentSiteIndex
-                )
+                currentSiteIndex = if (previousSiteIds.isEmpty()) {
+                    0
+                } else {
+                    preserveSelectedSiteIndex(
+                        previousSiteIds = previousSiteIds,
+                        reorderedSiteIds = reorderedSiteIds,
+                        selectedIndex = currentSiteIndex
+                    )
+                }
                 previousSiteIds = reorderedSiteIds
                 val currentSite = tabs.getOrNull(currentSiteIndex)
                 if (currentSite != null && _uiState.value.siteId != currentSite.id) {

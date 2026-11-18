@@ -111,4 +111,54 @@ class RemoteSyncCryptoTest {
             )
         }
     }
+
+    @Test
+    fun rejectsStaleAndReplayedEnvelopesWithinSameRoomAndChannel() {
+        val key = RemoteSyncCrypto.generateRoomKey()
+        val now = 1_700_000_000_000L
+        val guard = LanSyncReplayGuard()
+        val sealed = RemoteSyncCrypto.encryptPayload(
+            roomId = "ROOM09",
+            roomKey = key,
+            channel = "sendFavorite",
+            overlay = true,
+            content = """{"follows":[],"tags":[]}""",
+            nowMillis = now,
+            nonce = "nonce-unique-1"
+        )
+
+        val opened = RemoteSyncCrypto.decryptPayload(
+            roomId = "ROOM09",
+            roomKey = key,
+            channel = "favoriteReceived",
+            wirePayload = sealed,
+            nowMillis = now + 5_000L,
+            replayGuard = guard
+        )
+        assertTrue(opened.overlay)
+
+        // Exact replay within the same room and channel must be rejected.
+        assertThrows(RemoteSyncCryptoException::class.java) {
+            RemoteSyncCrypto.decryptPayload(
+                roomId = "ROOM09",
+                roomKey = key,
+                channel = "favoriteReceived",
+                wirePayload = sealed,
+                nowMillis = now + 6_000L,
+                replayGuard = guard
+            )
+        }
+
+        // Expired timestamp beyond MAX_CLOCK_SKEW_MS must be rejected.
+        assertThrows(RemoteSyncCryptoException::class.java) {
+            RemoteSyncCrypto.decryptPayload(
+                roomId = "ROOM09",
+                roomKey = key,
+                channel = "favoriteReceived",
+                wirePayload = sealed,
+                nowMillis = now + RemoteSyncCrypto.MAX_CLOCK_SKEW_MS + 1_000L,
+                replayGuard = LanSyncReplayGuard()
+            )
+        }
+    }
 }

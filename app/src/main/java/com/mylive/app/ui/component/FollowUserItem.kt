@@ -2,23 +2,25 @@ package com.mylive.app.ui.component
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import com.mylive.app.ui.theme.Icons
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.compositeOver
-import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.mylive.app.ui.theme.Icons
+import com.mylive.app.ui.theme.LiveSuccessGreen
 
 internal fun followPlatformBadgeTextColor(
     siteId: String,
@@ -44,31 +46,29 @@ fun FollowUserItem(
     showTime: String? = null,
     isSpecialFollow: Boolean = false,
     onLongClick: (() -> Unit)? = null,
-    avatarSize: Dp = 48.dp,
+    avatarSize: Dp = 46.dp,
     cardHorizontalPadding: Dp = 16.dp,
-    cardVerticalPadding: Dp = 6.dp,
+    cardVerticalPadding: Dp = 4.dp,
     contentPadding: Dp = 12.dp,
-    horizontalGap: Dp = 16.dp,
-    liveBadgeSize: Dp = 12.dp,
-    playIconSize: Dp = 24.dp,
-    cornerRadius: Dp = 12.dp,
+    horizontalGap: Dp = 13.dp,
+    liveBadgeSize: Dp = 11.dp,
+    playIconSize: Dp = 20.dp,
+    cornerRadius: Dp = 14.dp,
     refreshHint: String? = null
 ) {
-    val containerColor = MaterialTheme.colorScheme.surfaceVariant
-        .copy(alpha = 0.25f)
-        .compositeOver(MaterialTheme.colorScheme.background)
+    val isLive = liveStatus == 1
+    val containerColor = MaterialTheme.colorScheme.surfaceContainerLow
 
-    Card(
+    Surface(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = cardHorizontalPadding, vertical = cardVerticalPadding)
+            .clip(RoundedCornerShape(cornerRadius))
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = onLongClick
             ),
-        colors = CardDefaults.cardColors(
-            containerColor = containerColor
-        ),
+        color = containerColor,
         shape = RoundedCornerShape(cornerRadius)
     ) {
         Row(
@@ -78,125 +78,146 @@ fun FollowUserItem(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(modifier = Modifier.size(avatarSize)) {
-                NetImage(
-                    url = faceUrl,
-                    contentDescription = userName,
-                    size = avatarSize,
-                    isCircle = true
-                )
-                if (liveStatus == 1) {
-                    // Small live red dot badge at bottom-right corner
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                ) {
+                    NetImage(
+                        url = faceUrl,
+                        contentDescription = userName,
+                        size = avatarSize,
+                        isCircle = true
+                    )
+                }
+                if (isLive) {
                     Surface(
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
                             .size(liveBadgeSize),
                         shape = CircleShape,
-                        color = MaterialTheme.colorScheme.error,
-                        border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.surface)
+                        color = LiveSuccessGreen,
+                        border = BorderStroke(2.dp, containerColor)
                     ) {}
                 }
             }
-            
+
             Spacer(modifier = Modifier.width(horizontalGap))
-            
+
             Column(modifier = Modifier.weight(1f)) {
+                val isDarkSurface = containerColor.luminance() < 0.5f
+                val favoriteBadgeBg = if (isDarkSurface) {
+                    Color(0xFFFF9F0A).copy(alpha = 0.18f)
+                } else {
+                    Color(0xFFFF9500).copy(alpha = 0.13f)
+                }
+                val favoriteBadgeFg = if (isDarkSurface) {
+                    Color(0xFFFFB340)
+                } else {
+                    Color(0xFFD97706)
+                }
+
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    if (isSpecialFollow) {
-                        Icon(
-                            imageVector = Icons.Default.Star,
-                            contentDescription = "置顶",
-                            tint = Color(0xFFFF9F00),
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Spacer(modifier = Modifier.width(2.dp))
-                    }
                     Text(
                         text = userName,
                         style = MaterialTheme.typography.titleMedium.copy(
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Medium,
+                            fontSize = 15.5.sp
                         ),
+                        color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f, fill = false)
                     )
-                    if (siteId.isNotEmpty()) {
+                    if (isSpecialFollow) {
                         Spacer(modifier = Modifier.width(6.dp))
-                        val siteColor = when (siteId) {
-                            "bilibili" -> Color(0xFFFB7299)
-                            "douyu" -> Color(0xFFFF5D23)
-                            "huya" -> Color(0xFFFF9F00)
-                            "douyin" -> Color.Black
-                            else -> MaterialTheme.colorScheme.secondary
-                        }
-                        val siteTextColor = followPlatformBadgeTextColor(
-                            siteId = siteId,
-                            themeBackground = MaterialTheme.colorScheme.background,
-                            defaultColor = siteColor
-                        )
-                        val siteName = when (siteId) {
-                            "bilibili" -> "B站"
-                            "douyu" -> "斗鱼"
-                            "huya" -> "虎牙"
-                            "douyin" -> "抖音"
-                            else -> siteId
-                        }
                         Surface(
-                            shape = RoundedCornerShape(4.dp),
-                            color = siteColor.copy(alpha = 0.15f),
-                            border = BorderStroke(0.5.dp, siteColor.copy(alpha = 0.4f))
+                            shape = RoundedCornerShape(999.dp),
+                            color = favoriteBadgeBg
                         ) {
-                            Text(
-                                text = siteName,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = siteTextColor,
-                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                            )
+                            Row(
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(3.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.StarFilled,
+                                    contentDescription = "已收藏",
+                                    tint = favoriteBadgeFg,
+                                    modifier = Modifier.size(10.5.dp)
+                                )
+                                Text(
+                                    text = "收藏",
+                                    color = favoriteBadgeFg,
+                                    fontSize = 10.sp,
+                                    lineHeight = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1
+                                )
+                            }
                         }
                     }
                 }
-                Spacer(modifier = Modifier.height(4.dp))
+
+                Spacer(modifier = Modifier.height(2.dp))
+
+                val siteLabel = when (siteId) {
+                    "bilibili" -> "哔哩哔哩"
+                    "douyu" -> "斗鱼"
+                    "huya" -> "虎牙"
+                    "douyin" -> "抖音"
+                    else -> siteId
+                }
+                val statusLabel = when (liveStatus) {
+                    1 -> {
+                        val duration = formatLiveDuration(showTime)
+                        if (duration.isNotEmpty()) "开播 $duration" else "直播中"
+                    }
+                    2 -> "未开播"
+                    else -> "检测中"
+                }
                 Text(
-                    text = when (liveStatus) {
-                        1 -> {
-                            val duration = formatLiveDuration(showTime)
-                            if (duration.isNotEmpty()) "开播了$duration" else "直播中"
-                        }
-                        2 -> "未开播"
-                        else -> "未知"
-                    },
+                    text = if (siteLabel.isNotEmpty()) "$siteLabel · $statusLabel" else statusLabel,
                     style = MaterialTheme.typography.bodySmall,
-                    color = if (liveStatus == 1) MaterialTheme.colorScheme.error
-                            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                    fontWeight = if (liveStatus == 1) FontWeight.SemiBold else FontWeight.Normal
+                    fontSize = 12.5.sp,
+                    color = if (isLive) {
+                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f)
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
+
                 refreshHint?.let {
-                    Text(it, style = MaterialTheme.typography.labelSmall,
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
             }
-            
-            if (liveStatus == 1) {
-                // Play icon for active streams
-                Icon(
-                    imageVector = Icons.Default.PlayArrow,
-                    contentDescription = "Go to Live",
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(playIconSize)
-                )
-            }
+
+            Icon(
+                imageVector = if (isLive) Icons.Default.PlayArrow else Icons.Default.ChevronRight,
+                contentDescription = if (isLive) "Go to Live" else null,
+                tint = if (isLive) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
+                },
+                modifier = Modifier.size(if (isLive) playIconSize - 2.dp else 18.dp)
+            )
         }
     }
 }
 
-/**
- * 格式化开播时长。[showTime] 为平台报告的开播时间戳（秒）。
- * 返回如 "2小时30分钟"、"15分钟"、"不足1分钟"，无法解析时返回空字符串。
- */
 fun formatLiveDuration(showTime: String?): String {
     if (showTime.isNullOrEmpty() || showTime == "0") return ""
     return try {

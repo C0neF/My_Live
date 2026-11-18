@@ -6,7 +6,6 @@ import java.util.Base64
 import java.util.Locale
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
-import kotlin.math.abs
 
 /** Raised when a LAN sync request cannot be authenticated. Always answered with HTTP 401. */
 class LanSyncAuthException(message: String) : IllegalArgumentException(message)
@@ -149,7 +148,7 @@ object LanSyncAuth {
         if (!isBoundedBase64Url(nonce, MAX_NONCE_CHARS) || !isBoundedBase64Url(providedMac, MAX_MAC_CHARS)) {
             throw LanSyncAuthException("unauthorized: pairing required")
         }
-        if (abs(nowMillis - timestamp) > MAX_CLOCK_SKEW_MS) {
+        if (timestamp < nowMillis - MAX_CLOCK_SKEW_MS || timestamp > nowMillis + MAX_CLOCK_SKEW_MS) {
             throw LanSyncAuthException("stale sync request")
         }
 

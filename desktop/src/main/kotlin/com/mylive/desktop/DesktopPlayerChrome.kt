@@ -1,13 +1,18 @@
 package com.mylive.desktop
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -20,6 +25,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.input.pointer.*
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
@@ -93,7 +99,18 @@ internal fun DesktopPlayerChrome(playing: Boolean, busy: Boolean, immersive: Boo
         }.pointerInput(Unit) {
             detectTapGestures(onTap = { signal(); focus.requestFocus() }, onDoubleTap = { signal(); latestFullscreen() })
         }) {
-        AnimatedVisibility(visible, Modifier.align(Alignment.BottomCenter), enter = fadeIn(tween(140)), exit = fadeOut(tween(140))) {
+        AnimatedVisibility(
+            visible = visible,
+            modifier = Modifier.align(Alignment.BottomCenter),
+            enter = slideInVertically(
+                animationSpec = tween(durationMillis = 180, easing = DesktopStandardEasing),
+                initialOffsetY = { it / 3 }
+            ) + fadeIn(tween(durationMillis = 150, easing = LinearOutSlowInEasing)),
+            exit = slideOutVertically(
+                animationSpec = tween(durationMillis = 160, easing = DesktopStandardEasing),
+                targetOffsetY = { it / 3 }
+            ) + fadeOut(tween(durationMillis = 130, easing = FastOutLinearInEasing))
+        ) {
             Box(Modifier.fillMaxWidth().pointerInput(Unit) {
                 awaitPointerEventScope {
                     while (true) {
@@ -105,10 +122,29 @@ internal fun DesktopPlayerChrome(playing: Boolean, busy: Boolean, immersive: Boo
                 }
             }) { controls(Modifier.fillMaxWidth()) { menuHeld = it } }
         }
-        if (immersive) AnimatedVisibility(visible, Modifier.align(Alignment.TopStart), enter = fadeIn(), exit = fadeOut()) {
-            Text(title, color = Color.White, modifier = Modifier.fillMaxWidth()
-                .background(TopTitleScrimBrush)
-                .padding(18.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        if (immersive) AnimatedVisibility(
+            visible = visible,
+            modifier = Modifier.align(Alignment.TopStart),
+            enter = slideInVertically(
+                animationSpec = tween(durationMillis = 180, easing = DesktopStandardEasing),
+                initialOffsetY = { -it / 3 }
+            ) + fadeIn(tween(durationMillis = 150, easing = LinearOutSlowInEasing)),
+            exit = slideOutVertically(
+                animationSpec = tween(durationMillis = 160, easing = DesktopStandardEasing),
+                targetOffsetY = { -it / 3 }
+            ) + fadeOut(tween(durationMillis = 130, easing = FastOutLinearInEasing))
+        ) {
+            Text(
+                title,
+                color = Color.White,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.fillMaxWidth()
+                    .background(TopTitleScrimBrush)
+                    .padding(horizontal = 20.dp, vertical = 16.dp),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }

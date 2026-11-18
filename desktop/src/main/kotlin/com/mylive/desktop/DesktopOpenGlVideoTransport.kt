@@ -65,6 +65,9 @@ private val DesktopPixelFormat by lazy { Native.load("gdi32", DesktopPixelFormat
 private const val GL_TEXTURE_2D = 0x0DE1
 private const val GL_RGBA8 = 0x8058
 
+internal fun isDesktopGlWindowContextSupported(layer: SkiaLayer): Boolean =
+    runCatching { DesktopGlWindowContext(layer); true }.getOrDefault(false)
+
 /** Compose records each window before Skiko draws it, so another window's GL
  * context can still be current during this window's recording pass. */
 private class DesktopGlWindowContext(private val layer: SkiaLayer) {

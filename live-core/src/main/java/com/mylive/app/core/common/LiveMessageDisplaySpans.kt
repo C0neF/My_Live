@@ -119,15 +119,14 @@ fun normalizeLiveMessageDisplaySpans(
                 // Drop spacer text between a duplicated placeholder and its image span.
             }
             span is LiveMessageSpan.Text &&
-                next is LiveMessageSpan.Image -> {
-                val text = span.text.replace(TrailingBracketEmojiPlaceholderRegex, "")
-                if (text.isNotEmpty()) {
-                    normalized.add(LiveMessageSpan.Text(text))
+                (previous is LiveMessageSpan.Image || next is LiveMessageSpan.Image) -> {
+                var text = span.text
+                if (previous is LiveMessageSpan.Image) {
+                    text = text.replace(LeadingBracketEmojiPlaceholderRegex, "")
                 }
-            }
-            span is LiveMessageSpan.Text &&
-                previous is LiveMessageSpan.Image -> {
-                val text = span.text.replace(LeadingBracketEmojiPlaceholderRegex, "")
+                if (next is LiveMessageSpan.Image) {
+                    text = text.replace(TrailingBracketEmojiPlaceholderRegex, "")
+                }
                 if (text.isNotEmpty()) {
                     normalized.add(LiveMessageSpan.Text(text))
                 }
@@ -148,7 +147,14 @@ fun buildPlayerDanmakuDisplaySpans(
         return if (renderEmoji) {
             normalized
         } else {
-            normalized.filterIsInstance<LiveMessageSpan.Text>()
+            val textOnly = normalized.filterIsInstance<LiveMessageSpan.Text>()
+            if (textOnly.isNotEmpty()) {
+                textOnly
+            } else if (message.message.isNotEmpty()) {
+                listOf(LiveMessageSpan.Text(message.message))
+            } else {
+                emptyList()
+            }
         }
     }
 

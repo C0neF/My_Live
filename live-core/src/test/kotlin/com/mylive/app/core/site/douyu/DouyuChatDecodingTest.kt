@@ -50,14 +50,36 @@ class DouyuChatDecodingTest {
         }
     }
 
+    @Test fun concatenatedBinaryFramesEmitAllChatMessages() {
+        val client = OkHttpClient()
+        try {
+            val danmaku = DouyuDanmaku(WebSocketUtils(client))
+            val received = mutableListOf<LiveMessage>()
+            danmaku.onMessage = { received += it }
+            val frame1 = buildBinaryFrame("type@=chatmsg/nn@=UserA/txt@=first/dms@=1/")
+            val frame2 = buildBinaryFrame("type@=chatmsg/nn@=UserB/txt@=second/dms@=1/")
+            DouyuDanmaku::class.java.getDeclaredMethod("decodeMessage", ByteArray::class.java)
+                .apply { isAccessible = true }.invoke(danmaku, frame1 + frame2)
+
+            assertEquals(listOf("UserA", "UserB"), received.map { it.userName })
+            assertEquals(listOf("first", "second"), received.map { it.message })
+        } finally {
+            client.dispatcher.executorService.shutdown()
+            client.connectionPool.evictAll()
+        }
+    }
+
     private fun escape(value: String) = value.replace("@", "@A").replace("/", "@S")
 
-    private fun decode(danmaku: DouyuDanmaku, text: String) {
+    private fun buildBinaryFrame(text: String): ByteArray {
         val body = text.toByteArray(Charsets.UTF_8)
-        val frame = ByteBuffer.allocate(body.size + 13).order(ByteOrder.LITTLE_ENDIAN)
+        return ByteBuffer.allocate(body.size + 13).order(ByteOrder.LITTLE_ENDIAN)
             .putInt(body.size + 9).putInt(body.size + 9).putShort(690)
             .put(0).put(0).put(body).put(0).array()
+    }
+
+    private fun decode(danmaku: DouyuDanmaku, text: String) {
         DouyuDanmaku::class.java.getDeclaredMethod("decodeMessage", ByteArray::class.java)
-            .apply { isAccessible = true }.invoke(danmaku, frame)
+            .apply { isAccessible = true }.invoke(danmaku, buildBinaryFrame(text))
     }
 }

@@ -88,19 +88,26 @@ fun AppNavGraph(navigator: Navigator, initialRoute: String? = null) {
     Box(modifier = Modifier.fillMaxSize()) {
         IndexScreen(navigator = navigator)
 
-        // NavDisplay is always present. When backStack is [Index], it renders
-        // a transparent Box, so IndexScreen underneath is fully visible.
-        NavDisplay(
-            backStack = backStack,
-            entryDecorators = rememberAppEntryDecorators(),
-            onBack = {
-                currentRoute?.let { navigator.goBack(expectedTop = it) }
-            },
-            transitionSpec = CupertinoTransition.transitionSpec(motionPolicy),
-            popTransitionSpec = CupertinoTransition.popTransitionSpec(motionPolicy),
-            predictivePopTransitionSpec =
-                CupertinoTransition.predictivePopTransitionSpec(),
-            entryProvider = entryProvider {
+        val entryDecorators = rememberAppEntryDecorators()
+        val handleDisplayBack = remember(navigator) {
+            {
+                navigator.backStack.lastOrNull()?.let { top ->
+                    navigator.goBack(expectedTop = top)
+                }
+                Unit
+            }
+        }
+        val forwardSpec = remember(motionPolicy) {
+            CupertinoTransition.transitionSpec(motionPolicy)
+        }
+        val popSpec = remember(motionPolicy) {
+            CupertinoTransition.popTransitionSpec(motionPolicy)
+        }
+        val predictivePopSpec = remember(motionPolicy) {
+            CupertinoTransition.predictivePopTransitionSpec(motionPolicy)
+        }
+        val appEntryProvider = remember(navigator) {
+            entryProvider<NavKey> {
                 entry<Route.Index> {
                     // Transparent full-size placeholder; IndexScreen is rendered below.
                     Box(modifier = Modifier.fillMaxSize())
@@ -197,6 +204,20 @@ fun AppNavGraph(navigator: Navigator, initialRoute: String? = null) {
                     SyncDeviceScreen(navigator = navigator, key = key)
                 }
             }
+        }
+
+        // NavDisplay is always present. When backStack is [Index], it renders
+        // a transparent Box, so IndexScreen underneath is fully visible.
+        NavDisplay(
+            backStack = backStack,
+            entryDecorators = entryDecorators,
+            onBack = {
+                handleDisplayBack()
+            },
+            transitionSpec = forwardSpec,
+            popTransitionSpec = popSpec,
+            predictivePopTransitionSpec = predictivePopSpec,
+            entryProvider = appEntryProvider
         )
     }
 
@@ -210,10 +231,13 @@ fun AppNavGraph(navigator: Navigator, initialRoute: String? = null) {
 }
 
 @Composable
-internal fun rememberAppEntryDecorators(): List<NavEntryDecorator<NavKey>> = listOf(
-    rememberSaveableStateHolderNavEntryDecorator(),
-    rememberViewModelStoreNavEntryDecorator()
-)
+internal fun rememberAppEntryDecorators(): List<NavEntryDecorator<NavKey>> {
+    val saveableDecorator = rememberSaveableStateHolderNavEntryDecorator<NavKey>()
+    val viewModelDecorator = rememberViewModelStoreNavEntryDecorator<NavKey>()
+    return remember(saveableDecorator, viewModelDecorator) {
+        listOf(saveableDecorator, viewModelDecorator)
+    }
+}
 
 private fun parseRoute(routeStr: String): Route? {
     if (routeStr == "/index" || routeStr == "index" || routeStr == "/") return Route.Index

@@ -1,15 +1,5 @@
 package com.mylive.app.core.model
 
-// Site-specific play data (stored in LiveRoomDetail equivalent)
-sealed interface SitePlayData {
-    data class BiliBili(val dummy: Unit = Unit) : SitePlayData
-    data class Douyu(val rate: Int, val cdns: List<String>, val args: String) : SitePlayData
-    data class Huya(
-        val urlData: HuyaUrlDataModel
-    ) : SitePlayData
-    data class Douyin(val streamUrl: Map<String, Any?>) : SitePlayData
-}
-
 // Site-specific danmaku args
 sealed interface DanmakuArgs {
     data class BiliBili(
@@ -18,7 +8,8 @@ sealed interface DanmakuArgs {
         val token: String,
         val buvid: String,
         val serverHost: String,
-        val cookie: String
+        val cookie: String,
+        val backupHosts: List<String> = emptyList()
     ) : DanmakuArgs
 
     data class Douyu(

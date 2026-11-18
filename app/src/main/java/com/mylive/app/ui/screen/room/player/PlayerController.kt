@@ -483,14 +483,17 @@ class PlayerController(
         val mediaItem = MediaItem.Builder().setUri(url).setTag(mediaToken).build()
 
         val requestHeaders = headers
-        val dataSourceFactory = if (requestHeaders != null) {
-            DefaultHttpDataSource.Factory().setDefaultRequestProperties(requestHeaders)
-        } else {
-            DefaultHttpDataSource.Factory()
-        }
+        val dataSourceFactory = DefaultHttpDataSource.Factory()
+            .setAllowCrossProtocolRedirects(true)
+            .setConnectTimeoutMs(10_000)
+            .setReadTimeoutMs(10_000)
+            .let { factory ->
+                if (requestHeaders != null) factory.setDefaultRequestProperties(requestHeaders) else factory
+            }
 
+        val normalizedPath = url.substringBefore('?').lowercase()
         val mediaSource = when {
-            url.contains(".m3u8") || url.contains(".m3u") -> {
+            normalizedPath.endsWith(".m3u8") || normalizedPath.endsWith(".m3u") || url.contains(".m3u8", ignoreCase = true) -> {
                 HlsMediaSource.Factory(dataSourceFactory)
                     .createMediaSource(mediaItem)
             }

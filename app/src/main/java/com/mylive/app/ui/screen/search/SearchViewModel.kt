@@ -49,25 +49,30 @@ class SearchViewModel @Inject constructor(
         .stateIn(
             viewModelScope,
             SharingStarted.WhileSubscribed(5000),
-            sites.sortedByDefaultOrder()
+            emptyList()
         )
     private var currentKeyword = ""
     private var activeSearchRequestId = 0L
     private var searchJob: Job? = null
     private var loadMoreJob: Job? = null
-    private var previousSiteIds = sites.sortedByDefaultOrder().map { it.id }
+    private var previousSiteIds: List<String> = emptyList()
 
     init {
         viewModelScope.launch {
             siteTabs.collect { reorderedSites ->
+                if (reorderedSites.isEmpty()) return@collect
                 val reorderedSiteIds = reorderedSites.map { it.id }
                 val state = _uiState.value
                 val previousSelectedSiteId = previousSiteIds.getOrNull(state.selectedSiteIndex)
-                val nextIndex = preserveSelectedSiteIndex(
-                    previousSiteIds = previousSiteIds,
-                    reorderedSiteIds = reorderedSiteIds,
-                    selectedIndex = state.selectedSiteIndex
-                )
+                val nextIndex = if (previousSiteIds.isEmpty()) {
+                    0
+                } else {
+                    preserveSelectedSiteIndex(
+                        previousSiteIds = previousSiteIds,
+                        reorderedSiteIds = reorderedSiteIds,
+                        selectedIndex = state.selectedSiteIndex
+                    )
+                }
                 val selectedSiteChanged =
                     previousSelectedSiteId != reorderedSiteIds.getOrNull(nextIndex)
                 val selectedIndexChanged = nextIndex != state.selectedSiteIndex

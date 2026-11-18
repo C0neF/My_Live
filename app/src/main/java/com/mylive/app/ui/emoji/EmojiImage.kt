@@ -24,18 +24,21 @@ fun EmojiImage(
     val atlasRef = remember(url) { EmojiAtlasRef.parse(url) }
     if (atlasRef != null) {
         val bitmapState = produceState<Bitmap?>(
-            initialValue = null,
+            initialValue = EmojiAtlasRepository.getCachedBitmap(url),
             key1 = context,
             key2 = url
         ) {
-            value = withContext(Dispatchers.IO) {
-                EmojiAtlasRepository.getBitmap(context, url)
+            if (value == null) {
+                value = withContext(Dispatchers.IO) {
+                    EmojiAtlasRepository.getBitmap(context, url)
+                }
             }
         }
         val bitmap = bitmapState.value
         if (bitmap != null) {
+            val imageBitmap = remember(bitmap) { bitmap.asImageBitmap() }
             Image(
-                bitmap = bitmap.asImageBitmap(),
+                bitmap = imageBitmap,
                 contentDescription = contentDescription,
                 modifier = modifier,
                 contentScale = ContentScale.Fit

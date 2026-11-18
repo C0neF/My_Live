@@ -83,6 +83,106 @@ class DesktopUiTestPlayer {
         onNodeWithTag("watch-video").assertWidthIsEqualTo(880.dp)
     }
 
+    @Test fun fullAreaHoverChatAnimatesSmoothlyOnMouseEnterAndLeave() = runSkikoComposeUiTest(size = Size(1200f, 800f)) {
+        mainClock.autoAdvance = false
+        setContent {
+            DesktopTheme(DesktopAppearancePreferences()) {
+                DesktopWatchLayout(
+                    immersive = false,
+                    chatPreferred = true,
+                    onChatPreference = {},
+                    modifier = Modifier.fillMaxSize(),
+                    fullArea = true,
+                    player = { _, _ -> Box(Modifier.fillMaxSize().background(Color(0xff101827))) },
+                    chat = { modifier, close ->
+                        DesktopChatPanel(
+                            listOf(ChatEntry(1, LiveMessage(LiveMessageType.CHAT, "观众", "过渡动画测试"))),
+                            emptyList(), "已连接", DesktopPlayerPreferences(), DesktopDanmakuPreferences(), "douyu", {}, modifier, close
+                        )
+                    }
+                )
+            }
+        }
+        mainClock.advanceTimeBy(50)
+        onNodeWithTag("watch-chat-peek").assertDoesNotExist()
+
+        onRoot().performMouseInput { moveTo(Offset(1195f, 300f)) }
+        mainClock.advanceTimeByFrame()
+        mainClock.advanceTimeBy(64)
+        val enteringLeft = onNodeWithTag("watch-chat-peek").fetchSemanticsNode().boundsInRoot.left
+        assertTrue("Expected chat overlay to slide in progressively on hover, actual left=$enteringLeft", enteringLeft > 890f && enteringLeft < 1195f)
+
+        mainClock.advanceTimeBy(PeekEnterDurationMillis.toLong() + 80L)
+        val settledLeft = onNodeWithTag("watch-chat-peek").fetchSemanticsNode().boundsInRoot.left
+        assertEquals(880f, settledLeft, 1f)
+
+        onRoot().performMouseInput { moveTo(Offset(600f, 300f)) }
+        mainClock.advanceTimeByFrame()
+        mainClock.advanceTimeBy(64)
+        val exitingNodes = onAllNodesWithTag("watch-chat-peek").fetchSemanticsNodes()
+        assertEquals("Chat overlay should animate out rather than vanish immediately", 1, exitingNodes.size)
+        val exitingLeft = exitingNodes.single().boundsInRoot.left
+        assertTrue("Expected chat overlay to slide out progressively on leave, actual left=$exitingLeft", exitingLeft > 890f && exitingLeft < 1195f)
+
+        mainClock.advanceTimeBy(PeekExitDurationMillis.toLong() + 80L)
+        onNodeWithTag("watch-chat-peek").assertDoesNotExist()
+    }
+
+    @Test fun compactChatSheetAndInlineChatToggleAnimateSmoothly() = runSkikoComposeUiTest(size = Size(1200f, 800f)) {
+        mainClock.autoAdvance = false
+        var width by mutableStateOf(760)
+        var preferred by mutableStateOf(true)
+        setContent {
+            DesktopTheme(DesktopAppearancePreferences()) {
+                Surface {
+                    Box(Modifier.size(width.dp, 600.dp)) {
+                        DesktopWatchLayout(
+                            immersive = false,
+                            chatPreferred = preferred,
+                            onChatPreference = { preferred = !preferred },
+                            modifier = Modifier.fillMaxSize(),
+                            player = { _, toggle -> Button(toggle) { Text("聊天开关") } },
+                            chat = { modifier, close -> Surface(modifier) { Button(close) { Text("关闭聊天") } } }
+                        )
+                    }
+                }
+            }
+        }
+        mainClock.advanceTimeBy(50)
+        onNodeWithTag("watch-chat-sheet").assertDoesNotExist()
+
+        onNodeWithText("聊天开关").performClick()
+        mainClock.advanceTimeByFrame()
+        mainClock.advanceTimeBy(64)
+        val sheetEnteringLeft = onNodeWithTag("watch-chat-sheet").fetchSemanticsNode().boundsInRoot.left
+        assertTrue("Expected compact chat sheet to slide in progressively, actual left=$sheetEnteringLeft", sheetEnteringLeft > 445f && sheetEnteringLeft < 755f)
+
+        mainClock.advanceTimeBy(PeekEnterDurationMillis.toLong() + 80L)
+        assertEquals(440f, onNodeWithTag("watch-chat-sheet").fetchSemanticsNode().boundsInRoot.left, 1f)
+
+        onNodeWithText("关闭聊天").performClick()
+        mainClock.advanceTimeByFrame()
+        mainClock.advanceTimeBy(64)
+        val sheetExiting = onAllNodesWithTag("watch-chat-sheet").fetchSemanticsNodes()
+        assertEquals(1, sheetExiting.size)
+        assertTrue("Expected compact chat sheet to slide out progressively", sheetExiting.single().boundsInRoot.left > 445f)
+
+        mainClock.advanceTimeBy(PeekExitDurationMillis.toLong() + 80L)
+        onNodeWithTag("watch-chat-sheet").assertDoesNotExist()
+
+        runOnIdle { width = 1100 }
+        mainClock.advanceTimeBy(50)
+        onNodeWithTag("watch-chat").assertExists()
+
+        onNodeWithText("聊天开关").performClick()
+        mainClock.advanceTimeByFrame()
+        mainClock.advanceTimeBy(64)
+        val shrinkingChat = onAllNodesWithTag("watch-chat").fetchSemanticsNodes()
+        assertEquals("Inline chat should shrink out smoothly rather than disappear in 1 frame", 1, shrinkingChat.size)
+        mainClock.advanceTimeBy(260)
+        onNodeWithTag("watch-chat").assertDoesNotExist()
+    }
+
     @Test fun compactPlayerKeepsQualityFullscreenAndSecondaryActionsAccessible() = runSkikoComposeUiTest(size = Size(1200f, 800f)) {
         val rule = this
         var chosen: LivePlayQuality? = null

@@ -76,15 +76,52 @@ fun CategoryDetailScreen(
         }
     }
 
+    val appLayout = LocalAppLayout.current
+    val currentSiteName = when (viewModel.siteId.lowercase()) {
+        "bilibili" -> "哔哩哔哩"
+        "douyu" -> "斗鱼"
+        "huya" -> "虎牙"
+        "douyin" -> "抖音"
+        else -> viewModel.siteId.replaceFirstChar { it.uppercase() }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(viewModel.categoryName) },
+                title = {
+                    androidx.compose.foundation.layout.Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(viewModel.categoryName)
+                        if (currentSiteName.isNotEmpty()) {
+                            androidx.compose.material3.Surface(
+                                shape = androidx.compose.foundation.shape.RoundedCornerShape(6.dp),
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+                            ) {
+                                Text(
+                                    text = currentSiteName,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = handleBack) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = stringResource(R.string.cd_back)
+                        )
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { viewModel.retry() }) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "刷新"
                         )
                     }
                 }
@@ -100,8 +137,8 @@ fun CategoryDetailScreen(
         when {
             loading && rooms.isEmpty() -> {
                 LiveRoomGridSkeleton(
-                    columns = 2,
-                    itemCount = 6
+                    columns = appLayout.liveRoomColumns,
+                    itemCount = appLayout.liveRoomColumns * 3
                 )
             }
             error != null && rooms.isEmpty() -> ErrorState(
@@ -121,18 +158,14 @@ fun CategoryDetailScreen(
                 }
             }
             else -> {
-                val currentSiteName = when (viewModel.siteId.lowercase()) {
-                    "bilibili" -> "Bilibili"
-                    "douyu" -> "斗鱼"
-                    "huya" -> "虎牙"
-                    else -> viewModel.siteId.replaceFirstChar { it.uppercase() }
-                }
+                val gridPadding = if (appLayout.tablet) 20.dp else 16.dp
+                val gridSpacing = if (appLayout.tablet) 16.dp else 12.dp
                 LazyVerticalGrid(
-                    columns = GridCells.Adaptive(LocalAppLayout.current.liveRoomMinCellWidthDp.dp),
+                    columns = GridCells.Adaptive(appLayout.liveRoomMinCellWidthDp.dp),
                     state = gridState,
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    contentPadding = PaddingValues(horizontal = gridPadding, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(gridSpacing),
+                    verticalArrangement = Arrangement.spacedBy(gridSpacing),
                     modifier = Modifier.fillMaxSize()
                 ) {
                     items(

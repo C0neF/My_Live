@@ -1,5 +1,10 @@
 package com.mylive.app.ui.screen.room
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -22,6 +27,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -32,7 +38,10 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.mylive.app.R
 import com.mylive.app.ui.layout.AppLayoutInfo
+import com.mylive.app.ui.motion.LocalAppMotionPolicy
 import com.mylive.app.ui.screen.room.player.isPortraitVideo
+
+internal const val DefaultLandscapePlayerAspectRatio = 16f / 9f
 
 internal enum class LiveRoomLayout { Immersive, Split, Stacked }
 
@@ -56,6 +65,8 @@ internal fun AdaptiveLiveRoomLayout(
     modifier: Modifier = Modifier,
     videoAspectRatio: Float? = null,
     playerResizeState: PortraitPlayerResizeState? = null,
+    sidePanelCollapsed: Boolean = false,
+    sidePanelHeader: (@Composable () -> Unit)? = null,
     player: @Composable ColumnScope.(Dp) -> Unit,
     chat: @Composable (Modifier) -> Unit
 ) {
@@ -74,7 +85,7 @@ internal fun AdaptiveLiveRoomLayout(
         if (canResizePlayer) {
             val resizeState = requireNotNull(playerResizeState)
             val expandedHeight = (maxWidth / requireNotNull(videoAspectRatio)).coerceAtMost(expandedPlayerMaxHeight)
-            val minimumHeight = 180.dp.coerceAtMost(expandedHeight)
+            val minimumHeight = (maxWidth / DefaultLandscapePlayerAspectRatio).coerceAtMost(expandedHeight)
             playerMaxHeight = minimumHeight + (expandedHeight - minimumHeight) * resizeState.expansionFraction
             val density = LocalDensity.current
             val minimumHeightPx = with(density) { minimumHeight.toPx() }
@@ -88,38 +99,75 @@ internal fun AdaptiveLiveRoomLayout(
             chatScrollModifier = Modifier.nestedScroll(connection)
         }
         if (splitPane) {
-            Row(Modifier.fillMaxSize().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            val motionPolicy = LocalAppMotionPolicy.current
+            Row(
+                Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 12.dp, vertical = 10.dp)
+            ) {
                 Surface(
                     modifier = Modifier.weight(1f).fillMaxHeight().testTag("tablet_live_player"),
                     shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surface,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                    color = MaterialTheme.colorScheme.surfaceContainerLow
                 ) {
                     Column(Modifier.fillMaxSize()) {
                         player(playerMaxHeight)
                     }
                 }
-                Surface(
-                    modifier = Modifier.width(chatWidthDp.dp).fillMaxHeight().testTag("tablet_live_chat"),
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surface,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                AnimatedVisibility(
+                    visible = !sidePanelCollapsed,
+                    enter = if (motionPolicy.reducedMotion) {
+                        fadeIn(motionPolicy.effectsSpec())
+                    } else {
+                        expandHorizontally(
+                            animationSpec = motionPolicy.contentSpec(),
+                            expandFrom = Alignment.Start
+                        ) + fadeIn(motionPolicy.effectsSpec())
+                    },
+                    exit = if (motionPolicy.reducedMotion) {
+                        fadeOut(motionPolicy.effectsSpec())
+                    } else {
+                        shrinkHorizontally(
+                            animationSpec = motionPolicy.contentSpec(),
+                            shrinkTowards = Alignment.Start
+                        ) + fadeOut(motionPolicy.effectsSpec())
+                    }
                 ) {
-                    Column(Modifier.fillMaxSize()) {
-                        Text(
-                            stringResource(R.string.tablet_live_chat),
-                            style = MaterialTheme.typography.titleMedium,
-                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp)
-                        )
-                        HorizontalDivider()
-                        chat(Modifier.weight(1f))
+                    Surface(
+                        modifier = Modifier
+                            .padding(start = 12.dp)
+                            .width(chatWidthDp.dp)
+                            .fillMaxHeight()
+                            .testTag("tablet_live_chat"),
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerLow
+                    ) {
+                        Column(Modifier.fillMaxSize()) {
+                            if (sidePanelHeader != null) {
+                                sidePanelHeader()
+                            } else {
+                                Text(
+                                    stringResource(R.string.tablet_live_chat),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp)
+                                )
+                            }
+                            HorizontalDivider(
+                                thickness = 0.5.dp,
+                                color = MaterialTheme.colorScheme.outlineVariant
+                            )
+                            chat(Modifier.weight(1f))
+                        }
                     }
                 }
             }
         } else {
             Column(Modifier.fillMaxSize()) {
                 player(playerMaxHeight)
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                HorizontalDivider(
+                    thickness = 0.5.dp,
+                    color = MaterialTheme.colorScheme.outlineVariant
+                )
                 chat(Modifier.weight(1f).then(chatScrollModifier))
             }
         }
@@ -139,7 +187,7 @@ internal fun LiveRoomPlayerArea(
         val playerHeight = if (fillAvailableHeight && maxHeight != Dp.Infinity) {
             maxHeight
         } else {
-            val aspectRatio = videoAspectRatio?.takeIf { it.isFinite() && it > 0f } ?: (16f / 9f)
+            val aspectRatio = videoAspectRatio?.takeIf { it.isFinite() && it > 0f } ?: DefaultLandscapePlayerAspectRatio
             (maxWidth / aspectRatio).coerceAtMost(maximumHeight)
         }
         Box(Modifier.fillMaxWidth().height(playerHeight).background(Color.Black)) {

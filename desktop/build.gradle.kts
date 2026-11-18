@@ -49,7 +49,6 @@ val windowsMpvRuntime by configurations.creating { isTransitive = false }
 
 dependencies {
     implementation(project(":live-core"))
-    implementation(project(":shared-ui"))
     implementation(compose.desktop.currentOs)
     implementation(compose.material3)
     implementation(compose.materialIconsExtended)
@@ -76,6 +75,7 @@ dependencies {
     windowsMpvRuntime("org.openani.mediamp:mediamp-mpv-runtime-windows-x64:${libs.versions.mediamp.get()}")
     implementation("org.graalvm.polyglot:polyglot:${libs.versions.graalJs.get()}")
     runtimeOnly("org.graalvm.polyglot:js-community:${libs.versions.graalJs.get()}")
+    testImplementation(project(":shared-ui"))
     testImplementation(libs.junit)
     testImplementation(compose.desktop.uiTestJUnit4)
     testImplementation(libs.mockk)

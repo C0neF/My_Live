@@ -29,6 +29,8 @@ class PlaybackForegroundService : Service() {
         private var instance: PlaybackForegroundService? = null
         private var pendingStart: (() -> Unit)? = null
         private var notificationPause: (() -> Unit)? = null
+        @Volatile
+        private var stopRequestedBeforeForeground = false
 
         /** Rebind only the session currently handed off to this service. */
         fun replacePlayer(previous: Player, replacement: Player) {
@@ -88,6 +90,8 @@ class PlaybackForegroundService : Service() {
             platformName = platform
             pendingStart = onReady
             notificationPause = onPause
+            stopRequestedBeforeForeground = false
+            instance?.stopping = false
             val intent = Intent(context, PlaybackForegroundService::class.java)
             return try {
                 context.startForegroundService(intent)
@@ -105,6 +109,9 @@ class PlaybackForegroundService : Service() {
         fun stop(context: Context) {
             pendingStart = null
             notificationPause = null
+            if (instance == null) {
+                stopRequestedBeforeForeground = true
+            }
             val intent = Intent(context, PlaybackForegroundService::class.java)
             context.stopService(intent)
         }
@@ -143,6 +150,17 @@ class PlaybackForegroundService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == null && stopRequestedBeforeForeground) {
+            stopRequestedBeforeForeground = false
+            updateNotification()
+            stopping = true
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        if (intent?.action == null) {
+            stopping = false
+        }
         if (stopping) return START_NOT_STICKY
         bindPlayer(activePlayer)
         when (intent?.action) {

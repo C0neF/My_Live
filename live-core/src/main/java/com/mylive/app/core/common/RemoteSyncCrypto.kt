@@ -62,6 +62,7 @@ object RemoteSyncCrypto {
     private const val IV_BYTES = 12
     private const val TAG_BITS = 128
     private const val MAX_CACHED_KEYS = 8
+    const val MAX_CLOCK_SKEW_MS = 120_000L
 
     private val secureRandom = SecureRandom()
     private val keyCache = ConcurrentHashMap<String, SecretKeySpec>()
@@ -188,7 +189,9 @@ object RemoteSyncCrypto {
         roomKey: String,
         channel: String,
         overlay: Boolean,
-        content: String
+        content: String,
+        nowMillis: Long = System.currentTimeMillis(),
+        nonce: String = LanSyncAuth.newNonce()
     ): JSONObject {
         val canonical = canonicalChannel(channel)
             ?: throw RemoteSyncCryptoException("不支持的同步数据类型: $channel")
@@ -197,6 +200,8 @@ object RemoteSyncCrypto {
         val plaintextJson = JSONObject().apply {
             put("overlay", overlay)
             put("content", content)
+            put("ts", nowMillis)
+            put("nonce", nonce)
         }.toString()
 
         val iv = ByteArray(IV_BYTES).also(secureRandom::nextBytes)
@@ -215,7 +220,9 @@ object RemoteSyncCrypto {
         roomKey: String,
         channel: String,
         wirePayload: JSONObject?,
-        maxContentBytes: Int = MAX_IMPORTED_JSON_BYTES
+        maxContentBytes: Int = MAX_IMPORTED_JSON_BYTES,
+        nowMillis: Long = System.currentTimeMillis(),
+        replayGuard: LanSyncReplayGuard? = null
     ): DecryptedRemoteSyncPayload {
         val canonical = canonicalChannel(channel)
             ?: throw RemoteSyncCryptoException("不支持的同步数据类型: $channel")
@@ -227,6 +234,11 @@ object RemoteSyncCrypto {
         val envelope = wirePayload.optString("envelope", "").trim()
         if (!isEncryptedEnvelope(envelope)) {
             throw RemoteSyncCryptoException("拒绝未加密的远程同步数据")
+        }
+        val maxEnvelopeChars = ((maxContentBytes.toLong() * 4L) / 3L + 4_096L)
+            .coerceAtMost(16L * 1024L * 1024L)
+        if (envelope.length > maxEnvelopeChars) {
+            throw RemoteSyncCryptoException("同步内容超过大小限制")
         }
 
         val parts = envelope.removePrefix(ENVELOPE_PREFIX).split(".")
@@ -255,6 +267,22 @@ object RemoteSyncCrypto {
         }
         if (!inner.has("content")) {
             throw RemoteSyncCryptoException("解密后的同步数据缺少内容字段")
+        }
+        val ts = inner.optLong("ts", Long.MIN_VALUE)
+        if (
+            !inner.has("ts") ||
+            ts == Long.MIN_VALUE ||
+            ts < nowMillis - MAX_CLOCK_SKEW_MS ||
+            ts > nowMillis + MAX_CLOCK_SKEW_MS
+        ) {
+            throw RemoteSyncCryptoException("远程同步请求已过期")
+        }
+        val nonce = inner.optString("nonce", "").trim()
+        if (nonce.isEmpty() || nonce.length > 64) {
+            throw RemoteSyncCryptoException("远程同步请求缺少有效随机凭证")
+        }
+        if (replayGuard != null && !replayGuard.accept("$cleanRoom:$canonical:$nonce", nowMillis)) {
+            throw RemoteSyncCryptoException("拒绝重放的远程同步数据")
         }
         val overlay = inner.optBoolean("overlay", false)
         val content = inner.optString("content", "")

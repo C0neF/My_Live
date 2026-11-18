@@ -50,13 +50,18 @@ class PortraitPlayerResizeInteractionTest {
     }
 
     @Test fun repeatedUpwardDragsStopAtTheMinimumPlayerHeight() {
-        render()
+        val aspectRatio = mutableStateOf(9f / 16f)
+        render(aspectRatio = { aspectRatio.value })
         repeat(4) { swipeChat(upward = true) }
-        compose.onNodeWithTag("video").assertHeightIsEqualTo(180.dp)
+        compose.onNodeWithTag("video").assertHeightIsEqualTo(360.dp / DefaultLandscapePlayerAspectRatio)
         val minimumHeight = bounds("video").height
         swipeChat(upward = true)
         assertEquals(minimumHeight, bounds("video").height, 1f)
         compose.onNodeWithText("message-59", substring = true).assertIsDisplayed()
+
+        // Shrunk portrait height matches normal 16:9 landscape height.
+        compose.runOnIdle { aspectRatio.value = DefaultLandscapePlayerAspectRatio }
+        assertEquals(bounds("video").height, minimumHeight, 1f)
     }
 
     @Test fun newMessagesDoNotInterruptAnActiveResizeAndFollowingResumesAfterRelease() {

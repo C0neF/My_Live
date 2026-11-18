@@ -6,6 +6,7 @@ import com.mylive.app.BuildConfig
 import com.mylive.app.update.AppUpdateInfo
 import com.mylive.app.update.AppUpdateRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -56,6 +57,7 @@ class AppUpdateViewModel @Inject constructor(
                     }
                 }
                 .onFailure { error ->
+                    if (error is CancellationException) throw error
                     _uiState.update {
                         it.copy(
                             checking = false,
@@ -96,6 +98,7 @@ class AppUpdateViewModel @Inject constructor(
                     )
                 }
             }.onFailure { error ->
+                if (error is CancellationException) throw error
                 _uiState.update {
                     it.copy(
                         downloading = false,

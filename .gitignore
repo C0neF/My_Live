@@ -40,9 +40,6 @@ PRODUCT.md
 **/*.log
 *.tsbuildinfo
 
-# Local tools (sync server, workers, etc.)
-/tools/
-
 # Macrobenchmark module: tracked now that it is wired into settings.gradle.kts, so the
 # performance numbers behind v3 changes are reproducible by anyone with the repo and a device.
 /macrobenchmark/build/

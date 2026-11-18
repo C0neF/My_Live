@@ -34,7 +34,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -99,13 +99,18 @@ fun FollowScreen(
     val cardColumns = followCardColumns.coerceAtLeast(1)
     val useTabletTwoColumnLayout = followUseTabletTwoColumnLayout(cardColumns)
     var selectedTabletPlatformId by rememberSaveable { mutableStateOf<String?>(null) }
+    var selectedTabletTagId by rememberSaveable { mutableStateOf<String?>(null) }
     val tabletPlatformOptions = remember(allFollows) {
         followTabletPlatformOptions(allFollows)
     }
-    val tabletFollows = remember(allFollows, selectedTabletPlatformId) {
-        selectedTabletPlatformId?.let { siteId ->
-            allFollows.filter { it.siteId == siteId }
-        } ?: allFollows
+    val selectedTabletTag = remember(userTags, selectedTabletTagId) {
+        userTags.firstOrNull { it.id == selectedTabletTagId }
+    }
+    val tabletFollows = remember(allFollows, selectedTabletPlatformId, selectedTabletTag) {
+        allFollows.filter { follow ->
+            (selectedTabletPlatformId == null || follow.siteId == selectedTabletPlatformId) &&
+                (selectedTabletTag == null || follow.id in selectedTabletTag.userIds)
+        }
     }
     val displayedFollows = remember(useTabletTwoColumnLayout, tabletFollows, filteredFollows) {
         if (useTabletTwoColumnLayout) tabletFollows else filteredFollows
@@ -143,6 +148,12 @@ fun FollowScreen(
         val selectedSiteStillExists = tabletPlatformOptions.any { it.siteId == selectedTabletPlatformId }
         if (selectedTabletPlatformId != null && !selectedSiteStillExists) {
             selectedTabletPlatformId = null
+        }
+    }
+
+    LaunchedEffect(userTags, selectedTabletTagId) {
+        if (selectedTabletTagId != null && userTags.none { it.id == selectedTabletTagId }) {
+            selectedTabletTagId = null
         }
     }
 
@@ -220,26 +231,50 @@ fun FollowScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
-        // Compact Premium Header (No TopAppBar)
+        // Compact Studio Header
+        val totalLiveCount = remember(allFollows) { allFollows.count { it.liveStatus == 1 } }
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .padding(horizontal = if (useTabletTwoColumnLayout) 20.dp else 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text(
                 text = stringResource(R.string.nav_follow),
                 style = MaterialTheme.typography.titleLarge.copy(
-                    fontWeight = FontWeight.ExtraBold,
-                    letterSpacing = 0.5.sp
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = (-0.3).sp
                 ),
                 color = MaterialTheme.colorScheme.onSurface
             )
 
+            if (allFollows.isNotEmpty()) {
+                Text(
+                    text = "$totalLiveCount 在播",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+            }
+
             Spacer(modifier = Modifier.weight(1f))
 
+            IconButton(
+                onClick = { viewModel.updateFollowStatus() },
+                enabled = !updatingStatus,
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(
+                    Icons.Default.Refresh,
+                    contentDescription = "刷新状态",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+
             Box {
-                IconButton(onClick = { showMenu = true }) {
+                IconButton(onClick = { showMenu = true }, modifier = Modifier.size(36.dp)) {
                     Icon(Icons.Default.MoreVert, contentDescription = "更多")
                 }
                 DropdownMenu(
@@ -292,9 +327,20 @@ fun FollowScreen(
             FollowTabletPlatformBar(
                 options = tabletPlatformOptions,
                 selectedSiteId = selectedTabletPlatformId,
+                tags = userTags,
+                selectedTagId = selectedTabletTagId,
                 onSelected = { siteId ->
                     if (selectedTabletPlatformId != siteId) {
                         selectedTabletPlatformId = siteId
+                        scope.launch {
+                            liveListState.scrollToItem(0)
+                            inactiveListState.scrollToItem(0)
+                        }
+                    }
+                },
+                onTagSelected = { tagId ->
+                    if (selectedTabletTagId != tagId) {
+                        selectedTabletTagId = tagId
                         scope.launch {
                             liveListState.scrollToItem(0)
                             inactiveListState.scrollToItem(0)
@@ -420,6 +466,7 @@ fun FollowScreen(
                                 follow = follow,
                                 viewModel = viewModel,
                                 navigator = navigator,
+                                cardHorizontalPadding = 0.dp,
                                 onLongClick = { longPressedFollow = follow },
                                 onUnfollowConfirm = { unfollowTarget = it }
                             )
@@ -439,6 +486,7 @@ fun FollowScreen(
                                 follow = follow,
                                 viewModel = viewModel,
                                 navigator = navigator,
+                                cardHorizontalPadding = 0.dp,
                                 onLongClick = { longPressedFollow = follow },
                                 onUnfollowConfirm = { unfollowTarget = it }
                             )
@@ -458,6 +506,7 @@ fun FollowScreen(
                                 follow = follow,
                                 viewModel = viewModel,
                                 navigator = navigator,
+                                cardHorizontalPadding = 0.dp,
                                 onLongClick = { longPressedFollow = follow },
                                 onUnfollowConfirm = { unfollowTarget = it }
                             )
@@ -502,7 +551,7 @@ fun FollowScreen(
                 TextButton(onClick = {
                     viewModel.removeFollow(follow)
                     unfollowTarget = null
-                }) { Text("确定", color = MaterialTheme.colorScheme.error) }
+                }) { Text("删除", color = Color(0xFFFF3B30)) }
             },
             dismissButton = {
                 TextButton(onClick = { unfollowTarget = null }) { Text("取消") }
@@ -773,23 +822,56 @@ fun FollowScreen(
 private fun FollowTabletPlatformBar(
     options: List<FollowTabletPlatformOption>,
     selectedSiteId: String?,
-    onSelected: (String?) -> Unit
+    tags: List<FollowUserTagEntity> = emptyList(),
+    selectedTagId: String? = null,
+    onSelected: (String?) -> Unit,
+    onTagSelected: (String?) -> Unit = {}
 ) {
-    LazyRow(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 2.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        contentPadding = PaddingValues(end = 16.dp)
-    ) {
-        items(options, key = { it.id }) { option ->
-            CompactFilterPill(
-                text = "${option.title} ${option.count}",
-                selected = option.siteId == selectedSiteId,
-                onClick = { onSelected(option.siteId) },
-                horizontalPaddingDp = 14,
-                fontSizeSp = 13
-            )
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        LazyRow(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 2.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            contentPadding = PaddingValues(end = 16.dp)
+        ) {
+            items(options, key = { it.id }) { option ->
+                CompactFilterPill(
+                    text = "${option.title} ${option.count}",
+                    selected = option.siteId == selectedSiteId,
+                    onClick = { onSelected(option.siteId) },
+                    horizontalPaddingDp = 14,
+                    fontSizeSp = 13
+                )
+            }
+        }
+        if (tags.isNotEmpty() || selectedTagId != null) {
+            LazyRow(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 2.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(end = 16.dp)
+            ) {
+                item(key = "tag:all") {
+                    CompactFilterPill(
+                        text = "全部标签",
+                        selected = selectedTagId == null,
+                        onClick = { onTagSelected(null) },
+                        horizontalPaddingDp = 12,
+                        fontSizeSp = 12
+                    )
+                }
+                items(tags, key = { "tag:${it.id}" }) { tag ->
+                    CompactFilterPill(
+                        text = "${tag.tag} ${tag.userIds.size}",
+                        selected = selectedTagId == tag.id,
+                        onClick = { onTagSelected(tag.id) },
+                        horizontalPaddingDp = 12,
+                        fontSizeSp = 12
+                    )
+                }
+            }
         }
     }
 }
@@ -808,8 +890,8 @@ private fun FollowTabletTwoColumnContent(
     Row(
         modifier = Modifier
             .fillMaxSize()
-            .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = contentBottomPadding),
-        horizontalArrangement = Arrangement.spacedBy(14.dp)
+            .padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = contentBottomPadding),
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         FollowTabletStatusColumn(
             modifier = Modifier
@@ -858,60 +940,51 @@ private fun FollowTabletStatusColumn(
     onLongClick: (FollowUserEntity) -> Unit,
     onUnfollowConfirm: (FollowUserEntity) -> Unit
 ) {
-    Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-    ) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f))
-                    .padding(horizontal = 16.dp, vertical = 14.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                if (isLive) {
-                    Box(
-                        modifier = Modifier
-                            .size(8.dp)
-                            .background(MaterialTheme.colorScheme.error, CircleShape)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                }
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                    color = if (isLive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
-                )
-                Spacer(modifier = Modifier.weight(1f))
-                Text(
-                    text = "$count 个",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+    Column(modifier = modifier) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 6.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            if (isLive) {
+                Box(
+                    modifier = Modifier
+                        .size(7.dp)
+                        .background(Color(0xFF34C759), CircleShape)
                 )
             }
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = "$count",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
 
-            if (follows.isEmpty()) {
-                EmptyState(message = emptyMessage, modifier = Modifier.weight(1f))
-            } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    state = listState,
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(follows, key = { it.id }) { follow ->
-                        SwipeableFollowItem(
-                            follow = follow,
-                            viewModel = viewModel,
-                            navigator = navigator,
-                            cardHorizontalPadding = 0.dp,
-                            onLongClick = { onLongClick(follow) },
-                            onUnfollowConfirm = onUnfollowConfirm
-                        )
-                    }
+        if (follows.isEmpty()) {
+            EmptyState(message = emptyMessage, modifier = Modifier.weight(1f))
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                state = listState,
+                contentPadding = PaddingValues(vertical = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                items(follows, key = { it.id }) { follow ->
+                    SwipeableFollowItem(
+                        follow = follow,
+                        viewModel = viewModel,
+                        navigator = navigator,
+                        cardHorizontalPadding = 0.dp,
+                        onLongClick = { onLongClick(follow) },
+                        onUnfollowConfirm = onUnfollowConfirm
+                    )
                 }
             }
         }
@@ -920,7 +993,7 @@ private fun FollowTabletStatusColumn(
 
 /**
  * 可左滑的关注用户卡片。
- * 左滑固定距离，露出"置顶"和"取关"两个按钮。
+ * 左滑固定距离，露出圆角胶囊式"收藏"与"删除"按钮。
  */
 @Composable
 private fun SwipeableFollowItem(
@@ -932,11 +1005,15 @@ private fun SwipeableFollowItem(
     onUnfollowConfirm: (FollowUserEntity) -> Unit
 ) {
     val density = LocalDensity.current
-    val actionButtonWidth = 72.dp
+    val actionButtonWidth = 64.dp
+    val actionButtonGap = 6.dp
+    val cardToTrayGap = 8.dp
+    val trayTotalWidth = actionButtonWidth * 2 + actionButtonGap + cardToTrayGap
     val refreshEntry = rememberFollowRefreshEntry(viewModel.refreshEntries, follow.id)
-    val buttonWidth = with(density) { actionButtonWidth.toPx() }
-    val totalReveal = buttonWidth * 2 // 两个按钮的总宽度
+    val totalReveal = with(density) { trayTotalWidth.toPx() }
     val cardMetrics = followCompactCardMetrics()
+    val cardCornerShape = RoundedCornerShape(14.dp)
+    val actionPillShape = RoundedCornerShape(13.dp)
     val offsetX = remember(follow.id) { Animatable(0f) }
     val motionPolicy = LocalAppMotionPolicy.current
     val actionScope = rememberCoroutineScope()
@@ -945,96 +1022,120 @@ private fun SwipeableFollowItem(
         offsetX.updateBounds(lowerBound = -totalReveal, upperBound = 0f)
     }
     val actionsAlpha = followSwipeActionAlpha(animatedOffset)
+    val revealProgress = if (totalReveal > 0f) (-animatedOffset / totalReveal).coerceIn(0f, 1f) else 0f
     val actionsEnabled = actionsAlpha > 0f
+
+    fun closeSwipeActions() {
+        actionScope.launch {
+            if (motionPolicy.reducedMotion) {
+                offsetX.snapTo(0f)
+            } else {
+                offsetX.animateTo(
+                    targetValue = 0f,
+                    animationSpec = AppMotion.momentumSpec()
+                )
+            }
+        }
+    }
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .clipToBounds()
+            .padding(
+                horizontal = cardHorizontalPadding,
+                vertical = cardMetrics.cardVerticalPaddingDp.dp
+            )
+            .clip(cardCornerShape)
     ) {
-        // 底层：操作按钮
-        Box(
+        // 底层：iOS 风格圆角胶囊操作区（与卡片等高对齐、无溢出漏色）
+        Row(
             modifier = Modifier
                 .matchParentSize()
-                .padding(horizontal = cardHorizontalPadding, vertical = 6.dp)
-                .clipToBounds()
+                .graphicsLayer {
+                    alpha = actionsAlpha * (0.35f + 0.65f * revealProgress)
+                },
+            horizontalArrangement = Arrangement.spacedBy(actionButtonGap, Alignment.End),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
+            val isFavorited = follow.isSpecialFollow
+            Surface(
+                onClick = {
+                    if (actionsEnabled) {
+                        viewModel.toggleSpecialFollow(follow)
+                        closeSwipeActions()
+                    }
+                },
+                enabled = actionsEnabled,
+                shape = actionPillShape,
+                color = if (isFavorited) Color(0xFF8E8E93) else Color(0xFFFF9500),
                 modifier = Modifier
-                    .align(Alignment.CenterEnd)
-                    .width(actionButtonWidth * 2)
+                    .width(actionButtonWidth)
                     .fillMaxHeight()
-                    .graphicsLayer { alpha = actionsAlpha },
-                horizontalArrangement = Arrangement.End
             ) {
-                // 置顶/取消置顶按钮
-                Surface(
-                    modifier = Modifier
-                        .width(actionButtonWidth)
-                        .fillMaxHeight()
-                        .clickable(enabled = actionsEnabled) {
-                            viewModel.toggleSpecialFollow(follow)
-                            actionScope.launch { offsetX.snapTo(0f) }
-                        },
-                    color = Color(0xFFFF9F00)
+                Column(
+                    modifier = Modifier.fillMaxSize(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
                 ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(
-                                imageVector = Icons.Default.Star,
-                                contentDescription = if (follow.isSpecialFollow) "取消置顶" else "置顶",
-                                tint = Color.White,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = if (follow.isSpecialFollow) "取消置顶" else "置顶",
-                                color = Color.White,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Medium,
-                                maxLines = 1,
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
-                    }
+                    Icon(
+                        imageVector = if (isFavorited) Icons.Default.StarOff else Icons.Default.StarFilled,
+                        contentDescription = if (isFavorited) "取消收藏" else "收藏",
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.height(3.dp))
+                    Text(
+                        text = if (isFavorited) "取消收藏" else "收藏",
+                        color = Color.White,
+                        fontSize = if (isFavorited) 10.5.sp else 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
-                // 取关按钮
-                Surface(
-                    modifier = Modifier
-                        .width(actionButtonWidth)
-                        .fillMaxHeight()
-                        .clickable(enabled = actionsEnabled) {
-                            onUnfollowConfirm(follow)
-                            actionScope.launch { offsetX.snapTo(0f) }
-                        },
-                    color = MaterialTheme.colorScheme.error
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(
-                                imageVector = Icons.Default.Delete,
-                                contentDescription = "取关",
-                                tint = Color.White,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = "取关",
-                                color = Color.White,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Medium,
-                                maxLines = 1,
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
+            }
+
+            Surface(
+                onClick = {
+                    if (actionsEnabled) {
+                        onUnfollowConfirm(follow)
+                        closeSwipeActions()
                     }
+                },
+                enabled = actionsEnabled,
+                shape = actionPillShape,
+                color = Color(0xFFFF3B30),
+                modifier = Modifier
+                    .width(actionButtonWidth)
+                    .fillMaxHeight()
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxSize(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = "删除",
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.height(3.dp))
+                    Text(
+                        text = "删除",
+                        color = Color.White,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
             }
         }
 
-        // 上层：卡片，可左滑
+        // 上层：主播卡片，可左滑
         Box(
             modifier = Modifier
                 .offset { IntOffset(animatedOffset.roundToInt(), 0) }
@@ -1095,17 +1196,17 @@ private fun SwipeableFollowItem(
                 showTime = follow.showTime,
                 isSpecialFollow = follow.isSpecialFollow,
                 avatarSize = cardMetrics.avatarSizeDp.dp,
-                cardHorizontalPadding = cardHorizontalPadding,
-                cardVerticalPadding = cardMetrics.cardVerticalPaddingDp.dp,
+                cardHorizontalPadding = 0.dp,
+                cardVerticalPadding = 0.dp,
                 contentPadding = cardMetrics.contentPaddingDp.dp,
                 horizontalGap = cardMetrics.horizontalGapDp.dp,
                 liveBadgeSize = 10.dp,
                 playIconSize = 22.dp,
                 cornerRadius = 14.dp,
                 onClick = {
-                    // 如果按钮已展开，点击关闭；否则进入直播间
+                    // 如果按钮已展开，点击收起；否则进入直播间
                     if (offsetX.value < -10f) {
-                        actionScope.launch { offsetX.snapTo(0f) }
+                        closeSwipeActions()
                     } else {
                         navigator.navigateToRoom(
                             siteId = follow.siteId,
@@ -1379,36 +1480,29 @@ private fun FollowGroupHeader(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .padding(horizontal = 4.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         if (isLive) {
-            val infiniteTransition = rememberInfiniteTransition(label = "pulse")
-            val alpha by infiniteTransition.animateFloat(
-                initialValue = 0.4f,
-                targetValue = 1.0f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(1000, easing = LinearEasing),
-                    repeatMode = RepeatMode.Reverse
-                ),
-                label = "alpha"
-            )
             Box(
                 modifier = Modifier
-                    .size(8.dp)
-                    .graphicsLayer { this.alpha = alpha }
-                    .background(MaterialTheme.colorScheme.error, shape = CircleShape)
+                    .size(7.dp)
+                    .background(Color(0xFF34C759), shape = CircleShape)
             )
-            Spacer(modifier = Modifier.width(8.dp))
         }
         Text(
-            text = "$title ($count)",
+            text = title,
             style = MaterialTheme.typography.titleSmall.copy(
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 0.5.sp
+                fontWeight = FontWeight.SemiBold
             ),
-            color = if (isLive) MaterialTheme.colorScheme.error
+            color = if (isLive) MaterialTheme.colorScheme.onSurface
                     else MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = "$count",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
 }

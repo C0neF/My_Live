@@ -39,8 +39,7 @@ import com.mylive.app.ui.screen.room.LocalRoomAccentColor
 import com.mylive.app.ui.theme.Icons
 
 @Composable
-internal fun quickAccessAccentColor(): Color =
-    LocalRoomAccentColor.current.takeIf { it != Color.Unspecified } ?: MaterialTheme.colorScheme.primary
+internal fun quickAccessAccentColor(): Color = MaterialTheme.colorScheme.primary
 
 @Composable
 internal fun rememberQuickAccessListState(viewModel: QuickAccessViewModel, key: String): LazyListState {
@@ -78,8 +77,7 @@ internal fun QuickAccessSearchButton(
             .clickable(onClick = onClick)
             .testTag("quick_access_open_search_$tag"),
         shape = RoundedCornerShape(13.dp),
-        color = if (hasQuery) accent.copy(alpha = 0.16f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
-        border = if (hasQuery) BorderStroke(1.dp, accent.copy(alpha = 0.42f)) else null
+        color = if (hasQuery) accent.copy(alpha = 0.14f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f)
     ) {
         Row(
             Modifier.padding(horizontal = 10.dp),
@@ -125,9 +123,8 @@ internal fun QuickAccessFilterButton(
                 .clickable { expanded = true }
                 .testTag("quick_access_filter_$tag"),
             shape = RoundedCornerShape(size / 2),
-            color = if (hasActiveFilter) accent.copy(alpha = 0.16f)
-            else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
-            border = if (hasActiveFilter) BorderStroke(1.dp, accent.copy(alpha = 0.4f)) else null
+            color = if (hasActiveFilter) accent.copy(alpha = 0.14f)
+            else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f)
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(
@@ -213,8 +210,7 @@ internal fun QuickAccessSearch(
         Surface(
             modifier = Modifier.weight(1f).height(barHeight),
             shape = RoundedCornerShape(18.dp),
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
-            border = if (filters.query.isNotEmpty()) BorderStroke(1.dp, accent.copy(alpha = 0.45f)) else null
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f)
         ) {
             BasicTextField(
                 value = filters.query,
@@ -294,10 +290,9 @@ internal fun QuickAccessStatusChip(
             .clickable(onClick = onClick)
             .testTag("quick_access_status_${status.name}"),
         shape = RoundedCornerShape(13.dp),
-        color = if (selected) accent.copy(alpha = 0.16f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.36f),
-        border = if (selected) BorderStroke(1.dp, accent.copy(alpha = 0.42f)) else null
+        color = if (selected) accent.copy(alpha = 0.14f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
     ) {
-        Box(Modifier.padding(horizontal = 9.dp), contentAlignment = Alignment.Center) {
+        Box(Modifier.padding(horizontal = 10.dp), contentAlignment = Alignment.Center) {
             Text(
                 status.label,
                 style = MaterialTheme.typography.labelSmall,
@@ -322,10 +317,9 @@ internal fun QuickAccessPlatformChip(
             .clip(RoundedCornerShape(13.dp))
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(13.dp),
-        color = if (selected) accent.copy(alpha = 0.16f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.36f),
-        border = if (selected) BorderStroke(1.dp, accent.copy(alpha = 0.42f)) else null
+        color = if (selected) accent.copy(alpha = 0.14f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
     ) {
-        Box(Modifier.padding(horizontal = 9.dp), contentAlignment = Alignment.Center) {
+        Box(Modifier.padding(horizontal = 10.dp), contentAlignment = Alignment.Center) {
             Text(
                 label,
                 style = MaterialTheme.typography.labelSmall,
@@ -393,10 +387,10 @@ internal fun QuickAccessRoomRow(name: String, face: String, subtitle: String, cu
     onLongClick: (() -> Unit)? = null, onDelete: (() -> Unit)? = null, refreshHint: String? = null,
     compact: Boolean = false) {
     val accent = quickAccessAccentColor()
-    val vPad = if (compact) 6.dp else 8.dp
-    val avatarSize = if (compact) 34.dp else 38.dp
+    val vPad = if (compact) 5.dp else 8.dp
+    val avatarSize = if (compact) 32.dp else 38.dp
     val rowModifier = if (compact) {
-        Modifier.fillMaxWidth().height(if (refreshHint != null) 62.dp else 50.dp)
+        Modifier.fillMaxWidth().height(if (refreshHint != null) 60.dp else 48.dp)
     } else {
         Modifier.fillMaxWidth()
     }
@@ -406,21 +400,20 @@ internal fun QuickAccessRoomRow(name: String, face: String, subtitle: String, cu
         Modifier.clickable(onClick = onClick)
     }
     Surface(shape = RoundedCornerShape(14.dp),
-        color = if (current) accent.copy(alpha = 0.09f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f),
-        border = if (current) BorderStroke(1.dp, accent.copy(alpha = 0.35f)) else null,
+        color = if (current) accent.copy(alpha = 0.11f) else MaterialTheme.colorScheme.surfaceContainerLow,
         modifier = rowModifier.clip(RoundedCornerShape(14.dp))
             .then(clickModifier).testTag("quick_access_room_$name")) {
-        Row(Modifier.padding(start = 10.dp, end = 8.dp, top = vPad, bottom = vPad), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.padding(start = 12.dp, end = 10.dp, top = vPad, bottom = vPad), verticalAlignment = Alignment.CenterVertically) {
             Box {
                 NetImage(face, modifier = Modifier.background(MaterialTheme.colorScheme.surfaceVariant, CircleShape), size = avatarSize, isCircle = true)
-                if (live) Surface(Modifier.align(Alignment.BottomEnd).size(9.dp), shape = CircleShape,
-                    color = accent, border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.surface)) {}
+                if (live) Surface(Modifier.align(Alignment.BottomEnd).size(10.dp), shape = CircleShape,
+                    color = Color(0xFF34C759), border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.surfaceContainerLow)) {}
             }
             Spacer(Modifier.width(9.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (special) {
-                        Icon(Icons.Default.Star, "特别关注", Modifier.size(13.dp), tint = MaterialTheme.colorScheme.tertiary)
+                        Icon(Icons.Default.StarFilled, "特别关注", Modifier.size(12.5.dp), tint = Color(0xFFFF9500))
                         Spacer(Modifier.width(4.dp))
                     }
                     Text(name.ifBlank { "未命名主播" }, fontWeight = FontWeight.SemiBold,

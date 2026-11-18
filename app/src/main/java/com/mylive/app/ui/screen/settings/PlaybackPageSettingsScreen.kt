@@ -1,29 +1,49 @@
 package com.mylive.app.ui.screen.settings
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import com.mylive.app.ui.theme.Icons
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.mylive.app.ui.navigation.Navigator
-import com.mylive.app.ui.navigation.Route
 import com.mylive.app.R
+import com.mylive.app.ui.component.settings.SettingsHairlineDivider
+import com.mylive.app.ui.component.settings.SettingsInsetCard
+import com.mylive.app.ui.component.settings.SettingsSectionHeader
 import com.mylive.app.ui.component.settings.SettingsSwitch
+import com.mylive.app.ui.layout.AdaptivePageFrame
+import com.mylive.app.ui.layout.LocalAppLayout
+import com.mylive.app.ui.navigation.Navigator
+import com.mylive.app.ui.theme.Icons
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PlaybackPageSettingsScreen(
     navigator: Navigator,
+    embedded: Boolean = false,
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val liveRoomQuickAccessSortStr by viewModel.liveRoomQuickAccessSort.collectAsStateWithLifecycle()
@@ -42,40 +62,36 @@ fun PlaybackPageSettingsScreen(
     }
 
     Scaffold(
+        containerColor = if (embedded) Color.Transparent else MaterialTheme.colorScheme.background,
         topBar = {
-            TopAppBar(
-                title = { Text("播放页设置") },
-                navigationIcon = {
-                    IconButton(onClick = handleBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(R.string.cd_back)
-                        )
+            if (!embedded) {
+                TopAppBar(
+                    title = { Text("播放页设置") },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.background
+                    ),
+                    navigationIcon = {
+                        IconButton(onClick = handleBack) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = stringResource(R.string.cd_back)
+                            )
+                        }
                     }
-                }
-            )
+                )
+            }
         }
     ) { paddingValues ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .background(MaterialTheme.colorScheme.background)
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp)
-        ) {
-            Text(
-                text = "播放器快捷入口",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
-
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp)
+        AdaptivePageFrame(Modifier.padding(paddingValues), LocalAppLayout.current.settingsMaxWidthDp) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(if (embedded) Color.Transparent else MaterialTheme.colorScheme.background)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
             ) {
-                Column(modifier = Modifier.padding(8.dp)) {
+                SettingsSectionHeader("播放器快捷入口")
+                SettingsInsetCard(embedded = embedded) {
                     SettingsSwitch(
                         title = "显示播放器快捷入口",
                         subtitle = "在播放器控制栏和直播间工具栏显示关注、历史和推荐入口",
@@ -84,22 +100,23 @@ fun PlaybackPageSettingsScreen(
                     )
 
                     if (liveRoomQuickAccessEnabled) {
-                        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                        SettingsHairlineDivider()
                         quickAccessList.forEachIndexed { index, key ->
                             val pair = quickAccessNames[key] ?: (key to "")
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(vertical = 8.dp, horizontal = 12.dp),
+                                    .padding(vertical = 10.dp, horizontal = 16.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
                                         text = pair.first,
                                         style = MaterialTheme.typography.bodyLarge,
-                                        fontWeight = FontWeight.SemiBold
+                                        fontWeight = FontWeight.Medium
                                     )
                                     if (pair.second.isNotEmpty()) {
+                                        Spacer(modifier = Modifier.height(2.dp))
                                         Text(
                                             text = pair.second,
                                             style = MaterialTheme.typography.bodySmall,
@@ -135,7 +152,7 @@ fun PlaybackPageSettingsScreen(
                                 }
                             }
                             if (index < quickAccessList.lastIndex) {
-                                HorizontalDivider(modifier = Modifier.padding(horizontal = 8.dp))
+                                SettingsHairlineDivider()
                             }
                         }
                     }

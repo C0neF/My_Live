@@ -31,6 +31,10 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      - name: Run Remote Sync Worker unit tests
+        shell: bash
+        run: node --test tools/remote-sync-workers/test/sync-room.test.mjs
+
       - name: Run Android checks
         shell: bash
         run: |

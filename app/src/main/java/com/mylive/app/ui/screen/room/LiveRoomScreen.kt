@@ -1,15 +1,19 @@
 package com.mylive.app.ui.screen.room
 
 import android.app.Activity
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -26,7 +30,6 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import com.mylive.app.ui.theme.Icons
-import com.mylive.app.ui.theme.livePlatformOnAccentColor
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -36,7 +39,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -103,8 +105,6 @@ import com.mylive.app.ui.screen.room.player.shouldFeedLiveDanmakuSurface
 import com.mylive.app.ui.screen.room.player.shouldFeedPipDanmakuSurface
 import com.mylive.app.ui.screen.room.player.playbackContainerAspectRatio
 import com.mylive.app.ui.screen.settings.SettingsViewModel
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.activity.compose.BackHandler
 import androidx.compose.material3.Switch
 import androidx.compose.ui.draw.clipToBounds
@@ -114,11 +114,15 @@ import com.mylive.app.core.model.LiveSuperChatMessage
 import com.mylive.app.ui.navigation.Route
 import com.mylive.app.ui.navigation.NavigationExitEffect
 import com.mylive.app.ui.screen.room.quickaccess.QuickAccessExtraTab
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import com.mylive.app.ui.motion.AppMotion
 import com.mylive.app.ui.motion.LocalAppMotionPolicy
+import com.mylive.app.ui.motion.expandCollapseEnter
+import com.mylive.app.ui.motion.expandCollapseExit
+import com.mylive.app.ui.motion.horizontalContentTransform
+import com.mylive.app.ui.motion.popoverEnter
+import com.mylive.app.ui.motion.popoverExit
 import kotlinx.coroutines.launch
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.flow.StateFlow
@@ -345,10 +349,15 @@ fun LiveRoomScreen(
         }
     }
 
-    // Quality selection bottom sheet
+    // Quality selection bottom sheet (non-fullscreen portrait only)
     var showQualitySheet by remember { mutableStateOf(false) }
+    LaunchedEffect(isFullscreen, roomLayout) {
+        if (isFullscreen || roomLayout == LiveRoomLayout.Immersive) {
+            showQualitySheet = false
+        }
+    }
 
-    if (showQualitySheet && uiState.playQualities.isNotEmpty()) {
+    if (showQualitySheet && uiState.playQualities.isNotEmpty() && !isFullscreen && roomLayout != LiveRoomLayout.Immersive) {
         QualityBottomSheet(
             qualities = uiState.playQualities,
             currentIndex = uiState.currentQualityIndex,
@@ -560,6 +569,7 @@ private fun PortraitLayout(
             currentSiteId = viewModel.siteId,
             currentRoomId = viewModel.roomId,
             currentCategoryId = uiState.detail?.categoryId,
+            currentCategoryParentId = uiState.detail?.categoryParentId,
             currentResolvedRoomId = uiState.detail?.roomId,
             extraTabs = portraitActions.mapNotNull { action ->
                 if (action.panel != PortraitLiveRoomPanel.SUPER_CHAT) return@mapNotNull null
@@ -622,10 +632,36 @@ private fun PortraitLayout(
     )
 
     val playerAspectRatio = playbackContainerAspectRatio(videoAspectRatio, scaleMode)
+    var tabletSidePanelCollapsed by rememberSaveable { mutableStateOf(false) }
+    var tabletSelectedTab by rememberSaveable { mutableStateOf(LiveRoomTabType.CHAT) }
+    val supportsSuperChat = viewModel.siteId == "bilibili" ||
+        viewModel.siteId == "huya" ||
+        activeSuperChatCount > 0
+    LaunchedEffect(supportsSuperChat, tabletSelectedTab) {
+        if (!supportsSuperChat && tabletSelectedTab == LiveRoomTabType.SUPER_CHAT) {
+            tabletSelectedTab = LiveRoomTabType.CHAT
+        }
+    }
+
     AdaptiveLiveRoomLayout(
         splitPane = tabletSplit,
         chatWidthDp = LocalAppLayout.current.liveChatWidthDp,
         limitStackedPlayerHeight = LocalAppLayout.current.tablet,
+        sidePanelCollapsed = tabletSplit && tabletSidePanelCollapsed,
+        sidePanelHeader = if (tabletSplit) {
+            {
+                TabletSplitSidePanelHeader(
+                    selectedTab = tabletSelectedTab,
+                    supportsSuperChat = supportsSuperChat,
+                    superChatCount = activeSuperChatCount,
+                    accentColor = roomPlatformAccentColor,
+                    onSelectTab = { tabletSelectedTab = it },
+                    onCollapse = { tabletSidePanelCollapsed = true }
+                )
+            }
+        } else {
+            null
+        },
         modifier = Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding(),
         videoAspectRatio = playerAspectRatio,
         playerResizeState = playerResizeState,
@@ -642,6 +678,8 @@ private fun PortraitLayout(
                 viewState = PlayerViewUiState(
                     title = uiState.detail?.title ?: "",
                     currentQualityName = currentQualityName,
+                    qualities = uiState.playQualities,
+                    currentQualityIndex = uiState.currentQualityIndex,
                     danmakuEnabled = danmuEnable,
                     danmaku = DanmakuConfig(
                         size = danmuSize,
@@ -672,6 +710,7 @@ private fun PortraitLayout(
                 actions = PlayerViewActions(
                     onBack = onBack,
                     onQualityClick = onQualityClick,
+                    onQualitySelect = viewModel::switchQuality,
                     onRefreshClick = viewModel::refreshPlay,
                     danmaku = PlayerDanmakuActions(
                         onEnabledChange = settingsViewModel::setDanmuEnable,
@@ -692,31 +731,105 @@ private fun PortraitLayout(
             )
         }
 
-        CompactPortraitRoomHeader(
-            detail = uiState.detail,
-            isFollowing = uiState.isFollowing,
-            isFollowStatusKnown = uiState.isFollowStatusKnown,
-            accentColor = roomPlatformAccentColor,
-            onToggleFollow = { viewModel.toggleFollow() },
-            onRefreshClick = { viewModel.refreshPlay() },
-            onSettingsClick = { activeAuxiliaryPanel = PortraitLiveRoomPanel.SETTINGS },
-            onQuickAccessClick = quickAccessAction
-        )
+        if (tabletSplit) {
+            TabletSplitRoomStageBar(
+                detail = uiState.detail,
+                siteId = accentSiteId,
+                onlineCountFlow = viewModel.onlineCount,
+                isFollowing = uiState.isFollowing,
+                isFollowStatusKnown = uiState.isFollowStatusKnown,
+                accentColor = roomPlatformAccentColor,
+                sidePanelCollapsed = tabletSidePanelCollapsed,
+                superChatCount = activeSuperChatCount,
+                onToggleFollow = { viewModel.toggleFollow() },
+                onRefreshClick = { viewModel.refreshPlay() },
+                onSettingsClick = { activeAuxiliaryPanel = PortraitLiveRoomPanel.SETTINGS },
+                onQuickAccessClick = quickAccessAction,
+                onToggleSidePanel = { tabletSidePanelCollapsed = !tabletSidePanelCollapsed }
+            )
+        } else {
+            CompactPortraitRoomHeader(
+                detail = uiState.detail,
+                isFollowing = uiState.isFollowing,
+                isFollowStatusKnown = uiState.isFollowStatusKnown,
+                accentColor = roomPlatformAccentColor,
+                onToggleFollow = { viewModel.toggleFollow() },
+                onRefreshClick = { viewModel.refreshPlay() },
+                onSettingsClick = { activeAuxiliaryPanel = PortraitLiveRoomPanel.SETTINGS },
+                onQuickAccessClick = quickAccessAction
+            )
+        }
 
         },
         chat = { chatModifier ->
-        ChatPanel(
-            messagesFlow = viewModel.danmakuMessages,
-            noticeFlow = viewModel.danmakuNotice,
-            modifier = chatModifier.testTag("live_room_chat").background(
-                if (tabletSplit) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.background
-            ),
-            hostName = uiState.detail?.userName ?: "",
-            chatTextSize = chatTextSize,
-            chatTextGap = chatTextGap,
-            chatBubbleStyle = chatBubbleStyle,
-            playerResizing = playerResizeState.isResizing
-        )
+            if (tabletSplit) {
+                val motionPolicy = LocalAppMotionPolicy.current
+                val tabOrder = remember {
+                    listOf(LiveRoomTabType.CHAT, LiveRoomTabType.SUPER_CHAT, LiveRoomTabType.FOLLOW)
+                }
+                AnimatedContent(
+                    targetState = tabletSelectedTab,
+                    transitionSpec = {
+                        val dir = AppMotion.indexDirection(
+                            tabOrder.indexOf(initialState),
+                            tabOrder.indexOf(targetState)
+                        )
+                        horizontalContentTransform(dir, motionPolicy)
+                    },
+                    modifier = chatModifier.background(MaterialTheme.colorScheme.surfaceContainerLow),
+                    label = "tabletSplitSideTabContent"
+                ) { activeTab ->
+                    when (activeTab) {
+                        LiveRoomTabType.SUPER_CHAT -> {
+                            SuperChatPanel(
+                                viewModel = viewModel,
+                                superChatSortDesc = superChatSortDesc,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .testTag("live_room_super_chat")
+                            )
+                        }
+                        LiveRoomTabType.FOLLOW -> {
+                            FollowListPanel(
+                                navigator = navigator,
+                                currentRoomId = viewModel.roomId,
+                                currentSiteId = viewModel.siteId,
+                                isFullscreen = false,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .testTag("live_room_follow")
+                            )
+                        }
+                        else -> {
+                            ChatPanel(
+                                messagesFlow = viewModel.danmakuMessages,
+                                noticeFlow = viewModel.danmakuNotice,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .testTag("live_room_chat"),
+                                hostName = uiState.detail?.userName ?: "",
+                                chatTextSize = chatTextSize,
+                                chatTextGap = chatTextGap,
+                                chatBubbleStyle = chatBubbleStyle,
+                                playerResizing = playerResizeState.isResizing
+                            )
+                        }
+                    }
+                }
+            } else {
+                ChatPanel(
+                    messagesFlow = viewModel.danmakuMessages,
+                    noticeFlow = viewModel.danmakuNotice,
+                    modifier = chatModifier
+                        .testTag("live_room_chat")
+                        .background(MaterialTheme.colorScheme.background),
+                    hostName = uiState.detail?.userName ?: "",
+                    chatTextSize = chatTextSize,
+                    chatTextGap = chatTextGap,
+                    chatBubbleStyle = chatBubbleStyle,
+                    playerResizing = playerResizeState.isResizing
+                )
+            }
         }
     )
 }
@@ -775,6 +888,301 @@ private fun LiveRoomTabPage(
             )
         }
         null -> {}
+    }
+}
+
+@Composable
+private fun TabletSplitRoomStageBar(
+    detail: com.mylive.app.core.model.LiveRoomDetail?,
+    siteId: String,
+    onlineCountFlow: kotlinx.coroutines.flow.StateFlow<Int>,
+    isFollowing: Boolean,
+    isFollowStatusKnown: Boolean,
+    accentColor: Color,
+    sidePanelCollapsed: Boolean,
+    superChatCount: Int,
+    onToggleFollow: () -> Unit,
+    onRefreshClick: () -> Unit,
+    onSettingsClick: () -> Unit,
+    onQuickAccessClick: (() -> Unit)?,
+    onToggleSidePanel: () -> Unit
+) {
+    val toolbarIconTint = resolveLiveRoomToolbarIconTint(MaterialTheme.colorScheme.onSurface)
+    val platformLabel = when (siteId.lowercase()) {
+        "bilibili" -> "哔哩哔哩"
+        "douyu" -> "斗鱼"
+        "huya" -> "虎牙"
+        "douyin" -> "抖音"
+        else -> ""
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surfaceContainerLow)
+    ) {
+        HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            if (detail == null) {
+                Box(
+                    modifier = Modifier
+                        .size(38.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                )
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Box(
+                        modifier = Modifier
+                            .width(140.dp)
+                            .height(15.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                    )
+                    Box(
+                        modifier = Modifier
+                            .width(90.dp)
+                            .height(12.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f))
+                    )
+                }
+            } else {
+                Box(modifier = Modifier.size(36.dp)) {
+                    AsyncImage(
+                        model = detail.userAvatar,
+                        contentDescription = detail.userName,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(CircleShape),
+                        contentScale = ContentScale.Crop
+                    )
+                    if (detail.status) {
+                        Surface(
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .size(10.dp),
+                            shape = CircleShape,
+                            color = Color(0xFF34C759),
+                            border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.surfaceContainerLow)
+                        ) {}
+                    }
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = detail.title.ifBlank { detail.userName },
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = if (platformLabel.isNotEmpty()) "${detail.userName} · $platformLabel" else detail.userName,
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        RoomOnlineCountPill(onlineCountFlow = onlineCountFlow)
+                    }
+                }
+            }
+
+            IconButton(onClick = onRefreshClick, modifier = Modifier.size(36.dp)) {
+                Icon(
+                    imageVector = Icons.Default.Refresh,
+                    contentDescription = "刷新",
+                    tint = toolbarIconTint,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+            IconButton(onClick = onSettingsClick, modifier = Modifier.size(36.dp)) {
+                Icon(
+                    imageVector = Icons.Default.Settings,
+                    contentDescription = "设置",
+                    tint = toolbarIconTint,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+            if (onQuickAccessClick != null) {
+                IconButton(onClick = onQuickAccessClick, modifier = Modifier.size(36.dp)) {
+                    Icon(
+                        imageVector = Icons.Default.PlaylistAdd,
+                        contentDescription = "快速入口",
+                        tint = toolbarIconTint,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+            val canToggleFollow = detail != null && isFollowStatusKnown
+            LiveRoomFollowButton(
+                isFollowing = isFollowing,
+                accentColor = accentColor,
+                enabled = canToggleFollow,
+                onClick = onToggleFollow,
+                modifier = Modifier.size(36.dp),
+                iconSizeDp = 18
+            )
+
+            Surface(
+                onClick = onToggleSidePanel,
+                shape = RoundedCornerShape(999.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                modifier = Modifier
+                    .height(32.dp)
+                    .testTag("tablet_toggle_side_panel")
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 11.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Icon(
+                        imageVector = if (sidePanelCollapsed) Icons.Default.ChevronLeft else Icons.Default.ChevronRight,
+                        contentDescription = if (sidePanelCollapsed) "展开侧栏" else "收起侧栏",
+                        tint = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.size(15.dp)
+                    )
+                    Text(
+                        text = buildString {
+                            append(if (sidePanelCollapsed) "展开互动" else "影院宽屏")
+                            if (sidePanelCollapsed && superChatCount > 0) append(" ($superChatCount)")
+                        },
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RoomOnlineCountPill(onlineCountFlow: kotlinx.coroutines.flow.StateFlow<Int>) {
+    val count by onlineCountFlow.collectAsStateWithLifecycle()
+    if (count <= 0) return
+    val text = if (count >= 10_000) String.format(java.util.Locale.ROOT, "%.1f万 人气", count / 10_000.0) else "$count 人气"
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Box(
+            Modifier
+                .size(5.dp)
+                .background(Color(0xFF34C759), CircleShape)
+        )
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun TabletSplitSidePanelHeader(
+    selectedTab: LiveRoomTabType,
+    supportsSuperChat: Boolean,
+    superChatCount: Int,
+    accentColor: Color,
+    onSelectTab: (LiveRoomTabType) -> Unit,
+    onCollapse: () -> Unit
+) {
+    val tabs = remember(supportsSuperChat) {
+        buildList {
+            add(LiveRoomTabType.CHAT to "弹幕")
+            if (supportsSuperChat) add(LiveRoomTabType.SUPER_CHAT to "SC")
+            add(LiveRoomTabType.FOLLOW to "关注")
+        }
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 12.dp, end = 6.dp, top = 10.dp, bottom = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Surface(
+            modifier = Modifier.weight(1f),
+            shape = RoundedCornerShape(10.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(3.dp),
+                horizontalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                val motionPolicy = LocalAppMotionPolicy.current
+                tabs.forEach { (type, label) ->
+                    val selected = selectedTab == type
+                    val tabShape = RoundedCornerShape(8.dp)
+                    val tabColor by animateColorAsState(
+                        targetValue = if (selected) MaterialTheme.colorScheme.surfaceContainerLow else Color.Transparent,
+                        animationSpec = motionPolicy.effectsSpec(),
+                        label = "tabletRoomTabBg"
+                    )
+                    val tabTextColor by animateColorAsState(
+                        targetValue = if (selected) MaterialTheme.colorScheme.onSurface
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                        animationSpec = motionPolicy.effectsSpec(),
+                        label = "tabletRoomTabText"
+                    )
+                    Surface(
+                        onClick = { onSelectTab(type) },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(30.dp)
+                            .testTag("tablet_room_tab_${type.name.lowercase()}"),
+                        shape = tabShape,
+                        color = tabColor
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxSize(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally)
+                        ) {
+                            Text(
+                                text = label,
+                                style = MaterialTheme.typography.labelMedium.copy(
+                                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
+                                ),
+                                color = tabTextColor
+                            )
+                            if (type == LiveRoomTabType.SUPER_CHAT && superChatCount > 0) {
+                                Text(
+                                    text = "$superChatCount",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        IconButton(
+            onClick = onCollapse,
+            modifier = Modifier.size(34.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.ChevronRight,
+                contentDescription = "收起侧栏",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp)
+            )
+        }
     }
 }
 
@@ -853,6 +1261,7 @@ private fun LandscapeLayout(
                 currentSiteId = viewModel.siteId,
                 currentRoomId = viewModel.roomId,
                 currentCategoryId = uiState.detail?.categoryId,
+                currentCategoryParentId = uiState.detail?.categoryParentId,
                 currentResolvedRoomId = uiState.detail?.roomId,
                 extraTabs = landscapeQuickAccessExtraTabs(
                     settingsViewModel = settingsViewModel,
@@ -882,7 +1291,7 @@ private fun LandscapeLayout(
 
     val density = LocalDensity.current
     val panelWidthPx = remember(density) { with(density) { 320.dp.toPx() } }
-    val panelOffset = remember(panelWidthPx) {
+    val panelOffset = remember(panelWidthPx, LocalConfiguration.current.orientation) {
         Animatable(liveRoomInitialSidePanelOffsetPx(panelWidthPx))
     }
     SideEffect {
@@ -932,6 +1341,8 @@ private fun LandscapeLayout(
                 viewState = PlayerViewUiState(
                     title = uiState.detail?.title ?: "",
                     currentQualityName = currentQualityName,
+                    qualities = uiState.playQualities,
+                    currentQualityIndex = uiState.currentQualityIndex,
                     danmakuEnabled = danmuEnable,
                     danmaku = DanmakuConfig(
                         size = danmuSize,
@@ -964,6 +1375,7 @@ private fun LandscapeLayout(
                 actions = PlayerViewActions(
                     onBack = onBack,
                     onQualityClick = onQualityClick,
+                    onQualitySelect = viewModel::switchQuality,
                     onRefreshClick = viewModel::refreshPlay,
                     danmaku = PlayerDanmakuActions(
                         onEnabledChange = settingsViewModel::setDanmuEnable,
@@ -1016,18 +1428,18 @@ private fun LandscapeLayout(
 
         },
         panel = { panelModifier ->
-            Box(
+            Row(
                 modifier = panelModifier
-                    .background(MaterialTheme.colorScheme.surface)
-                    .border(
-                        width = 1.dp,
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
-                        shape = RoundedCornerShape(0.dp)
-                    )
+                    .background(MaterialTheme.colorScheme.surfaceContainerLow)
             ) {
+                VerticalDivider(
+                    thickness = 0.5.dp,
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
+                )
                 Column(
                     modifier = Modifier
-                        .fillMaxSize()
+                        .weight(1f)
+                        .fillMaxHeight()
                 ) {
                     LandscapeRoomSidePanelHeader(
                         detail = uiState.detail
@@ -1088,8 +1500,8 @@ private fun LandscapeRoomSidePanelHeader(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surface)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            .background(MaterialTheme.colorScheme.surfaceContainerLow)
+            .padding(horizontal = 14.dp, vertical = 11.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         if (detail == null) {
@@ -1101,15 +1513,15 @@ private fun LandscapeRoomSidePanelHeader(
                     modifier = Modifier
                         .size(28.dp)
                         .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f))
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
                 )
-                Spacer(modifier = Modifier.width(8.dp))
+                Spacer(modifier = Modifier.width(9.dp))
                 Box(
                     modifier = Modifier
                         .width(112.dp)
-                        .height(16.dp)
+                        .height(15.dp)
                         .clip(RoundedCornerShape(4.dp))
-                        .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f))
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
                 )
             }
         } else {
@@ -1125,10 +1537,10 @@ private fun LandscapeRoomSidePanelHeader(
                         .clip(CircleShape),
                     contentScale = ContentScale.Crop
                 )
-                Spacer(modifier = Modifier.width(8.dp))
+                Spacer(modifier = Modifier.width(9.dp))
                 Text(
                     text = detail.userName,
-                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     color = MaterialTheme.colorScheme.onSurface,
@@ -1138,7 +1550,10 @@ private fun LandscapeRoomSidePanelHeader(
         }
     }
 
-    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+    HorizontalDivider(
+        thickness = 0.5.dp,
+        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
+    )
 }
 
 @Composable
@@ -1157,12 +1572,12 @@ private fun CompactPortraitRoomHeader(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surface)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+            .background(MaterialTheme.colorScheme.surfaceContainerLow)
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 14.dp, end = 8.dp, top = 7.dp, bottom = 7.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             if (detail == null) {
@@ -1170,7 +1585,7 @@ private fun CompactPortraitRoomHeader(
                     modifier = Modifier
                         .size(34.dp)
                         .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.outlineVariant)
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
                 )
                 Spacer(modifier = Modifier.width(10.dp))
                 Column(modifier = Modifier.weight(1f)) {
@@ -1179,16 +1594,11 @@ private fun CompactPortraitRoomHeader(
                             .width(120.dp)
                             .height(15.dp)
                             .clip(RoundedCornerShape(4.dp))
-                            .background(MaterialTheme.colorScheme.outlineVariant)
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
                     )
                 }
             } else {
-                Box(
-                    modifier = Modifier
-                        .size(34.dp)
-                        .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f), CircleShape)
-                        .padding(1.dp)
-                ) {
+                Box(modifier = Modifier.size(34.dp)) {
                     AsyncImage(
                         model = detail.userAvatar,
                         contentDescription = detail.userName,
@@ -1197,6 +1607,16 @@ private fun CompactPortraitRoomHeader(
                             .clip(CircleShape),
                         contentScale = ContentScale.Crop
                     )
+                    if (detail.status) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .size(10.dp)
+                                .background(MaterialTheme.colorScheme.surfaceContainerLow, CircleShape)
+                                .padding(1.5.dp)
+                                .background(Color(0xFF34C759), CircleShape)
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.width(10.dp))
@@ -1204,7 +1624,10 @@ private fun CompactPortraitRoomHeader(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = detail.userName,
-                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold
+                        ),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         color = MaterialTheme.colorScheme.onSurface
@@ -1248,6 +1671,10 @@ private fun CompactPortraitRoomHeader(
                 iconSizeDp = 18
             )
         }
+        HorizontalDivider(
+            thickness = 0.5.dp,
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+        )
     }
 }
 
@@ -1260,6 +1687,7 @@ private fun LiveRoomFollowButton(
     modifier: Modifier = Modifier,
     iconSizeDp: Int
 ) {
+    val motionPolicy = LocalAppMotionPolicy.current
     IconButton(
         onClick = {
             if (enabled) {
@@ -1268,16 +1696,29 @@ private fun LiveRoomFollowButton(
         },
         modifier = modifier
     ) {
-        Icon(
-            imageVector = if (isFollowing) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-            contentDescription = if (isFollowing) {
-                stringResource(R.string.room_following)
-            } else {
-                stringResource(R.string.room_follow)
+        AnimatedContent(
+            targetState = isFollowing,
+            transitionSpec = {
+                if (motionPolicy.reducedMotion) {
+                    fadeIn(motionPolicy.effectsSpec()) togetherWith fadeOut(motionPolicy.effectsSpec())
+                } else {
+                    (scaleIn(motionPolicy.contentSpec(), initialScale = 0.78f) + fadeIn(motionPolicy.effectsSpec())) togetherWith
+                        fadeOut(motionPolicy.effectsSpec())
+                }
             },
-            tint = accentColor,
-            modifier = Modifier.size(iconSizeDp.dp)
-        )
+            label = "liveRoomFollowHeart"
+        ) { isFollowing ->
+            Icon(
+                imageVector = if (isFollowing) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                contentDescription = if (isFollowing) {
+                    stringResource(R.string.room_following)
+                } else {
+                    stringResource(R.string.room_follow)
+                },
+                tint = accentColor,
+                modifier = Modifier.size(iconSizeDp.dp)
+            )
+        }
     }
 }
 
@@ -1315,7 +1756,8 @@ private fun PortraitAuxiliaryPanelSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        containerColor = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp),
+        containerColor = MaterialTheme.colorScheme.background,
         dragHandle = if (panel == PortraitLiveRoomPanel.SETTINGS) {
             {
                 RoomSettingsSheetDragHandle(
@@ -1339,7 +1781,7 @@ private fun PortraitAuxiliaryPanelSheet(
             if (!isSettings) Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = 16.dp, top = 4.dp, end = 16.dp, bottom = 8.dp),
+                    .padding(start = 18.dp, top = 2.dp, end = 10.dp, bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
@@ -1348,19 +1790,23 @@ private fun PortraitAuxiliaryPanelSheet(
                         PortraitLiveRoomPanel.FOLLOW -> "关注列表"
                         PortraitLiveRoomPanel.SETTINGS -> "设置"
                     },
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
                     modifier = Modifier.weight(1f),
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 IconButton(onClick = onDismiss) {
                     Icon(
                         imageVector = Icons.Default.Close,
-                        contentDescription = "关闭"
+                        contentDescription = "关闭",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
 
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            HorizontalDivider(
+                thickness = 0.5.dp,
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
+            )
 
             Box(
                 modifier = Modifier
@@ -1407,7 +1853,7 @@ private fun RoomSettingsSheetDragHandle(
     onDismiss: () -> Unit
 ) {
     Box(
-        modifier = Modifier.fillMaxWidth().height(48.dp)
+        modifier = Modifier.fillMaxWidth().height(50.dp)
             .roomPanelDismissHandleGesture(onDownwardDragStarted, onGestureActiveChange)
             .semantics {
                 contentDescription = "下滑关闭设置"
@@ -1415,12 +1861,12 @@ private fun RoomSettingsSheetDragHandle(
             },
         contentAlignment = Alignment.Center
     ) {
-        Box(Modifier.size(width = 32.dp, height = 4.dp).clip(RoundedCornerShape(50))
-            .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)))
-        Text("设置", Modifier.align(Alignment.CenterStart).padding(start = 20.dp),
-            style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        IconButton(onClick = onDismiss, modifier = Modifier.align(Alignment.CenterEnd).padding(end = 8.dp)) {
-            Icon(Icons.Default.Close, "关闭设置")
+        Box(Modifier.align(Alignment.TopCenter).padding(top = 8.dp).size(width = 36.dp, height = 4.dp).clip(RoundedCornerShape(50))
+            .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.32f)))
+        Text("设置", Modifier.align(Alignment.CenterStart).padding(start = 20.dp, top = 6.dp),
+            style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        IconButton(onClick = onDismiss, modifier = Modifier.align(Alignment.CenterEnd).padding(end = 8.dp, top = 6.dp)) {
+            Icon(Icons.Default.Close, "关闭设置", tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -1436,50 +1882,64 @@ private fun QualityBottomSheet(
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        containerColor = MaterialTheme.colorScheme.surface
+        shape = RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp),
+        containerColor = MaterialTheme.colorScheme.background
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .padding(horizontal = 16.dp)
                 .padding(bottom = 32.dp)
         ) {
             Text(
                 text = stringResource(R.string.room_quality_sheet_title),
                 style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 10.dp)
             )
 
-            HorizontalDivider()
-
-            qualities.forEachIndexed { index, quality ->
-                val isSelected = index == currentIndex
-                Surface(
-                    onClick = { onSelect(index) },
-                    color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
-                    else Color.Transparent
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 14.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = quality.quality,
-                                style = MaterialTheme.typography.bodyLarge,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                color = if (isSelected) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.onSurface
-                            )
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    qualities.forEachIndexed { index, quality ->
+                        val isSelected = index == currentIndex
+                        Surface(
+                            onClick = { onSelect(index) },
+                            color = Color.Transparent
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = quality.quality,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                        color = if (isSelected) MaterialTheme.colorScheme.primary
+                                        else MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                                if (isSelected) {
+                                    Icon(
+                                        Icons.Default.Check,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(19.dp)
+                                    )
+                                }
+                            }
                         }
-                        if (isSelected) {
-                            Icon(
-                                Icons.Default.Check,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(20.dp)
+                        if (index < qualities.lastIndex) {
+                            HorizontalDivider(
+                                modifier = Modifier.padding(start = 16.dp),
+                                thickness = 0.5.dp,
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
                             )
                         }
                     }
@@ -1582,20 +2042,6 @@ fun ChatPanel(
     }
 
     Box(modifier = modifier.fillMaxWidth().onSizeChanged { viewportHeightPx = it.height }) {
-        notice?.let { noticeText ->
-            Text(
-                text = noticeText,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f))
-                    .padding(horizontal = 12.dp, vertical = 6.dp)
-            )
-        }
-
         LazyColumn(
             state = listState,
             modifier = Modifier
@@ -1611,7 +2057,10 @@ fun ChatPanel(
                         userTouchingChat = false
                     }
                 },
-            contentPadding = PaddingValues(vertical = 4.dp),
+            contentPadding = PaddingValues(
+                top = if (notice != null) 38.dp else 6.dp,
+                bottom = 8.dp
+            ),
             verticalArrangement = Arrangement.spacedBy(chatTextGap.dp)
         ) {
             items(
@@ -1628,19 +2077,44 @@ fun ChatPanel(
             }
         }
 
+        val motionPolicy = LocalAppMotionPolicy.current
+        var cachedNotice by remember { mutableStateOf(notice.orEmpty()) }
+        if (notice != null) cachedNotice = notice.orEmpty()
+        AnimatedVisibility(
+            visible = notice != null,
+            enter = expandCollapseEnter(motionPolicy),
+            exit = expandCollapseExit(motionPolicy),
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(horizontal = 12.dp, vertical = 6.dp)
+                .fillMaxWidth()
+        ) {
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.86f),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = cachedNotice,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                )
+            }
+        }
+
         AnimatedVisibility(
             visible = showLatestButton,
-            enter = fadeIn(),
-            exit = fadeOut(),
+            enter = popoverEnter(motionPolicy),
+            exit = popoverExit(motionPolicy),
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .padding(end = 12.dp, bottom = 12.dp)
+                .padding(end = 14.dp, bottom = 14.dp)
         ) {
             SmallFloatingActionButton(
-                modifier = Modifier.border(
-                    BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.8f)),
-                    CircleShape
-                ),
                 onClick = {
                     coroutineScope.launch {
                         val latestMessages = messages.takeLast(ChatPanelMaxMessages)
@@ -1655,13 +2129,13 @@ fun ChatPanel(
                     }
                 },
                 shape = CircleShape,
-                containerColor = MaterialTheme.colorScheme.surface,
+                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                 contentColor = MaterialTheme.colorScheme.primary,
                 elevation = FloatingActionButtonDefaults.elevation(
-                    defaultElevation = 4.dp,
-                    pressedElevation = 6.dp,
-                    focusedElevation = 4.dp,
-                    hoveredElevation = 4.dp
+                    defaultElevation = 3.dp,
+                    pressedElevation = 5.dp,
+                    focusedElevation = 3.dp,
+                    hoveredElevation = 3.dp
                 )
             ) {
                 Icon(
@@ -1698,7 +2172,9 @@ private fun ChatMessageItem(
             val colorPolicy = remember(message.color) {
                 resolveChatMessageColorPolicy(message.color)
             }
-            val userNameColor = Color.Gray
+            val userNameColor = MaterialTheme.colorScheme.onSurfaceVariant
+            val hostBadgeColor = MaterialTheme.colorScheme.primary
+            val hostBadgeOnColor = MaterialTheme.colorScheme.onPrimary
             val messageTextColor = if (colorPolicy.applyMessageColorToText) {
                 liveMessageColor
             } else {
@@ -1707,7 +2183,15 @@ private fun ChatMessageItem(
 
             val isHost = message.userName.isNotEmpty() && message.userName == hostName
 
-            val (annotatedString, inlineContent) = remember(message, isHost, userNameColor, messageTextColor, isSystem) {
+            val (annotatedString, inlineContent) = remember(
+                message,
+                isHost,
+                userNameColor,
+                messageTextColor,
+                isSystem,
+                hostBadgeColor,
+                hostBadgeOnColor
+            ) {
                 if (isSystem) {
                     AnnotatedString(message.message) to emptyMap<String, InlineTextContent>()
                 } else {
@@ -1724,8 +2208,8 @@ private fun ChatMessageItem(
                             )
                         ) {
                             Surface(
-                                shape = RoundedCornerShape(4.dp),
-                                color = Color(0xFFE91E63),
+                                shape = RoundedCornerShape(5.dp),
+                                color = hostBadgeColor,
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .padding(end = 4.dp)
@@ -1733,19 +2217,19 @@ private fun ChatMessageItem(
                                 Box(contentAlignment = Alignment.Center) {
                                     Text(
                                         text = "主播",
-                                        color = Color.White,
+                                        color = hostBadgeOnColor,
                                         fontSize = 9.sp,
-                                        fontWeight = FontWeight.Bold
+                                        fontWeight = FontWeight.SemiBold
                                     )
                                 }
                             }
                         }
                     }
 
-                    builder.withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = userNameColor)) {
+                    builder.withStyle(SpanStyle(fontWeight = FontWeight.SemiBold, color = userNameColor)) {
                         append(message.userName)
                     }
-                    builder.withStyle(SpanStyle(color = Color.Gray)) {
+                    builder.withStyle(SpanStyle(color = userNameColor.copy(alpha = 0.7f))) {
                         append("：")
                     }
 
@@ -1798,9 +2282,9 @@ private fun ChatMessageItem(
                         text = message.message,
                         style = MaterialTheme.typography.bodyMedium.copy(
                             fontSize = chatTextSize.sp,
-                            color = Color.Gray
+                            color = userNameColor
                         ),
-                        modifier = Modifier.padding(vertical = 4.dp, horizontal = 6.dp)
+                        modifier = Modifier.padding(vertical = 3.dp, horizontal = 4.dp)
                     )
                 } else {
                     Text(
@@ -1808,10 +2292,13 @@ private fun ChatMessageItem(
                         inlineContent = inlineContent,
                         style = MaterialTheme.typography.bodyMedium.copy(
                             fontSize = chatTextSize.sp,
-                            lineHeight = (chatTextSize * 1.4).sp
+                            lineHeight = (chatTextSize * 1.42).sp
                         ),
                         color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.padding(vertical = 4.dp, horizontal = 8.dp)
+                        modifier = Modifier.padding(
+                            vertical = if (chatBubbleStyle) 6.dp else 3.dp,
+                            horizontal = if (chatBubbleStyle) 10.dp else 4.dp
+                        )
                     )
                 }
             }
@@ -1820,17 +2307,13 @@ private fun ChatMessageItem(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 2.dp),
+                        .padding(vertical = 1.5.dp),
                     horizontalArrangement = Arrangement.Start
                 ) {
                     Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                        border = BorderStroke(
-                            width = 0.5.dp,
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)
-                        ),
-                        modifier = Modifier.widthIn(max = 300.dp)
+                        shape = RoundedCornerShape(14.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
+                        modifier = Modifier.widthIn(max = 310.dp)
                     ) {
                         textContent()
                     }
@@ -1839,7 +2322,7 @@ private fun ChatMessageItem(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 2.dp)
+                        .padding(vertical = 1.dp)
                 ) {
                     textContent()
                 }
@@ -1857,35 +2340,29 @@ private fun ChatMessageItem(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 4.dp)
+                    .padding(vertical = 3.dp)
             ) {
-                val gradient = Brush.horizontalGradient(
-                    colors = listOf(
-                        MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.5f),
-                        MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.2f)
-                    )
-                )
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(gradient)
-                        .border(
-                            width = 1.dp,
-                            color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.3f),
-                            shape = RoundedCornerShape(12.dp)
-                        )
-                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                Surface(
+                    shape = RoundedCornerShape(11.dp),
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.09f)
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(text = "🎁 ", fontSize = 14.sp)
+                    Row(
+                        modifier = Modifier.padding(horizontal = 11.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Text(
                             text = message.userName,
-                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                            color = MaterialTheme.colorScheme.onTertiaryContainer
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontSize = (chatTextSize - 0.5).coerceAtLeast(12.0).sp,
+                                fontWeight = FontWeight.SemiBold
+                            ),
+                            color = MaterialTheme.colorScheme.primary
                         )
                         Text(
                             text = " ${message.message}",
-                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontSize = (chatTextSize - 0.5).coerceAtLeast(12.0).sp
+                            ),
                             color = MaterialTheme.colorScheme.onSurface
                         )
                     }
@@ -1912,6 +2389,10 @@ fun SuperChatCard(
             fallback = parseSuperChatColor(item.backgroundColor, fallback = Color(0xFFE9A400))
         )
     }
+    val headerInk = if (topColor.luminance() > 0.55f) Color(0xFF1D1D1F) else Color.White
+    val headerMuted = headerInk.copy(alpha = 0.72f)
+    val bodyInk = if (bottomColor.luminance() > 0.55f) Color(0xFF1D1D1F) else Color.White
+
     var nowMillis by remember(item.endTime) { mutableLongStateOf(currentEpochMillis()) }
     LaunchedEffect(item.endTime, customCountdownSeconds) {
         if (customCountdownSeconds == null) {
@@ -1923,64 +2404,72 @@ fun SuperChatCard(
     }
     val countdown = customCountdownSeconds ?: remainingSuperChatSeconds(item, nowMillis)
 
-    Card(
+    Surface(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(8.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+        shape = RoundedCornerShape(14.dp),
+        color = Color.Transparent
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(topColor)
-                    .padding(8.dp),
+                    .padding(horizontal = 12.dp, vertical = 9.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 AsyncImage(
                     model = item.face,
                     contentDescription = item.userName,
                     modifier = Modifier
-                        .size(48.dp)
+                        .size(36.dp)
                         .clip(CircleShape),
                     contentScale = ContentScale.Crop
                 )
-                Spacer(modifier = Modifier.width(12.dp))
+                Spacer(modifier = Modifier.width(10.dp))
                 Column(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.Center
                 ) {
                     Text(
                         text = item.userName,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = Color(0xFF333333),
+                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                        color = headerInk,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        text = "￥${item.price}",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = Color.Gray,
+                        text = "¥${item.price}",
+                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Medium),
+                        color = headerMuted,
                         maxLines = 1
                     )
                 }
-                Text(
-                    text = "$countdown",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Color.Gray,
-                    maxLines = 1
-                )
+                Surface(
+                    shape = RoundedCornerShape(999.dp),
+                    color = headerInk.copy(alpha = 0.14f)
+                ) {
+                    Text(
+                        text = "${countdown}s",
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
+                        color = headerInk,
+                        maxLines = 1,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                    )
+                }
             }
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(bottomColor)
-                    .padding(8.dp)
-            ) {
-                Text(
-                    text = item.message,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Color.White
-                )
+            if (item.message.isNotBlank()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(bottomColor)
+                        .padding(horizontal = 12.dp, vertical = 10.dp)
+                ) {
+                    Text(
+                        text = item.message,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = bodyInk
+                    )
+                }
             }
         }
     }
@@ -1996,12 +2485,13 @@ fun SuperChatPanel(
 ) {
     val superChats by viewModel.superChats.collectAsStateWithLifecycle()
 
-    // Trigger cleanup of expired super chats every second
-    LaunchedEffect(Unit) {
-        while (true) {
-            viewModel.removeExpiredSuperChats()
-            kotlinx.coroutines.delay(1000L)
-        }
+    // Schedule cleanup at the next super chat expiration deadline instead of waking every second
+    LaunchedEffect(superChats) {
+        if (superChats.isEmpty()) return@LaunchedEffect
+        val waitMs = (superChats.minOf { it.endTime } - System.currentTimeMillis() + 50L)
+            .coerceAtLeast(50L)
+        kotlinx.coroutines.delay(waitMs)
+        viewModel.removeExpiredSuperChats()
     }
 
     val activeChats = remember(superChats) {
@@ -2031,9 +2521,9 @@ fun SuperChatPanel(
         LazyColumn(
             modifier = modifier
                 .fillMaxSize()
-                .padding(12.dp),
+                .padding(horizontal = 12.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
-            contentPadding = PaddingValues(bottom = 16.dp)
+            contentPadding = PaddingValues(top = 10.dp, bottom = 18.dp)
         ) {
             items(sortedChats, key = { it.id ?: "${it.userName}_${it.startTime}_${it.message.hashCode()}" }) { item ->
                 SuperChatCard(item = item)
@@ -2044,7 +2534,6 @@ fun SuperChatPanel(
 
 // ── Follow User Item ────────────────────────────────────────────
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FollowUserItem(
     item: FollowUserEntity,
@@ -2052,129 +2541,113 @@ fun FollowUserItem(
     onTap: () -> Unit,
     refreshHint: String? = null
 ) {
-    Card(
+    val siteName = when (item.siteId) {
+        "bilibili" -> "哔哩哔哩"
+        "douyu" -> "斗鱼"
+        "huya" -> "虎牙"
+        "douyin" -> "抖音"
+        else -> item.siteId
+    }
+    val subtitle = if (item.siteId != "douyin" && item.roomId.isNotBlank()) {
+        "$siteName · 房间 ${item.roomId}"
+    } else {
+        siteName
+    }
+    val isLive = item.liveStatus == 1
+
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 8.dp),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isPlaying) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f)
-            else MaterialTheme.colorScheme.surface
-        ),
-        border = BorderStroke(
-            width = 1.dp,
-            color = if (isPlaying) MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
-            else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
-        ),
+            .padding(horizontal = 12.dp),
+        shape = RoundedCornerShape(14.dp),
+        color = if (isPlaying) MaterialTheme.colorScheme.primary.copy(alpha = 0.11f)
+        else MaterialTheme.colorScheme.surfaceContainerLow,
         onClick = onTap
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp),
+                .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Avatar with live border if live
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .border(
-                        width = 1.5.dp,
-                        color = if (item.liveStatus == 1) Color.Red else Color.LightGray.copy(alpha = 0.5f),
-                        shape = CircleShape
-                    )
-                    .padding(2.dp)
-            ) {
+            Box(modifier = Modifier.size(40.dp)) {
                 AsyncImage(
                     model = item.face,
                     contentDescription = item.userName,
                     modifier = Modifier
                         .fillMaxSize()
-                        .clip(CircleShape),
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.surfaceVariant),
                     contentScale = ContentScale.Crop
                 )
+                if (isLive) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .size(11.dp)
+                            .background(MaterialTheme.colorScheme.surfaceContainerLow, CircleShape)
+                            .padding(1.5.dp)
+                            .background(Color(0xFF34C759), CircleShape)
+                    )
+                }
             }
 
-            Spacer(modifier = Modifier.width(12.dp))
+            Spacer(modifier = Modifier.width(11.dp))
 
             Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = item.userName,
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                refreshHint?.let {
                     Text(
-                        text = item.userName,
-                        style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
+                        text = it,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    // Site badge
-                    val siteColor = when (item.siteId) {
-                        "bilibili" -> Color(0xFFFB7299)
-                        "douyu" -> Color(0xFFFF5D23)
-                        "huya" -> Color(0xFFFF9F00)
-                        "douyin" -> Color(0xFF000000)
-                        else -> MaterialTheme.colorScheme.secondary
-                    }
-                    val siteName = when (item.siteId) {
-                        "bilibili" -> "B站"
-                        "douyu" -> "斗鱼"
-                        "huya" -> "虎牙"
-                        "douyin" -> "抖音"
-                        else -> item.siteId
-                    }
-                    Surface(
-                        shape = RoundedCornerShape(4.dp),
-                        color = siteColor.copy(alpha = 0.15f),
-                        border = BorderStroke(0.5.dp, siteColor.copy(alpha = 0.4f))
-                    ) {
-                        Text(
-                            text = siteName,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = siteColor,
-                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                        )
-                    }
-                }
-
-                if (item.siteId != "douyin") {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "房间号: ${item.roomId}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                refreshHint?.let {
-                    Text(it, style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
             }
 
-            // Live status indicator badge
-            val statusText = when (item.liveStatus) { 1 -> "直播中"; 2 -> "未开播"; else -> "待更新" }
-            val statusColor = if (item.liveStatus == 1) Color.Red else Color.Gray
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = statusColor.copy(alpha = 0.1f),
-                border = BorderStroke(0.5.dp, statusColor.copy(alpha = 0.3f))
-            ) {
-                Text(
-                    text = statusText,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = statusColor,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                )
+            Spacer(modifier = Modifier.width(8.dp))
+
+            val statusText = when {
+                isPlaying -> "当前观看"
+                isLive -> "直播中"
+                item.liveStatus == 2 -> "未开播"
+                else -> "待更新"
             }
+            val statusColor = when {
+                isPlaying -> MaterialTheme.colorScheme.primary
+                isLive -> Color(0xFF34C759)
+                else -> MaterialTheme.colorScheme.onSurfaceVariant
+            }
+            Text(
+                text = statusText,
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontWeight = if (isPlaying || isLive) FontWeight.SemiBold else FontWeight.Normal
+                ),
+                color = statusColor,
+                maxLines = 1
+            )
         }
     }
 }
 
 // ── Follow List Panel ────────────────────────────────────────────
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FollowListPanel(
     navigator: Navigator,
@@ -2197,42 +2670,72 @@ fun FollowListPanel(
         }
     }
 
-    Column(modifier = modifier.fillMaxSize().padding(8.dp)) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .padding(top = 8.dp)
+    ) {
         // Filter chips + refresh (manual only; do not auto-refresh on open).
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 4.dp),
+                .padding(horizontal = 12.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             val options = listOf("全部", "直播中", "未开播")
-            options.forEachIndexed { index, text ->
-                val selected = filterIndex == index
-                FilterChip(
-                    selected = selected,
-                    onClick = { filterIndex = index },
-                    label = { Text(text) },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                )
+            Surface(
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(9.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(3.dp),
+                    horizontalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    options.forEachIndexed { index, text ->
+                        val selected = filterIndex == index
+                        Surface(
+                            onClick = { filterIndex = index },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(29.dp),
+                            shape = RoundedCornerShape(7.dp),
+                            color = if (selected) MaterialTheme.colorScheme.surfaceContainerLow else Color.Transparent
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(
+                                    text = text,
+                                    style = MaterialTheme.typography.labelMedium.copy(
+                                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
+                                    ),
+                                    color = if (selected) MaterialTheme.colorScheme.onSurface
+                                    else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
             }
-            Spacer(modifier = Modifier.weight(1f))
             IconButton(
                 onClick = { viewModel.updateFollowStatus() },
-                enabled = !isRefreshing
+                enabled = !isRefreshing,
+                modifier = Modifier.size(36.dp)
             ) {
                 if (isRefreshing) {
                     CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
+                        modifier = Modifier.size(18.dp),
                         strokeWidth = 2.dp
                     )
                 } else {
                     Icon(
                         imageVector = Icons.Default.Refresh,
-                        contentDescription = "刷新关注状态"
+                        contentDescription = "刷新关注状态",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp)
                     )
                 }
             }
@@ -2258,7 +2761,7 @@ fun FollowListPanel(
                     .weight(1f)
                     .fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding = PaddingValues(bottom = 16.dp)
+                contentPadding = PaddingValues(top = 6.dp, bottom = 18.dp)
             ) {
                 items(
                     items = filteredFollows,
@@ -2361,19 +2864,8 @@ fun RoomSettingsPanel(
         }
     }
 
-    // Settings accent follows the live room's platform brand color (Douyu/Huya/Bilibili).
-    val settingsAccentColor = resolveLiveRoomPlatformAccentColor(
-        siteId = siteId,
-        defaultAccentColor = MaterialTheme.colorScheme.primary
-    )
-    val settingsOnAccentColor = livePlatformOnAccentColor(siteId, MaterialTheme.colorScheme.onPrimary)
+    val settingsDividerColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
 
-    MaterialTheme(
-        colorScheme = MaterialTheme.colorScheme.copy(
-            primary = settingsAccentColor,
-            onPrimary = settingsOnAccentColor
-        )
-    ) {
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
@@ -2405,7 +2897,7 @@ fun RoomSettingsPanel(
                     onCheckedChange = { viewModel.setDanmuEnable(it) }
                 )
 
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                HorizontalDivider(thickness = 0.5.dp, color = settingsDividerColor)
 
                 RoomSettingsSwitchRow(
                     title = "渲染表情",
@@ -2414,7 +2906,7 @@ fun RoomSettingsPanel(
                     onCheckedChange = { viewModel.setDanmuRenderEmoji(it) }
                 )
 
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                HorizontalDivider(thickness = 0.5.dp, color = settingsDividerColor)
 
                 RoomSettingsSliderRow(
                     title = "弹幕字号",
@@ -2425,7 +2917,7 @@ fun RoomSettingsPanel(
                     steps = DanmakuSettingsPolicy.sizeValues.size - 2
                 )
 
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                HorizontalDivider(thickness = 0.5.dp, color = settingsDividerColor)
 
                 RoomSettingsSliderRow(
                     title = "弹幕速度",
@@ -2436,7 +2928,7 @@ fun RoomSettingsPanel(
                     steps = DanmakuSettingsPolicy.speedValues.size - 2
                 )
 
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                HorizontalDivider(thickness = 0.5.dp, color = settingsDividerColor)
 
                 RoomSettingsSliderRow(
                     title = "显示区域",
@@ -2447,7 +2939,7 @@ fun RoomSettingsPanel(
                     steps = 14
                 )
 
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                HorizontalDivider(thickness = 0.5.dp, color = settingsDividerColor)
 
                 RoomSettingsSliderRow(
                     title = "显示几行",
@@ -2458,7 +2950,7 @@ fun RoomSettingsPanel(
                     steps = 11
                 )
 
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                HorizontalDivider(thickness = 0.5.dp, color = settingsDividerColor)
 
                 RoomSettingsSliderRow(
                     title = "弹幕透明度",
@@ -2469,7 +2961,7 @@ fun RoomSettingsPanel(
                     steps = DanmakuSettingsPolicy.opacityValues.size - 2
                 )
 
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                HorizontalDivider(thickness = 0.5.dp, color = settingsDividerColor)
 
                 RoomSettingsSliderRow(
                     title = "弹幕描边",
@@ -2480,7 +2972,7 @@ fun RoomSettingsPanel(
                     steps = DanmakuSettingsPolicy.strokeValues.size - 2
                 )
 
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                HorizontalDivider(thickness = 0.5.dp, color = settingsDividerColor)
 
                 RoomSettingsSliderRow(
                     title = "全局弹幕延迟",
@@ -2491,7 +2983,7 @@ fun RoomSettingsPanel(
                     steps = 49
                 )
 
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                HorizontalDivider(thickness = 0.5.dp, color = settingsDividerColor)
 
                 RoomSettingsSliderRow(
                     title = "${danmuDelaySiteLabel(siteId)} 平台补偿延迟",
@@ -2510,7 +3002,7 @@ fun RoomSettingsPanel(
                     steps = 49
                 )
 
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                HorizontalDivider(thickness = 0.5.dp, color = settingsDividerColor)
 
                 RoomSettingsSliderRow(
                     title = "顶部安全边距",
@@ -2521,7 +3013,7 @@ fun RoomSettingsPanel(
                     steps = 11
                 )
 
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                HorizontalDivider(thickness = 0.5.dp, color = settingsDividerColor)
 
                 RoomSettingsSliderRow(
                     title = "底部安全边距",
@@ -2557,7 +3049,7 @@ fun RoomSettingsPanel(
                     onCheckedChange = { viewModel.setAutoFullScreen(it) }
                 )
 
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                HorizontalDivider(thickness = 0.5.dp, color = settingsDividerColor)
 
                 RoomSettingsSwitchRow(
                     title = "退出时自动小窗",
@@ -2566,7 +3058,7 @@ fun RoomSettingsPanel(
                     onCheckedChange = { viewModel.setAutoPipOnExit(it) }
                 )
 
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                HorizontalDivider(thickness = 0.5.dp, color = settingsDividerColor)
 
                 RoomSettingsSwitchRow(
                     title = "进入小窗隐藏弹幕",
@@ -2600,8 +3092,8 @@ fun RoomSettingsPanel(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(text = "文字大小", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold))
-                        Text(text = "${chatTextSize.toInt()} sp", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                        Text(text = "文字大小", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium))
+                        Text(text = "${chatTextSize.toInt()} sp", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     RoomSettingsSlider(
                         value = chatTextSize.toFloat(),
@@ -2612,7 +3104,7 @@ fun RoomSettingsPanel(
                     )
                 }
 
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                HorizontalDivider(thickness = 0.5.dp, color = settingsDividerColor)
 
                 // Gap slider
                 Column {
@@ -2621,8 +3113,8 @@ fun RoomSettingsPanel(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(text = "上下间隔", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold))
-                        Text(text = "${chatTextGap.toInt()} dp", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                        Text(text = "上下间隔", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium))
+                        Text(text = "${chatTextGap.toInt()} dp", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     RoomSettingsSlider(
                         value = chatTextGap.toFloat(),
@@ -2633,7 +3125,7 @@ fun RoomSettingsPanel(
                     )
                 }
 
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                HorizontalDivider(thickness = 0.5.dp, color = settingsDividerColor)
 
                 // Bubble style switch
                 Row(
@@ -2642,7 +3134,7 @@ fun RoomSettingsPanel(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(text = "气泡样式", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold))
+                        Text(text = "气泡样式", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium))
                         Text(text = "使用类似社交聊天的气泡框渲染弹幕", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Switch(
@@ -2652,7 +3144,7 @@ fun RoomSettingsPanel(
                 }
 
                 if (isHuyaOrBilibili) {
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                    HorizontalDivider(thickness = 0.5.dp, color = settingsDividerColor)
 
                     // SC sort desc
                     Row(
@@ -2661,7 +3153,7 @@ fun RoomSettingsPanel(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text(text = "SC排序", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold))
+                            Text(text = "SC排序", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium))
                             Text(
                                 text = if (superChatSortDesc) "按消失时间倒序" else "按消失时间正序",
                                 style = MaterialTheme.typography.bodySmall,
@@ -2700,7 +3192,7 @@ fun RoomSettingsPanel(
                     onCheckedChange = { viewModel.setDanmuShieldEnable(it) }
                 )
 
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                HorizontalDivider(thickness = 0.5.dp, color = settingsDividerColor)
 
                 RoomSettingsSwitchRow(
                     title = "关键词屏蔽",
@@ -2709,7 +3201,7 @@ fun RoomSettingsPanel(
                     onCheckedChange = { viewModel.setDanmuKeywordShieldEnable(it) }
                 )
 
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                HorizontalDivider(thickness = 0.5.dp, color = settingsDividerColor)
 
                 RoomSettingsSwitchRow(
                     title = "用户屏蔽",
@@ -2718,7 +3210,7 @@ fun RoomSettingsPanel(
                     onCheckedChange = { viewModel.setDanmuUserShieldEnable(it) }
                 )
 
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                HorizontalDivider(thickness = 0.5.dp, color = settingsDividerColor)
 
                 Row(
                     modifier = Modifier
@@ -2728,7 +3220,7 @@ fun RoomSettingsPanel(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(text = "打开屏蔽管理", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold))
+                        Text(text = "打开屏蔽管理", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium))
                         Text(text = "添加、编辑关键词和屏蔽用户，管理屏蔽预设", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Icon(
@@ -2763,7 +3255,7 @@ fun RoomSettingsPanel(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(text = "重复弹幕过滤", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold))
+                        Text(text = "重复弹幕过滤", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium))
                         Text(text = "同一用户在最近若干条内重复刷同一句时只显示一次", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Switch(
@@ -2772,69 +3264,75 @@ fun RoomSettingsPanel(
                     )
                 }
 
-                if (danmuDedupeEnable) {
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                val filterMotionPolicy = LocalAppMotionPolicy.current
+                AnimatedVisibility(
+                    visible = danmuDedupeEnable,
+                    enter = expandCollapseEnter(filterMotionPolicy),
+                    exit = expandCollapseExit(filterMotionPolicy)
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        HorizontalDivider(thickness = 0.5.dp, color = settingsDividerColor)
 
-                    // Strict deduplication mode switch
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(text = "严格去重模式", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold))
-                            Text(text = "全局过滤不同观众发送的相同弹幕（不区分发送人）", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        Switch(
-                            checked = danmuDedupeStrictMode,
-                            onCheckedChange = { viewModel.setDanmuDedupeStrictMode(it) }
-                        )
-                    }
-
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-
-                    // Deduplicate window slider
-                    Column {
+                        // Strict deduplication mode switch
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(text = "过滤窗口", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold))
-                            Text(text = "${danmuDedupeWindow} 条", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(text = "严格去重模式", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium))
+                                Text(text = "全局过滤不同观众发送的相同弹幕（不区分发送人）", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Switch(
+                                checked = danmuDedupeStrictMode,
+                                onCheckedChange = { viewModel.setDanmuDedupeStrictMode(it) }
+                            )
                         }
-                        RoomSettingsSlider(
-                            value = danmuDedupeWindow.toFloat(),
-                            onValueChange = { viewModel.setDanmuDedupeWindow(it.toInt()) },
-                            valueRange = 1f..100f,
-                            steps = 98,
-                            modifier = Modifier.semantics { contentDescription = "过滤窗口" }
-                        )
-                    }
 
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                        HorizontalDivider(thickness = 0.5.dp, color = settingsDividerColor)
 
-                    Column {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(text = "过滤步长", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold))
-                            Text(text = "$danmuDedupeStep 条", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                        // Deduplicate window slider
+                        Column {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(text = "过滤窗口", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium))
+                                Text(text = "${danmuDedupeWindow} 条", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            RoomSettingsSlider(
+                                value = danmuDedupeWindow.toFloat(),
+                                onValueChange = { viewModel.setDanmuDedupeWindow(it.toInt()) },
+                                valueRange = 1f..100f,
+                                steps = 98,
+                                modifier = Modifier.semantics { contentDescription = "过滤窗口" }
+                            )
                         }
-                        RoomSettingsSlider(
-                            value = danmuDedupeStep.toFloat(),
-                            onValueChange = { viewModel.setDanmuDedupeStep(it.toInt()) },
-                            valueRange = 1f..20f,
-                            steps = 18,
-                            modifier = Modifier.semantics { contentDescription = "过滤步长" }
-                        )
+
+                        HorizontalDivider(thickness = 0.5.dp, color = settingsDividerColor)
+
+                        Column {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(text = "过滤步长", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium))
+                                Text(text = "$danmuDedupeStep 条", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            RoomSettingsSlider(
+                                value = danmuDedupeStep.toFloat(),
+                                onValueChange = { viewModel.setDanmuDedupeStep(it.toInt()) },
+                                valueRange = 1f..20f,
+                                steps = 18,
+                                modifier = Modifier.semantics { contentDescription = "过滤步长" }
+                            )
+                        }
                     }
                 }
             }
         }
-    }
     }
 }
 
@@ -2866,9 +3364,8 @@ private fun LazyListScope.RoomSettingsCollapsibleSection(
         Box(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background).padding(bottom = 12.dp)) {
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
-                color = MaterialTheme.colorScheme.surface,
+                shape = RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
                 shadowElevation = if (pinned) 2.dp else 0.dp
             ) {
                 Row(
@@ -2883,8 +3380,8 @@ private fun LazyListScope.RoomSettingsCollapsibleSection(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(Modifier.weight(1f)) {
-                        Text(title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary)
+                        Text(title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface)
                         Text(if (pinned) "当前分组 · 点击收起" else subtitle,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -2909,8 +3406,8 @@ private fun LazyListScope.RoomSettingsCollapsibleSection(
         ) {
             Column {
                 Surface(modifier = Modifier.fillMaxWidth().testTag("room_settings_content_${sectionKey.name}"),
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surface) {
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerLow) {
                     Column(content = content)
                 }
                 Spacer(Modifier.height(16.dp))
@@ -2937,7 +3434,7 @@ private fun RoomSettingsSwitchRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(text = title, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold))
+            Text(text = title, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium))
             Text(text = subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Switch(
@@ -2963,8 +3460,8 @@ private fun RoomSettingsSliderRow(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(text = title, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold))
-            Text(text = valueText, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+            Text(text = title, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium))
+            Text(text = valueText, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         RoomSettingsSlider(
             value = value,
@@ -3005,8 +3502,7 @@ internal fun RoomSettingsSlider(
     modifier: Modifier = Modifier
 ) {
     val activeColor = MaterialTheme.colorScheme.primary
-    val inactiveColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.88f)
-    val thumbRingColor = MaterialTheme.colorScheme.surface
+    val inactiveColor = MaterialTheme.colorScheme.surfaceVariant
     val valueStart = valueRange.start
     val valueEnd = valueRange.endInclusive
     val rangeSize = (valueEnd - valueStart).takeIf { it > 0f } ?: 1f
@@ -3044,7 +3540,7 @@ internal fun RoomSettingsSlider(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(48.dp)
+            .height(44.dp)
             .onSizeChanged { widthPx = it.width.toFloat().coerceAtLeast(1f) }
             .semantics {
                 progressBarRangeInfo = ProgressBarRangeInfo(coercedValue, valueRange, steps)
@@ -3083,10 +3579,10 @@ internal fun RoomSettingsSlider(
             val startX = horizontalInset.toPx()
             val endX = size.width - horizontalInset.toPx()
             val activeX = startX + (endX - startX) * fraction
-            val trackStroke = 6.dp.toPx()
-            val thumbRadius = 7.dp.toPx()
-            val thumbRingRadius = 10.dp.toPx()
-            val thumbHaloRadius = 15.dp.toPx()
+            val trackStroke = 4.dp.toPx()
+            val thumbShadowRadius = 11.5.dp.toPx()
+            val thumbBorderRadius = 10.5.dp.toPx()
+            val thumbRadius = 9.8.dp.toPx()
 
             drawLine(
                 color = inactiveColor,
@@ -3103,17 +3599,17 @@ internal fun RoomSettingsSlider(
                 cap = StrokeCap.Round
             )
             drawCircle(
-                color = activeColor.copy(alpha = 0.16f),
-                radius = thumbHaloRadius,
+                color = Color.Black.copy(alpha = 0.08f),
+                radius = thumbShadowRadius,
+                center = Offset(activeX, centerY + 1.dp.toPx())
+            )
+            drawCircle(
+                color = Color.Black.copy(alpha = 0.12f),
+                radius = thumbBorderRadius,
                 center = Offset(activeX, centerY)
             )
             drawCircle(
-                color = thumbRingColor,
-                radius = thumbRingRadius,
-                center = Offset(activeX, centerY)
-            )
-            drawCircle(
-                color = activeColor,
+                color = Color.White,
                 radius = thumbRadius,
                 center = Offset(activeX, centerY)
             )

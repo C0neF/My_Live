@@ -23,6 +23,7 @@ import com.mylive.app.core.site.LiveDanmakuSession
 import com.mylive.app.core.site.LiveSiteAccount
 import com.mylive.app.core.site.optNullableStringValue
 import com.mylive.app.core.site.optStringValue
+import kotlinx.coroutines.CancellationException
 import okhttp3.OkHttpClient
 import org.json.JSONObject
 import java.net.URI
@@ -41,32 +42,40 @@ class BiliBiliSite @Inject constructor(
     override val id: String = "bilibili"
     override val name: String = "哔哩哔哩直播"
 
-    /**
-     * Danmaku handshake per room, keyed by both the requested id and the resolved real id.
-     * Bounded: this site is a `@Singleton`, and the follow-refresh worker resolves every followed
-     * room on a timer, so an unbounded map would keep a copy of the account cookie for every room
-     * the process has ever seen.
-     */
-    private val danmakuArgsByRoom = BoundedLruCache<String, DanmakuArgs.BiliBili>(MAX_CACHED_ROOMS)
+    private data class CachedBiliDanmakuArgs(
+        val args: DanmakuArgs.BiliBili,
+        val fetchedAtMillis: Long
+    )
 
+    /**
+     * Danmaku handshake per room, keyed by the resolved real id.
+     * Bounded and short-lived (~45s TTL) so expired `getDanmuInfo` tokens are never reused.
+     */
+    private val danmakuArgsByRoom = BoundedLruCache<String, CachedBiliDanmakuArgs>(MAX_CACHED_ROOMS)
+    private val stateLock = Any()
+
+    @Volatile
     private var cookie: String = ""
         set(value) {
             val nextCookie = value.trim()
-            if (field != nextCookie) {
-                buvid3 = ""
-                buvid4 = ""
-                accessId = ""
-                danmakuArgsByRoom.clear()
+            synchronized(stateLock) {
+                if (field != nextCookie) {
+                    buvid3 = ""
+                    buvid4 = ""
+                    accessId = ""
+                    danmakuArgsByRoom.clear()
+                }
+                field = nextCookie
+                userId = parseBilibiliUserIdFromCookie(nextCookie)
             }
-            field = nextCookie
-            userId = parseBilibiliUserIdFromCookie(nextCookie)
         }
+    @Volatile
     var userId: Long = 0L
         private set
 
-    private var buvid3: String = ""
-    private var buvid4: String = ""
-    private var accessId: String = ""
+    @Volatile private var buvid3: String = ""
+    @Volatile private var buvid4: String = ""
+    @Volatile private var accessId: String = ""
     private val playInfoGate = BilibiliPlayInfoGate()
 
     override val accountKey: LiveSiteAccount = LiveSiteAccount.BILIBILI
@@ -81,8 +90,13 @@ class BiliBiliSite @Inject constructor(
     ): LiveDanmakuSession {
         val realRoomId = detail.roomId
         return LiveDanmakuSession(danmaku = BiliBiliDanmaku(WebSocketUtils(okHttpClient))) {
-            danmakuArgsByRoom[realRoomId]
-                ?: fetchDanmakuArgs(realRoomId).also { danmakuArgsByRoom[realRoomId] = it }
+            val now = System.currentTimeMillis()
+            val cached = danmakuArgsByRoom[realRoomId]
+                ?.takeIf { now - it.fetchedAtMillis in 0..DANMAKU_ARGS_TTL_MS }
+                ?.args
+            cached ?: fetchDanmakuArgs(realRoomId).also {
+                danmakuArgsByRoom[realRoomId] = CachedBiliDanmakuArgs(it, System.currentTimeMillis())
+            }
         }
     }
 
@@ -106,7 +120,8 @@ class BiliBiliSite @Inject constructor(
         val hostList = data.getJSONArray("host_list")
         val serverHosts = buildList {
             for (i in 0 until hostList.length()) {
-                add(hostList.getJSONObject(i).getString("host"))
+                val host = hostList.optJSONObject(i)?.optString("host", "")?.trim().orEmpty()
+                if (host.isNotEmpty()) add(host)
             }
         }
 
@@ -116,13 +131,18 @@ class BiliBiliSite @Inject constructor(
             token = data.optString("token", ""),
             serverHost = serverHosts.firstOrNull() ?: "broadcastlv.chat.bilibili.com",
             buvid = buvid3,
-            cookie = cookie
+            cookie = cookie,
+            backupHosts = serverHosts.drop(1)
         )
     }
 
     companion object {
         /** Upper bound on per-room handshake entries retained by this singleton. */
         private const val MAX_CACHED_ROOMS = 32
+        private const val DANMAKU_ARGS_TTL_MS = 45_000L
+        private val EM_TAG_REGEX = Regex("</?em[^>]*>")
+        private val BUVID3_COOKIE_REGEX = Regex("(?:^|;\\s*)buvid3=([^;]+)")
+        private val BUVID4_COOKIE_REGEX = Regex("(?:^|;\\s*)buvid4=([^;]+)")
 
         private const val kDefaultUserAgent =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 Edg/126.0.0.0"
@@ -143,20 +163,31 @@ class BiliBiliSite @Inject constructor(
 
     private suspend fun getHeader(): Map<String, String> {
         updateAccountCookie(accounts.cookieFor(accountKey))
-        if (buvid3.isEmpty()) {
+        var currentBuvid3 = buvid3
+        var currentBuvid4 = buvid4
+        if (currentBuvid3.isEmpty()) {
             val buvidInfo = getBuvid()
-            buvid3 = buvidInfo.optString("b_3", "")
-            buvid4 = buvidInfo.optString("b_4", "")
+            val fetchedB3 = buvidInfo.optString("b_3", "")
+            val fetchedB4 = buvidInfo.optString("b_4", "")
+            synchronized(stateLock) {
+                if (buvid3.isEmpty()) {
+                    buvid3 = fetchedB3
+                    buvid4 = fetchedB4
+                }
+                currentBuvid3 = buvid3
+                currentBuvid4 = buvid4
+            }
         }
-        return if (cookie.isEmpty()) {
+        val activeCookie = cookie
+        return if (activeCookie.isEmpty()) {
             mapOf(
                 "user-agent" to kDefaultUserAgent,
                 "referer" to kDefaultReferer,
-                "cookie" to "buvid3=$buvid3;buvid4=$buvid4;"
+                "cookie" to "buvid3=$currentBuvid3;buvid4=$currentBuvid4;"
             )
         } else {
             mapOf(
-                "cookie" to if (cookie.contains("buvid3")) cookie else "$cookie;buvid3=$buvid3;buvid4=$buvid4;",
+                "cookie" to if (activeCookie.contains("buvid3")) activeCookie else "$activeCookie;buvid3=$currentBuvid3;buvid4=$currentBuvid4;",
                 "user-agent" to kDefaultUserAgent,
                 "referer" to kDefaultReferer
             )
@@ -436,7 +467,7 @@ class BiliBiliSite @Inject constructor(
                 val item = liveRoomArray.getJSONObject(i)
                 var title = item.optString("title", "")
                 // Remove <em></em> tags from title
-                title = title.replace(Regex("</?em[^>]*>"), "")
+                title = title.replace(EM_TAG_REGEX, "")
                 val roomItem = LiveRoomItem(
                     roomId = item.optStringValue("roomid"),
                     title = title,
@@ -474,7 +505,7 @@ class BiliBiliSite @Inject constructor(
                 val item = resultArray.getJSONObject(i)
                 var uname = item.optString("uname", "")
                 // Remove <em></em> tags from uname
-                uname = uname.replace(Regex("</?em[^>]*>"), "")
+                uname = uname.replace(EM_TAG_REGEX, "")
                 val anchorItem = LiveAnchorItem(
                     roomId = item.optStringValue("roomid"),
                     avatar = "https:${item.optString("uface", "")}@400w.jpg",
@@ -543,12 +574,13 @@ class BiliBiliSite @Inject constructor(
      */
     private suspend fun getBuvid(): JSONObject {
         return try {
-            if (cookie.contains("buvid3")) {
-                val b3Match = Regex("buvid3=(.*?);").find(cookie)
-                val b4Match = Regex("buvid4=(.*?);").find(cookie)
+            val activeCookie = cookie
+            val b3Match = BUVID3_COOKIE_REGEX.find(activeCookie)
+            if (b3Match != null) {
+                val b4Match = BUVID4_COOKIE_REGEX.find(activeCookie)
                 return JSONObject().apply {
-                    put("b_3", b3Match?.groupValues?.get(1) ?: "")
-                    put("b_4", b4Match?.groupValues?.get(1) ?: "")
+                    put("b_3", b3Match.groupValues[1].trim())
+                    put("b_4", b4Match?.groupValues?.get(1)?.trim() ?: "")
                 }
             }
             val result = httpClient.getJson(
@@ -561,6 +593,8 @@ class BiliBiliSite @Inject constructor(
                 )
             ) as JSONObject
             result.getJSONObject("data")
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             CoreLog.e("getBuvid failed", e)
             JSONObject().apply {

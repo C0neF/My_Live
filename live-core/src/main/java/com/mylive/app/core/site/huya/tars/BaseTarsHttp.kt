@@ -55,15 +55,7 @@ class BaseTarsHttp(
         methodName: String,
         tReq: REQ,
         tRsp: RSP
-    ): RSP {
-        val (code, response) = tupRequestWithRspCode(methodName, tReq, tRsp)
-        if (code == 0) {
-            return response!!
-        } else {
-            CoreLog.e("tupDecode decode error:$code")
-            throw TupResultException(code)
-        }
-    }
+    ): RSP = unwrapTupResult(tupRequestWithRspCode(methodName, tReq, tRsp))
 
     /**
      * Send a TARS request and return both the result code and decoded response.
@@ -73,20 +65,7 @@ class BaseTarsHttp(
         tReq: REQ,
         tRsp: RSP
     ): TupResponse<RSP> {
-        val data = buildRequest(methodName, tReq)
-        val allHeaders = mutableMapOf(
-            "Content-Type" to "application/x-wup",
-            "Content-Length" to data.size.toString()
-        )
-        allHeaders.putAll(headers)
-
-        CoreLog.d("send tupRequest, methodName:$methodName")
-
-        val request = Request.Builder()
-            .url("$baseUrl$path".toHttpUrl())
-            .headers(allHeaders.toHeaders())
-            .post(data.toRequestBody(CONTENT_TYPE))
-            .build()
+        val request = createOkHttpRequest(methodName, tReq)
 
         val responseBody = requestClient.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
@@ -96,6 +75,85 @@ class BaseTarsHttp(
             }
 
         return tupResponseDecode(methodName, responseBody, tRsp)
+    }
+
+    /**
+     * Suspend variant of [tupRequest] using async OkHttp enqueue with coroutine cancellation.
+     */
+    suspend fun <REQ : TarsStruct, RSP : TarsStruct> tupRequestSuspend(
+        methodName: String,
+        tReq: REQ,
+        tRsp: RSP
+    ): RSP = unwrapTupResult(tupRequestWithRspCodeSuspend(methodName, tReq, tRsp))
+
+    /**
+     * Suspend variant of [tupRequestWithRspCode] that cancels the underlying call on cancellation.
+     */
+    suspend fun <REQ : TarsStruct, RSP : TarsStruct> tupRequestWithRspCodeSuspend(
+        methodName: String,
+        tReq: REQ,
+        tRsp: RSP
+    ): TupResponse<RSP> {
+        val request = createOkHttpRequest(methodName, tReq)
+        val responseBody = kotlinx.coroutines.suspendCancellableCoroutine<ByteArray> { continuation ->
+            val call = requestClient.newCall(request)
+            continuation.invokeOnCancellation {
+                call.cancel()
+            }
+            call.enqueue(object : okhttp3.Callback {
+                override fun onFailure(call: okhttp3.Call, e: IOException) {
+                    if (continuation.isActive) {
+                        continuation.resumeWith(Result.failure(e))
+                    }
+                }
+
+                override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
+                    try {
+                        val bytes = response.use { res ->
+                            if (!res.isSuccessful) {
+                                throw IOException("HTTP ${res.code}: ${res.message}")
+                            }
+                            res.body?.bytes() ?: throw IOException("Empty response body")
+                        }
+                        if (continuation.isActive) {
+                            continuation.resumeWith(Result.success(bytes))
+                        }
+                    } catch (e: Throwable) {
+                        if (continuation.isActive) {
+                            continuation.resumeWith(Result.failure(e))
+                        }
+                    }
+                }
+            })
+        }
+        return tupResponseDecode(methodName, responseBody, tRsp)
+    }
+
+    private fun <RSP : TarsStruct> unwrapTupResult(result: TupResponse<RSP>): RSP {
+        val (code, response) = result
+        if (code == 0) {
+            return response!!
+        } else {
+            CoreLog.e("tupDecode decode error:$code")
+            throw TupResultException(code)
+        }
+    }
+
+    private fun <REQ : TarsStruct> createOkHttpRequest(methodName: String, tReq: REQ): Request {
+        val data = buildRequest(methodName, tReq)
+        val allHeaders = mutableMapOf(
+            "Content-Type" to "application/x-wup",
+            "Content-Length" to data.size.toString()
+        )
+        allHeaders.putAll(headers)
+
+        CoreLog.d("send tupRequest, methodName:$methodName")
+
+        return Request.Builder()
+            .url("$baseUrl$path".toHttpUrl())
+            .headers(allHeaders.toHeaders())
+            .post(data.toRequestBody(CONTENT_TYPE))
+            .build()
     }
 
     /**

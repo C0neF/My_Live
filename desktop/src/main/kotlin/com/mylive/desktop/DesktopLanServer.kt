@@ -7,6 +7,7 @@ import com.sun.net.httpserver.HttpServer
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.*
@@ -65,10 +66,20 @@ class DesktopLanServer(private val library: DesktopLibrary) : AutoCloseable {
             val path = request.requestURI.rawPath
             val method = request.requestMethod
             if (method == "GET" && path == LanSyncProtocol.INFO_PATH) {
+                val snap = state.value
                 val paired = runCatching { authenticate(request, path, false, ""); true }.getOrDefault(false)
-                val info = JSONObject(LanSyncProtocol.encodePeerInfo(paired, state.value.port, deviceId,
-                    "Windows", DESKTOP_VERSION, state.value.address, supportsFollowBundle = true))
-                if (paired) info.put("type", "windows")
+                val info = JSONObject(
+                    LanSyncProtocol.encodePeerInfo(
+                        paired = paired,
+                        port = snap.port,
+                        deviceId = deviceId,
+                        name = "Windows",
+                        appVersion = DESKTOP_VERSION,
+                        address = snap.address,
+                        supportsFollowBundle = true,
+                        platform = "windows"
+                    )
+                )
                 respond(200, info); return@use
             }
             val type = LanSyncImportType.fromPath(path)
@@ -84,7 +95,7 @@ class DesktopLanServer(private val library: DesktopLibrary) : AutoCloseable {
             val text = LanSyncCrypto.decrypt(token, body, context)
             require(text.toByteArray().size <= MAX_IMPORTED_JSON_BYTES)
             runBlocking { library.importSyncPayload(type, text, overlay) }
-            _state.value = state.value.copy(received = state.value.received + 1)
+            _state.update { current -> if (current.running) current.copy(received = current.received + 1) else current }
             message(200, true, "import complete")
         } catch (failure: LanSyncAuthException) { message(401, false, failure.message.orEmpty()) }
         catch (_: LanSyncCryptoException) { message(400, false, "encrypted payload required") }

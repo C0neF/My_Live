@@ -30,9 +30,9 @@ class HuyaDanmaku(
 ) : LiveDanmaku {
 
     override var heartbeatTime: Int = 60 * 1000
-    override var onMessage: ((LiveMessage) -> Unit)? = null
-    override var onClose: ((String) -> Unit)? = null
-    override var onReady: (() -> Unit)? = null
+    @Volatile override var onMessage: ((LiveMessage) -> Unit)? = null
+    @Volatile override var onClose: ((String) -> Unit)? = null
+    @Volatile override var onReady: (() -> Unit)? = null
 
     private val serverUrl = "wss://cdnws.api.huya.com"
 
@@ -114,6 +114,7 @@ class HuyaDanmaku(
     override suspend fun stop() {
         onMessage = null
         onClose = null
+        onReady = null
         webSocketUtils.close()
     }
 

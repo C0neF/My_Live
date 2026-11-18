@@ -154,9 +154,10 @@ class HttpClient @Inject constructor(
         val requestBody = when {
             formUrlEncoded && data is Map<*, *> -> {
                 val formBuilder = FormBody.Builder()
-                @Suppress("UNCHECKED_CAST")
-                (data as? Map<String, String>)?.forEach { (key, value) ->
-                    formBuilder.add(key, value)
+                data.forEach { (key, value) ->
+                    if (key != null && value != null) {
+                        formBuilder.add(key.toString(), value.toString())
+                    }
                 }
                 formBuilder.build()
             }
@@ -169,9 +170,10 @@ class HttpClient @Inject constructor(
             data is Map<*, *> -> {
                 val json = try {
                     JSONObject().also { obj ->
-                        @Suppress("UNCHECKED_CAST")
-                        (data as? Map<String, Any?>)?.forEach { (key, value) ->
-                            obj.put(key, value)
+                        data.forEach { (key, value) ->
+                            if (key != null) {
+                                obj.put(key.toString(), value)
+                            }
                         }
                     }
                 } catch (e: org.json.JSONException) {

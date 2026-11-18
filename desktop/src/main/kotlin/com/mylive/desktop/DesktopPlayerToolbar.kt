@@ -1,12 +1,15 @@
 package com.mylive.desktop
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
@@ -16,6 +19,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
@@ -53,15 +58,43 @@ internal fun DesktopPlayerToolbar(state: DesktopPlayerToolbarState, actions: Des
     val latestHold by rememberUpdatedState(onMenuHold)
     LaunchedEffect(qualityMenu, moreMenu, state.showInfo) { latestHold(qualityMenu || moreMenu || state.showInfo) }
     DisposableEffect(Unit) { onDispose { latestHold(false) } }
-    BoxWithConstraints(modifier.testTag("player-toolbar").background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .92f))))) {
+    BoxWithConstraints(modifier.testTag("player-toolbar").background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .74f))))) {
         val wide = maxWidth >= 960.dp && !state.mini
+        var cachedDiagnostics by remember { mutableStateOf(diagnostics.orEmpty()) }
+        if (diagnostics != null) cachedDiagnostics = diagnostics
         Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp)) {
-            if (state.showInfo && diagnostics != null) Text(diagnostics, color = Color.White, fontSize = 12.sp, modifier = Modifier.padding(8.dp))
+            AnimatedVisibility(
+                visible = state.showInfo && diagnostics != null,
+                enter = desktopPopoverEnter(),
+                exit = desktopPopoverExit()
+            ) {
+                Surface(
+                    modifier = Modifier.padding(bottom = 8.dp).testTag("player-diagnostics"),
+                    shape = RoundedCornerShape(10.dp),
+                    color = Color(0xCC141418),
+                    border = BorderStroke(DesktopHairlineWidth, Color.White.copy(alpha = .14f))
+                ) {
+                    Text(
+                        cachedDiagnostics,
+                        color = Color.White.copy(alpha = .92f),
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                    )
+                }
+            }
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 DesktopIconButton(if (state.playing) Icons.Default.Pause else Icons.Default.PlayArrow, if (state.playing) "暂停" else "播放", onClick = actions.playPause)
                 DesktopIconButton(if (state.muted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
                     if (state.muted) "取消静音 M" else "静音 M", selected = state.muted, onClick = actions.mute)
-                if (wide) Slider(dragVolume, ::changeVolume, valueRange = 0f..100f, onValueChangeFinished = { actions.saveVolume(dragVolume) }, modifier = Modifier.width(96.dp).padding(horizontal = 6.dp))
+                if (wide) {
+                    DesktopVolumeSlider(
+                        value = dragVolume,
+                        onValueChange = ::changeVolume,
+                        onValueChangeFinished = { actions.saveVolume(dragVolume) },
+                        onDarkScrim = true,
+                        modifier = Modifier.width(96.dp).padding(horizontal = 6.dp)
+                    )
+                }
                 Spacer(Modifier.weight(1f))
                 if (!state.mini && state.qualities.isNotEmpty()) Box {
                     PlayerToolbarChipButton(onClick = { qualityMenu = true }, modifier = Modifier.widthIn(max = if (wide) 160.dp else 116.dp)) {
@@ -86,16 +119,25 @@ internal fun DesktopPlayerToolbar(state: DesktopPlayerToolbarState, actions: Des
                     DesktopIconButton(Icons.Default.MoreHoriz, "更多播放选项") { moreMenu = true }
                     DropdownMenu(moreMenu, { moreMenu = false }, Modifier.width(250.dp).heightIn(max = 430.dp)) {
                         Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                            Text("音量 ${dragVolume.toInt()}%", style = MaterialTheme.typography.labelMedium)
-                            Slider(dragVolume, ::changeVolume, valueRange = 0f..100f, onValueChangeFinished = { actions.saveVolume(dragVolume) })
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                Text("音量", style = MaterialTheme.typography.labelMedium)
+                                Text("${dragVolume.toInt()}%", style = MaterialTheme.typography.labelMedium, color = UiMuted)
+                            }
+                            DesktopVolumeSlider(
+                                value = dragVolume,
+                                onValueChange = ::changeVolume,
+                                onValueChangeFinished = { actions.saveVolume(dragVolume) },
+                                onDarkScrim = false,
+                                modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                            )
                         }
-                        HorizontalDivider()
+                        HorizontalDivider(thickness = DesktopHairlineWidth, color = UiHairline)
                         if (state.mini && state.qualities.isNotEmpty()) {
-                            Text("清晰度", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 4.dp))
+                            Text("清晰度", style = MaterialTheme.typography.labelSmall, color = UiMuted, modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 4.dp))
                             state.qualities.forEach { quality -> DropdownMenuItem(text = { Text(quality.quality) },
                                 leadingIcon = { if (quality.quality == state.quality?.quality) Icon(Icons.Default.Check, null, Modifier.size(17.dp)) },
                                 onClick = { moreMenu = false; actions.quality(quality) }) }
-                            HorizontalDivider()
+                            HorizontalDivider(thickness = DesktopHairlineWidth, color = UiHairline)
                         }
                         if (state.lineCount > 1) DropdownMenuItem(text = { Text("切换线路 · ${state.line + 1}/${state.lineCount}") },
                             leadingIcon = { Icon(Icons.Default.SwapHoriz, null) }, onClick = { moreMenu = false; actions.nextLine() })
@@ -118,7 +160,55 @@ internal fun DesktopPlayerToolbar(state: DesktopPlayerToolbarState, actions: Des
     }
 }
 
-private val PlayerChipShape = RoundedCornerShape(9.dp)
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DesktopVolumeSlider(
+    value: Float,
+    onValueChange: (Float) -> Unit,
+    onValueChangeFinished: () -> Unit,
+    onDarkScrim: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val activeColor = if (onDarkScrim) Color.White else UiAccent
+    val inactiveColor = if (onDarkScrim) Color.White.copy(alpha = .26f) else UiInk.copy(alpha = .16f)
+    Slider(
+        value = value,
+        onValueChange = onValueChange,
+        valueRange = 0f..100f,
+        onValueChangeFinished = onValueChangeFinished,
+        modifier = modifier.height(26.dp),
+        thumb = {
+            Box(
+                Modifier
+                    .size(13.dp)
+                    .shadow(3.dp, CircleShape, spotColor = Color.Black.copy(alpha = .35f))
+                    .clip(CircleShape)
+                    .background(Color.White)
+                    .border(DesktopHairlineWidth, Color.Black.copy(alpha = .12f), CircleShape)
+            )
+        },
+        track = { sliderState ->
+            val fraction = ((sliderState.value - 0f) / 100f).coerceIn(0f, 1f)
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(4.dp)
+                    .clip(CircleShape)
+                    .background(inactiveColor)
+            ) {
+                Box(
+                    Modifier
+                        .fillMaxWidth(fraction)
+                        .fillMaxHeight()
+                        .clip(CircleShape)
+                        .background(activeColor)
+                )
+            }
+        }
+    )
+}
+
+private val PlayerChipShape = RoundedCornerShape(999.dp)
 
 @Composable
 private fun PlayerToolbarChipButton(
@@ -132,17 +222,17 @@ private fun PlayerToolbarChipButton(
     CompositionLocalProvider(LocalContentColor provides Color.White) {
         Row(
             modifier = modifier
-                .height(34.dp)
+                .height(32.dp)
                 .desktopInteractiveSurface(
                     shape = PlayerChipShape,
                     hoveredState = hoveredState,
                     pressedState = pressedState,
-                    baseColor = Color.White.copy(alpha = .10f),
-                    hoverColor = Color.White.copy(alpha = .16f),
-                    pressColor = Color.White.copy(alpha = .22f),
-                    baseBorderColor = Color.White.copy(alpha = .20f),
-                    hoverBorderColor = Color.White.copy(alpha = .32f),
-                    pressBorderColor = Color.White.copy(alpha = .40f)
+                    baseColor = Color.White.copy(alpha = .16f),
+                    hoverColor = Color.White.copy(alpha = .24f),
+                    pressColor = Color.White.copy(alpha = .30f),
+                    baseBorderColor = Color.Transparent,
+                    hoverBorderColor = Color.Transparent,
+                    pressBorderColor = Color.Transparent
                 )
                 .clickable(
                     interactionSource = interaction,
@@ -150,7 +240,7 @@ private fun PlayerToolbarChipButton(
                     role = Role.Button,
                     onClick = onClick
                 )
-                .padding(horizontal = 11.dp),
+                .padding(horizontal = 12.dp),
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically,
             content = content

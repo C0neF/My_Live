@@ -2,6 +2,7 @@ package com.mylive.app.core.site.douyin
 
 import com.mylive.app.core.common.CoreLog
 import com.mylive.app.core.script.JsExecutor
+import kotlinx.coroutines.CancellationException
 import java.security.MessageDigest
 import java.security.SecureRandom
 
@@ -46,6 +47,8 @@ class DouyinSign(private val jsEngine: JsExecutor) {
             }
             val aBogus = jsEngine.execute(ABOGUS_SCRIPT, "getABogus", query, userAgent)
             "$url&msToken=${java.net.URLEncoder.encode(msToken, "UTF-8")}&a_bogus=${java.net.URLEncoder.encode(aBogus, "UTF-8")}"
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Throwable) {
             CoreLog.e("[DouyinSign] getAbogusUrl failed", e)
             url
@@ -74,6 +77,8 @@ class DouyinSign(private val jsEngine: JsExecutor) {
                 maxAttempts = 11,
                 isValid = { sig -> !sig.contains('-') && !sig.contains('=') }
             )
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Throwable) {
             CoreLog.e("[DouyinSign] getSignature failed", e)
             ""

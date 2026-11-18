@@ -104,4 +104,61 @@ class DesktopRemoteSyncTest {
         assertThrows(IllegalArgumentException::class.java) { validateDesktopRemoteUrl("wss://user:secret@example.com") }
         validateDesktopRemoteUrl("wss://example.com")
     }
+
+    @Test fun desktopPromptsBeforeSavingReceivedAccountCookie() = runBlocking {
+        MockWebServer().use { server ->
+            val socket = AtomicReference<WebSocket>()
+            server.enqueue(MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
+                override fun onOpen(ws: WebSocket, response: Response) { socket.set(ws) }
+                override fun onMessage(ws: WebSocket, text: String) {
+                    val request = JSONObject(text)
+                    ws.send(
+                        JSONObject()
+                            .put("requestId", request.optString("requestId"))
+                            .put("roomId", "ACC123")
+                            .put("status", true)
+                            .toString()
+                    )
+                }
+                override fun onClosing(ws: WebSocket, code: Int, reason: String) { ws.close(code, reason) }
+            }))
+            val dir = temporary.root.toPath().resolve("acc-sync")
+            val library = DesktopLibrary(dir.resolve("profile.json"))
+            library.load()
+            val accounts = DesktopAccounts(dir.resolve("credentials"), object : DesktopCredentialProtector {
+                override fun protect(bytes: ByteArray) = bytes.copyOf()
+                override fun unprotect(bytes: ByteArray) = bytes.copyOf()
+            })
+            val service = RemoteSyncService()
+            DesktopRemoteSync(library, service, accounts).use { controller ->
+                val endpoint = server.url("/").newBuilder().host("127.0.0.1").build().toString().replace("http://", "ws://")
+                controller.connect(endpoint, null)
+                withTimeout(10_000) { while (controller.state.value.roomId.isEmpty()) delay(20) }
+
+                val sealedAccount = RemoteSyncCrypto.encryptPayload(
+                    roomId = "ACC123",
+                    roomKey = service.currentRoomKey,
+                    channel = "biliAccountReceived",
+                    overlay = true,
+                    content = """{"cookie":"SESSDATA=synced-token"}"""
+                )
+                socket.get().send(
+                    JSONObject()
+                        .put("type", "biliAccountReceived")
+                        .put("payload", sealedAccount)
+                        .toString()
+                )
+                withTimeout(10_000) { while (controller.state.value.pendingPrompt == null) delay(20) }
+                // Must NOT overwrite until user explicitly confirms.
+                assertEquals("", accounts.cookieFor(com.mylive.app.core.site.LiveSiteAccount.BILIBILI))
+
+                controller.confirmPending()
+                withTimeout(10_000) {
+                    while (accounts.cookieFor(com.mylive.app.core.site.LiveSiteAccount.BILIBILI).isEmpty()) delay(20)
+                }
+                assertEquals("SESSDATA=synced-token", accounts.cookieFor(com.mylive.app.core.site.LiveSiteAccount.BILIBILI))
+                assertNull(controller.state.value.pendingPrompt)
+            }
+        }
+    }
 }

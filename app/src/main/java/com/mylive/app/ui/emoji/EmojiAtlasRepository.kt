@@ -16,6 +16,14 @@ object EmojiAtlasRepository {
     private var douyinAtlas: AtlasState? = null
     private val bitmapCache = LinkedHashMap<String, Bitmap>(128, 0.75f, true)
 
+    fun getCachedBitmap(url: String): Bitmap? {
+        val ref = EmojiAtlasRef.parse(url) ?: return null
+        if (ref.atlasId != EmojiAtlasRef.DOUYIN_ATLAS_ID) return null
+        synchronized(lock) {
+            return bitmapCache[url]?.takeUnless { it.isRecycled }
+        }
+    }
+
     fun getBitmap(context: Context, url: String): Bitmap? {
         val ref = EmojiAtlasRef.parse(url) ?: return null
         if (ref.atlasId != EmojiAtlasRef.DOUYIN_ATLAS_ID) return null
@@ -64,6 +72,13 @@ object EmojiAtlasRepository {
             }
         }
         return AtlasState(bitmap = bitmap, items = items)
+    }
+
+    fun trimMemory() {
+        synchronized(lock) {
+            bitmapCache.clear()
+            douyinAtlas = null
+        }
     }
 
     private fun trimBitmapCache() {

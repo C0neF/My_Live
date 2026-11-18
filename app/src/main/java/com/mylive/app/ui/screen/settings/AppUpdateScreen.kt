@@ -2,6 +2,7 @@ package com.mylive.app.ui.screen.settings
 
 import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -10,10 +11,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -22,6 +23,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -31,6 +33,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -43,6 +46,10 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mylive.app.BuildConfig
 import com.mylive.app.R
+import com.mylive.app.ui.component.settings.SettingsInsetCard
+import com.mylive.app.ui.component.settings.SettingsSectionHeader
+import com.mylive.app.ui.layout.AdaptivePageFrame
+import com.mylive.app.ui.layout.LocalAppLayout
 import com.mylive.app.ui.navigation.Navigator
 import com.mylive.app.ui.theme.Icons
 import com.mylive.app.update.AppUpdateInfo
@@ -54,7 +61,8 @@ import java.util.Locale
 @Composable
 fun AppUpdateScreen(
     navigator: Navigator,
-    viewModel: AppUpdateViewModel = hiltViewModel()
+    viewModel: AppUpdateViewModel = hiltViewModel(),
+    embedded: Boolean = false
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -127,94 +135,108 @@ fun AppUpdateScreen(
     }
 
     Scaffold(
+        containerColor = if (embedded) Color.Transparent else MaterialTheme.colorScheme.background,
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.settings_update)) },
-                navigationIcon = {
-                    IconButton(onClick = handleBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(R.string.cd_back)
-                        )
+            if (!embedded) {
+                TopAppBar(
+                    title = { Text(stringResource(R.string.settings_update)) },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.background
+                    ),
+                    navigationIcon = {
+                        IconButton(onClick = handleBack) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = stringResource(R.string.cd_back)
+                            )
+                        }
                     }
-                }
-            )
-        }
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .background(MaterialTheme.colorScheme.background)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 12.dp)
-        ) {
-            Text(
-                text = "当前版本",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Text(
-                text = "My Live v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
-                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(
-                text = "更新通道：$updateChannelName",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            Spacer(modifier = Modifier.height(16.dp))
-
-            val updateInfo = uiState.updateInfo
-            when {
-                uiState.checking -> {
-                    Text(
-                        text = "正在检查 GitHub $updateChannelName...",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                }
-                updateInfo != null -> {
-                    UpdateAvailableContent(
-                        updateInfo = updateInfo,
-                        downloading = uiState.downloading,
-                        progress = uiState.downloadProgress,
-                        onDownloadClick = viewModel::downloadUpdate
-                    )
-                }
-                else -> {
-                    Text(
-                        text = uiState.message
-                            ?: "点击按钮检查 GitHub 是否有新的 $updateChannelName。",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            if (uiState.error != null) {
-                Spacer(modifier = Modifier.height(12.dp))
-                Text(
-                    text = uiState.error.orEmpty(),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.error
                 )
             }
+        }
+    ) { padding ->
+        AdaptivePageFrame(Modifier.padding(padding), LocalAppLayout.current.settingsMaxWidthDp) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(if (embedded) Color.Transparent else MaterialTheme.colorScheme.background)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(18.dp)
+            ) {
+                Column {
+                    SettingsSectionHeader("当前版本")
+                    SettingsInsetCard(embedded = embedded) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text(
+                                text = "My Live v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = "更新通道：$updateChannelName",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
 
-            Spacer(modifier = Modifier.height(20.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                OutlinedButton(
-                    onClick = viewModel::checkForUpdate,
-                    enabled = !uiState.checking && !uiState.downloading
-                ) {
-                    Text("重新检查")
+                Column {
+                    SettingsSectionHeader("版本更新")
+                    SettingsInsetCard(embedded = embedded) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            val updateInfo = uiState.updateInfo
+                            when {
+                                uiState.checking -> {
+                                    Text(
+                                        text = "正在检查 GitHub $updateChannelName...",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                                }
+                                updateInfo != null -> {
+                                    UpdateAvailableContent(
+                                        updateInfo = updateInfo,
+                                        downloading = uiState.downloading,
+                                        progress = uiState.downloadProgress,
+                                        onDownloadClick = viewModel::downloadUpdate
+                                    )
+                                }
+                                else -> {
+                                    Text(
+                                        text = uiState.message
+                                            ?: "点击按钮检查 GitHub 是否有新的 $updateChannelName。",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+
+                            if (uiState.error != null) {
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Text(
+                                    text = uiState.error.orEmpty(),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                OutlinedButton(
+                                    onClick = viewModel::checkForUpdate,
+                                    enabled = !uiState.checking && !uiState.downloading,
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Text("重新检查")
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -230,7 +252,7 @@ private fun UpdateAvailableContent(
 ) {
     Text(
         text = "发现新版本 v${updateInfo.versionName}",
-        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
         color = MaterialTheme.colorScheme.onSurface
     )
     Spacer(modifier = Modifier.height(6.dp))
@@ -268,7 +290,10 @@ private fun UpdateAvailableContent(
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     } else {
-        Button(onClick = onDownloadClick) {
+        Button(
+            onClick = onDownloadClick,
+            shape = RoundedCornerShape(12.dp)
+        ) {
             Text("下载并安装")
         }
     }

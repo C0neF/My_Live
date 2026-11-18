@@ -28,4 +28,10 @@ class HistoryViewModel @Inject constructor(
             historyRepository.removeHistory(id)
         }
     }
+
+    fun clearAllHistory() {
+        viewModelScope.launch {
+            historyRepository.clearAllHistory()
+        }
+    }
 }

@@ -113,6 +113,17 @@ class WebSocketUtils(
     private var callbackHeartBeat: (() -> Unit)? = null
     @Volatile
     private var lastMessageAtMillis: Long = 0L
+    @Volatile
+    private var sessionGeneration: Long = 0L
+    private val connectionLock = Any()
+
+    private fun sanitizeCloseCode(code: Int): Int {
+        return if (code in 1000..1003 || code in 1007..1014 || code in 3000..4999) {
+            code
+        } else {
+            1000
+        }
+    }
 
     /**
      * Build the ordered list of URLs to try: primary + backup(s), deduplicated.
@@ -159,28 +170,33 @@ class WebSocketUtils(
         onReady: (() -> Unit)? = null,
         onHeartBeat: (() -> Unit)? = null
     ) {
-        // Cache parameters for reconnect
-        this.connectUrl = url
-        this.connectBackupUrl = backupUrl
-        this.connectBackupUrls = backupUrls
-        this.connectHeartBeatTime = heartBeatTime
-        this.connectIdleTimeoutMillis = idleTimeoutMillis
-        this.connectSocketClient = buildWebSocketClient(
-            baseClient = client,
-            disableCompression = disableCompression,
-            connectTimeoutMillis = connectTimeoutMillis
-        )
-        this.connectHeaders = headers
-        this.callbackMessage = onMessage
-        this.callbackClose = onClose
-        this.callbackReconnect = onReconnect
-        this.callbackReady = onReady
-        this.callbackHeartBeat = onHeartBeat
-        this.intentionalClose = false
-        this.currentUrlIndex = 0
-        this.reconnectTime = 0
+        synchronized(connectionLock) {
+            sessionGeneration++
+            reconnectTimer?.cancel()
+            reconnectTimer = null
+            // Cache parameters for reconnect
+            this.connectUrl = url
+            this.connectBackupUrl = backupUrl
+            this.connectBackupUrls = backupUrls
+            this.connectHeartBeatTime = heartBeatTime
+            this.connectIdleTimeoutMillis = idleTimeoutMillis
+            this.connectSocketClient = buildWebSocketClient(
+                baseClient = client,
+                disableCompression = disableCompression,
+                connectTimeoutMillis = connectTimeoutMillis
+            )
+            this.connectHeaders = headers
+            this.callbackMessage = onMessage
+            this.callbackClose = onClose
+            this.callbackReconnect = onReconnect
+            this.callbackReady = onReady
+            this.callbackHeartBeat = onHeartBeat
+            this.intentionalClose = false
+            this.currentUrlIndex = 0
+            this.reconnectTime = 0
 
-        doConnect(retry = false)
+            doConnect(retry = false)
+        }
     }
 
     /**
@@ -236,8 +252,8 @@ class WebSocketUtils(
                     heartBeatTimer = null
                     status = SocketStatus.CLOSED
                     // OkHttp waits for our Close frame before delivering onClosed. A peer
-                    // may send an empty Close (reported as 1005), which cannot be echoed.
-                    webSocket.close(if (code == 1005) 1000 else code, reason)
+                    // may send an empty or reserved Close code (e.g. 1005/1006), which cannot be echoed.
+                    runCatching { webSocket.close(sanitizeCloseCode(code), reason.take(40)) }
                 }
 
                 override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
@@ -256,15 +272,18 @@ class WebSocketUtils(
      * Called when the WebSocket connection is established.
      */
     private fun onReady() {
-        status = SocketStatus.CONNECTED
-        currentUrlIndex = 0
-        lastMessageAtMillis = System.currentTimeMillis()
-        // Cancel reconnect timer on successful connection to prevent repeated reconnect attempts
-        reconnectTimer?.cancel()
-        reconnectTimer = null
-        reconnectTime = 0
+        synchronized(connectionLock) {
+            if (intentionalClose) return
+            status = SocketStatus.CONNECTED
+            currentUrlIndex = 0
+            lastMessageAtMillis = System.currentTimeMillis()
+            // Cancel reconnect timer on successful connection to prevent repeated reconnect attempts
+            reconnectTimer?.cancel()
+            reconnectTimer = null
+            reconnectTime = 0
+            initHeartBeat()
+        }
         callbackReady?.invoke()
-        initHeartBeat()
     }
 
     /**
@@ -272,23 +291,28 @@ class WebSocketUtils(
      */
     private fun initHeartBeat() {
         heartBeatTimer?.cancel()
+        val generation = sessionGeneration
         heartBeatTimer = Timer("ws-heartbeat", true).apply {
             schedule(object : TimerTask() {
                 override fun run() {
-                    if (status == SocketStatus.CONNECTED) {
-                        val idleFor = System.currentTimeMillis() - lastMessageAtMillis
-                        if (
-                            shouldReconnectOnIdleTimeout(
-                                intentionalClose = intentionalClose,
-                                idleTimeoutMillis = connectIdleTimeoutMillis,
-                                idleForMillis = idleFor
-                            )
-                        ) {
-                            onIdleTimeout()
-                            return
+                    try {
+                        if (generation != sessionGeneration || intentionalClose) return
+                        if (status == SocketStatus.CONNECTED) {
+                            val idleFor = System.currentTimeMillis() - lastMessageAtMillis
+                            if (
+                                shouldReconnectOnIdleTimeout(
+                                    intentionalClose = intentionalClose,
+                                    idleTimeoutMillis = connectIdleTimeoutMillis,
+                                    idleForMillis = idleFor
+                                )
+                            ) {
+                                onIdleTimeout()
+                                return
+                            }
                         }
+                        callbackHeartBeat?.invoke()
+                    } catch (_: Throwable) {
                     }
-                    callbackHeartBeat?.invoke()
                 }
             }, connectHeartBeatTime, connectHeartBeatTime)
         }
@@ -346,7 +370,6 @@ class WebSocketUtils(
             WebSocketFailureAction.GIVE_UP -> {
                 if (!intentionalClose) {
                     status = SocketStatus.FAILED
-                    callbackClose?.invoke(t.toString())
                     reconnect()
                 }
             }
@@ -389,17 +412,21 @@ class WebSocketUtils(
      * This is a user-initiated close; no reconnect will be attempted.
      */
     fun close() {
-        // Cancel timers BEFORE setting status to prevent race conditions
-        // where a timer callback fires between status change and timer cancellation
-        heartBeatTimer?.cancel()
-        heartBeatTimer = null
-        reconnectTimer?.cancel()
-        reconnectTimer = null
-        reconnectTime = 0
-        intentionalClose = true
-        status = SocketStatus.CLOSED
-        val previousSocket = webSocket
-        webSocket = null
+        val previousSocket: WebSocket?
+        synchronized(connectionLock) {
+            sessionGeneration++
+            // Cancel timers BEFORE setting status to prevent race conditions
+            // where a timer callback fires between status change and timer cancellation
+            heartBeatTimer?.cancel()
+            heartBeatTimer = null
+            reconnectTimer?.cancel()
+            reconnectTimer = null
+            reconnectTime = 0
+            intentionalClose = true
+            status = SocketStatus.CLOSED
+            previousSocket = webSocket
+            webSocket = null
+        }
         previousSocket?.close(1000, "Client closed")
     }
 
@@ -431,12 +458,16 @@ class WebSocketUtils(
 
         reconnectTime = nextReconnectAttemptCount(reconnectTime)
         reconnectTimer?.cancel()
+        val generation = sessionGeneration
         reconnectTimer = Timer("ws-reconnect", true).apply {
             schedule(object : TimerTask() {
                 override fun run() {
-                    if (!shouldRunScheduledReconnect(intentionalClose)) return
-                    callbackReconnect?.invoke()
-                    doConnect(retry = true)
+                    try {
+                        if (generation != sessionGeneration || !shouldRunScheduledReconnect(intentionalClose)) return
+                        callbackReconnect?.invoke()
+                        doConnect(retry = false)
+                    } catch (_: Throwable) {
+                    }
                 }
             }, 5_000L)
         }

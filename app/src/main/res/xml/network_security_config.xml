@@ -36,7 +36,13 @@
         <!-- Douyu -->
         <domain includeSubdomains="false">www.douyu.com</domain>
         <domain includeSubdomains="false">m.douyu.com</domain>
+        <domain includeSubdomains="true">passport.douyu.com</domain>
         <!-- Huya TARS (HuyaSite uses https://wup.huya.com) -->
         <domain includeSubdomains="false">wup.huya.com</domain>
+        <!-- GitHub Releases / App Updates -->
+        <domain includeSubdomains="true">github.com</domain>
+        <domain includeSubdomains="true">api.github.com</domain>
+        <domain includeSubdomains="true">objects.githubusercontent.com</domain>
+        <domain includeSubdomains="true">release-assets.githubusercontent.com</domain>
     </domain-config>
 </network-security-config>

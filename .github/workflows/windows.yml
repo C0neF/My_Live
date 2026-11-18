@@ -17,7 +17,7 @@ on:
       - 'NOTICE'
       - '.github/workflows/windows.yml'
   push:
-    branches: [main, 'codex/**']
+    branches: [main, V3, 'codex/**']
     paths:
       - 'desktop/**'
       - 'live-core/**'

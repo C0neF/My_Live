@@ -14,6 +14,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -21,6 +24,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -41,6 +45,7 @@ import com.mylive.app.core.site.douyu.inspectDouyuCookie
 import com.mylive.app.core.site.douyu.mergeDouyuCookies
 import com.mylive.app.core.site.douyu.douyuCookiePairs
 import com.mylive.app.ui.navigation.Navigator
+import com.mylive.app.ui.theme.Icons
 
 internal val douyuLoginCookieUrls = listOf(
     "https://www.douyu.com", "https://douyu.com", "https://passport.douyu.com"
@@ -104,24 +109,45 @@ fun DouyuWebLoginScreen(navigator: Navigator, viewModel: AccountViewModel = hilt
         }
     }
 
-    Scaffold(topBar = {
-        TopAppBar(
-            title = {
-                Text(stringResource(R.string.account_web_login_title, stringResource(R.string.account_douyu_section)))
-            },
-            navigationIcon = { TextButton(onClick = handleBack) { Text("返回") } },
-            actions = {
-                TextButton(onClick = { webView?.reload() }, enabled = !saving) { Text("刷新") }
-                TextButton(onClick = { save(true) }, enabled = !saving) { Text(if (saving) "保存中…" else "保存") }
-            }
-        )
-    }) { padding ->
+    Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
+        topBar = {
+            TopAppBar(
+                title = {
+                    Text(stringResource(R.string.account_web_login_title, stringResource(R.string.account_douyu_section)))
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background
+                ),
+                navigationIcon = {
+                    IconButton(onClick = handleBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(R.string.cd_back)
+                        )
+                    }
+                },
+                actions = {
+                    TextButton(onClick = { webView?.reload() }, enabled = !saving) { Text("刷新") }
+                    TextButton(onClick = { save(true) }, enabled = !saving) { Text(if (saving) "保存中…" else "保存") }
+                }
+            )
+        }
+    ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).testTag("douyu_web_login")) {
-            Surface(color = MaterialTheme.colorScheme.surfaceVariant) {
-                Text(
-                    "在斗鱼官方页面扫码或验证码登录，完成后保存到本机。保存后直接返回即可。",
-                    Modifier.fillMaxWidth().padding(12.dp), style = MaterialTheme.typography.bodySmall
-                )
+            Surface(color = MaterialTheme.colorScheme.surfaceContainerLow) {
+                Column {
+                    Text(
+                        "在斗鱼官方页面扫码或验证码登录，完成后保存到本机。保存后直接返回即可。",
+                        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    HorizontalDivider(
+                        thickness = 0.5.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f)
+                    )
+                }
             }
             if (progress < 1f) LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
             AndroidView(

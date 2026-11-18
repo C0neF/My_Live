@@ -87,9 +87,7 @@ fun main(args: Array<String>) {
                 Item("显示窗口", onClick = { windowVisible = true })
                 Item("暂停 / 继续播放", enabled = hasRoom, onClick = {
                     visibilityPolicy.manuallyChanged()
-                    windowSession?.playback?.let { playback ->
-                        if (playback.player.state.value.playWhenReady) playback.pause() else playback.resume()
-                    }
+                    windowSession?.playback?.togglePlayPause()
                 })
                 Separator()
                 Item("退出", onClick = { closing = true })

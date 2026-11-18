@@ -1,20 +1,26 @@
 package com.mylive.app.ui.component
 
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -34,13 +40,28 @@ fun LiveRoomCard(
     modifier: Modifier = Modifier,
     siteName: String? = null
 ) {
-    // Content-forward: the cover IS the card. No container, border or fill tint —
-    // the thumbnail does the work, the info block sits on the bare background.
+    val isTablet = LocalAppLayout.current.tablet
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.975f else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioNoBouncy,
+            stiffness = Spring.StiffnessMediumLow
+        ),
+        label = "roomCardPressScale"
+    )
+    val coverShape = RoundedCornerShape(if (isTablet) 14.dp else 12.dp)
+
     Column(
         modifier = modifier
             .fillMaxWidth()
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
             .clickable(
-                interactionSource = remember { MutableInteractionSource() },
+                interactionSource = interactionSource,
                 indication = null,
                 onClick = onClick
             )
@@ -48,9 +69,9 @@ fun LiveRoomCard(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .aspectRatio(1.777f)
-                .clip(RoundedCornerShape(12.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+                .aspectRatio(16f / 9f)
+                .clip(coverShape)
+                .background(MaterialTheme.colorScheme.surfaceVariant)
         ) {
             if (coverUrl != null) {
                 AsyncImage(
@@ -61,98 +82,90 @@ fun LiveRoomCard(
                 )
             }
 
-            // Bottom scrim keeps the viewer count legible on bright covers.
+            // Gentle bottom vignette only where the viewer count sits.
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .fillMaxHeight(0.45f)
+                    .fillMaxHeight(0.42f)
                     .align(Alignment.BottomCenter)
                     .background(
                         Brush.verticalGradient(
-                            colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.6f))
+                            colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.52f))
                         )
                     )
             )
 
-            // Platform badge: solid, no gradient. Only shown when a site is provided.
             if (!siteName.isNullOrEmpty()) {
-                Text(
-                    text = siteName,
-                    color = MaterialTheme.colorScheme.onPrimary,
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 0.3.sp
-                    ),
-                    fontSize = if (LocalAppLayout.current.tablet) 11.sp else 9.sp,
+                Box(
                     modifier = Modifier
                         .padding(8.dp)
                         .align(Alignment.TopStart)
                         .background(
-                            MaterialTheme.colorScheme.primary,
+                            Color.Black.copy(alpha = 0.46f),
                             shape = RoundedCornerShape(6.dp)
                         )
-                        .padding(horizontal = 6.dp, vertical = 3.dp)
-                )
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        text = siteName,
+                        color = Color.White.copy(alpha = 0.95f),
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
+                        fontSize = if (isTablet) 10.5.sp else 9.5.sp
+                    )
+                }
             }
 
-            Row(
+            Text(
+                text = formatOnline(online),
+                color = Color.White.copy(alpha = 0.94f),
+                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
+                fontSize = if (isTablet) 11.sp else 10.sp,
                 modifier = Modifier
-                    .padding(8.dp)
                     .align(Alignment.BottomEnd)
-                    .background(Color.Black.copy(alpha = 0.55f), shape = RoundedCornerShape(8.dp))
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(6.dp)
-                        .background(Color(0xFFFF4D4F), shape = CircleShape)
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    text = "${formatOnline(online)} 人气",
-                    color = Color.White,
-                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
-                    fontSize = if (LocalAppLayout.current.tablet) 12.sp else 10.sp
-                )
-            }
+                    .padding(horizontal = 8.dp, vertical = 6.dp)
+            )
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(if (isTablet) 9.dp else 7.dp))
 
-        // Title leads: reserve two lines so every card's streamer row aligns,
-        // regardless of whether the title wraps to one line or two.
         Text(
             text = title,
             style = MaterialTheme.typography.bodyMedium.copy(
-                fontWeight = FontWeight.SemiBold,
-                lineHeight = if (LocalAppLayout.current.tablet) 23.sp else 19.sp
+                fontWeight = FontWeight.Medium,
+                lineHeight = if (isTablet) 21.sp else 18.5.sp
             ),
-            fontSize = if (LocalAppLayout.current.tablet) 16.sp else 15.sp,
+            fontSize = if (isTablet) 15.sp else 14.sp,
             minLines = 2,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
             color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.padding(horizontal = 2.dp)
+            modifier = Modifier.padding(horizontal = 1.dp)
         )
 
         Spacer(modifier = Modifier.height(5.dp))
 
-        // Streamer identity: small avatar (no decorative ring) + muted name.
         Row(
-            modifier = Modifier.padding(horizontal = 2.dp),
+            modifier = Modifier.padding(horizontal = 1.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            NetImage(
-                url = faceUrl,
-                contentDescription = userName,
-                size = 20.dp,
-                isCircle = true
-            )
+            Box(
+                modifier = Modifier
+                    .size(if (isTablet) 20.dp else 18.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                NetImage(
+                    url = faceUrl,
+                    contentDescription = userName,
+                    size = if (isTablet) 20.dp else 18.dp,
+                    isCircle = true
+                )
+            }
             Spacer(modifier = Modifier.width(6.dp))
             Text(
                 text = userName,
-                style = MaterialTheme.typography.labelSmall,
+                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Normal),
+                fontSize = if (isTablet) 12.sp else 11.5.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis

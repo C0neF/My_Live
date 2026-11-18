@@ -1,6 +1,7 @@
 package com.mylive.app.service
 
 import com.mylive.app.core.common.CoreLog
+import com.mylive.app.core.common.LanSyncReplayGuard
 import com.mylive.app.core.common.RemoteSyncCrypto
 import com.mylive.app.core.common.RemoteSyncCryptoException
 import com.mylive.app.core.common.RemoteSyncInvite
@@ -68,6 +69,7 @@ class RemoteSyncService {
     @Volatile private var webSocket: WebSocket? = null
 
     private val pendingRequests = ConcurrentHashMap<String, CompletableDeferred<JSONObject>>()
+    private val replayGuard = LanSyncReplayGuard(ttlMillis = RemoteSyncCrypto.MAX_CLOCK_SKEW_MS * 2)
     private val requestIdCounter = AtomicLong(0)
     private val connectionIdCounter = AtomicLong(0)
     @Volatile private var activeConnectionId: Long = 0
@@ -75,10 +77,10 @@ class RemoteSyncService {
     @Volatile var debugBuild: Boolean = false
     @Volatile var debugSyncServerUrls: List<String> = DEFAULT_DEBUG_SYNC_SERVER_URLS
 
-    var currentRoomId: String = ""
+    @Volatile var currentRoomId: String = ""
         private set
 
-    var currentRoomKey: String = ""
+    @Volatile var currentRoomKey: String = ""
         private set
 
     val currentInviteCode: String
@@ -95,7 +97,7 @@ class RemoteSyncService {
             ""
         }
 
-    var selfConnectionId: String? = null
+    @Volatile var selfConnectionId: String? = null
         private set
 
     // Callbacks/Listeners for incoming data sync events
@@ -128,7 +130,7 @@ class RemoteSyncService {
         disconnect()
     }
 
-    private var pingThread: Thread? = null
+    @Volatile private var pingThread: Thread? = null
     private val ipv4FirstDns = object : Dns {
         override fun lookup(hostname: String): List<InetAddress> {
             val addresses = Dns.SYSTEM.lookup(hostname)
@@ -254,6 +256,7 @@ class RemoteSyncService {
         currentRoomId = ""
         currentRoomKey = ""
         selfConnectionId = null
+        replayGuard.clear()
         RemoteSyncCrypto.clearCachedKeys()
         cleanupCurrentConnection(setDisconnected = true)
     }
@@ -266,6 +269,7 @@ class RemoteSyncService {
         currentRoomId = ""
         currentRoomKey = ""
         selfConnectionId = null
+        replayGuard.clear()
         return connectionId
     }
 
@@ -364,6 +368,7 @@ class RemoteSyncService {
         webSocket?.close(1000, "Disconnect")
         webSocket = null
         client?.dispatcher?.executorService?.shutdown()
+        client?.connectionPool?.evictAll()
         client = null
         if (setDisconnected) {
             _connectionState.value = RemoteSyncConnectionState.DISCONNECTED
@@ -383,7 +388,7 @@ class RemoteSyncService {
 
     private fun startHeartbeat(connectionId: Long) {
         stopHeartbeat()
-        pingThread = Thread {
+        pingThread = Thread({
             try {
                 while (
                     !Thread.currentThread().isInterrupted &&
@@ -405,7 +410,10 @@ class RemoteSyncService {
             } catch (e: Exception) {
                 CoreLog.e("RemoteSyncService: Heartbeat error", e)
             }
-        }.apply { start() }
+        }, "remote-sync-ping-$connectionId").apply {
+            isDaemon = true
+            start()
+        }
     }
 
     private fun stopHeartbeat() {
@@ -484,7 +492,8 @@ class RemoteSyncService {
                 roomKey = roomKey,
                 channel = eventType,
                 wirePayload = json.optJSONObject("payload"),
-                maxContentBytes = K_MAX_SYNC_CONTENT_BYTES
+                maxContentBytes = K_MAX_SYNC_CONTENT_BYTES,
+                replayGuard = replayGuard
             )
             callback?.invoke(decrypted.overlay, decrypted.content)
         } catch (e: RemoteSyncCryptoException) {
@@ -630,11 +639,10 @@ class RemoteSyncService {
             if (e is CancellationException) throw e
             return RemoteSyncResp(false, e.message ?: "加入房间连接失败", null)
         }
+        currentRoomId = cleanRoomId
+        currentRoomKey = cleanRoomKey
         val resp = sendRequest("joinRoom", payload = clientInfo)
-        if (resp.isSuccess) {
-            currentRoomId = cleanRoomId
-            currentRoomKey = cleanRoomKey
-        } else {
+        if (!resp.isSuccess) {
             disconnect()
         }
         return resp
@@ -863,7 +871,7 @@ data class RemoteSyncResp(
 ) {
     // Overloaded property to directly get string data when appropriate
     val dataString: String?
-        get() = data as? String ?: data?.toString()
+        get() = data?.toString()
 }
 
 private object RemoteSyncLog {

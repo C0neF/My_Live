@@ -17,7 +17,13 @@ import com.mylive.app.core.site.huya.tars.model.GetGameEventMessageBoardReq
 import com.mylive.app.core.site.huya.tars.model.GetGameEventMessageBoardRsp
 import com.mylive.app.core.site.huya.tars.model.HuyaUserId
 import com.mylive.app.core.site.optStringValue
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import org.json.JSONObject
@@ -101,13 +107,21 @@ class HuyaSite @Inject constructor(
         requestedRoomId: String,
         detail: LiveRoomDetail
     ): LiveDanmakuSession {
-        val args = danmakuArgsCache.get(requestedRoomId)
-            ?: danmakuArgsCache.get(detail.roomId)
-            ?: error("Missing Huya danmaku handshake for room ${detail.roomId}")
-        return LiveDanmakuSession(
-            danmaku = HuyaDanmaku(WebSocketUtils(okHttpClient)),
-            args = args
-        )
+        val danmaku = HuyaDanmaku(WebSocketUtils(okHttpClient))
+        val cached = danmakuArgsCache.get(requestedRoomId) ?: danmakuArgsCache.get(detail.roomId)
+        if (cached != null) {
+            return LiveDanmakuSession(danmaku = danmaku, args = cached)
+        }
+        return LiveDanmakuSession(danmaku = danmaku) {
+            danmakuArgsCache.get(detail.roomId)
+                ?: danmakuArgsCache.get(requestedRoomId)
+                ?: run {
+                    val refreshed = getRoomDetail(detail.roomId.ifBlank { requestedRoomId })
+                    danmakuArgsCache.get(refreshed.roomId)
+                        ?: danmakuArgsCache.get(detail.roomId)
+                        ?: error("Missing Huya danmaku handshake for room ${detail.roomId}")
+                }
+        }
     }
 
     // ── Categories ─────────────────────────────────────────────────────────
@@ -119,9 +133,13 @@ class HuyaSite @Inject constructor(
             LiveCategory(id = "8", name = "娱乐"),
             LiveCategory(id = "3", name = "手游")
         )
-        templates.map { cat ->
-            val subs = getSubCategories(cat.id)
-            cat.copy(children = subs)
+        coroutineScope {
+            templates.map { cat ->
+                async {
+                    val subs = getSubCategories(cat.id)
+                    cat.copy(children = subs)
+                }
+            }.awaitAll()
         }
     }
 
@@ -323,13 +341,17 @@ class HuyaSite @Inject constructor(
                 roomPlayDataCache[roomId] = playData
             }
 
-            // Cache danmaku args for the danmaku connection
+            // Cache danmaku args for the danmaku connection under both canonical and requested IDs
             val ayyuid = asPositiveLong(tLiveInfo.opt("lYyid"))
-            danmakuArgsCache[roomId] = DanmakuArgs.Huya(
+            val danmakuArgs = DanmakuArgs.Huya(
                 ayyuid = ayyuid,
                 topSid = topSid,
                 subSid = subSid
             )
+            danmakuArgsCache[canonicalRoomId] = danmakuArgs
+            if (roomId != canonicalRoomId) {
+                danmakuArgsCache[roomId] = danmakuArgs
+            }
 
             LiveRoomDetail(
                 cover = tLiveInfo.optString("sScreenshot", ""),
@@ -501,14 +523,22 @@ class HuyaSite @Inject constructor(
             ?: return@withContext LivePlayUrl(urls = emptyList(), headers = REQUEST_HEADERS)
 
         val bitRate = playData.bitRates.getOrNull(huyaQuality.bitRateIndex)?.bitRate ?: 0
-        val urls = mutableListOf<String>()
-        for (line in playData.lines) {
-            try {
-                val url = resolvePlayUrl(line, bitRate)
-                urls.add(url)
-            } catch (e: Exception) {
-                CoreLog.e("Failed to get play URL for line ${line.cdnType}: $e")
-            }
+        val semaphore = Semaphore(4)
+        val urls = coroutineScope {
+            playData.lines.map { line ->
+                async {
+                    semaphore.withPermit {
+                        try {
+                            resolvePlayUrl(line, bitRate)
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            CoreLog.e("Failed to get play URL for line ${line.cdnType}: $e")
+                            null
+                        }
+                    }
+                }
+            }.awaitAll().filterNotNull()
         }
         LivePlayUrl(
             urls = urls,
@@ -566,18 +596,23 @@ class HuyaSite @Inject constructor(
 
         val convertUid = rotl64(presenterUid)
         val calcUid = if (isWap) presenterUid else convertUid
+        val rawFm = mapAnti["fm"]?.firstOrNull()?.takeIf { it.isNotEmpty() } ?: return antiCode
+        val wsTime = mapAnti["wsTime"]?.firstOrNull()?.takeIf { it.isNotEmpty() } ?: return antiCode
+        val fs = mapAnti["fs"]?.firstOrNull()?.takeIf { it.isNotEmpty() } ?: return antiCode
+        val wsTimeLong = wsTime.toLongOrNull(16) ?: return antiCode
         // `fm` is base64 that is percent-encoded TWICE in sFlvToken. parseQueryString
         // already peeled the first (form) layer; decodeComponent peels the second
         // (component) layer so Base64 sees valid characters. Matches Dart:
         //   Uri.decodeComponent(queryParametersAll['fm'].first)
-        val fm = decodeComponent(mapAnti["fm"]!!.first())
-        val secretPrefix = String(Base64.getDecoder().decode(fm)).split("_").first()
-        val wsTime = mapAnti["wsTime"]!!.first()
+        val fm = decodeComponent(rawFm)
+        val secretPrefix = runCatching {
+            String(Base64.getDecoder().decode(fm)).split("_").first()
+        }.getOrElse { return antiCode }
         val secretStr = "${secretPrefix}_${calcUid}_${stream}_${secretHash}_$wsTime"
         val wsSecret = md5(secretStr)
 
         val rnd = Random.nextDouble()
-        val ct = ((wsTime.toLong(16) + rnd) * 1000).toLong()
+        val ct = ((wsTimeLong + rnd) * 1000).toLong()
         val uuid = (((ct % 10_000_000_000L) + rnd) * 1000 % 0xFFFFFFFF).toInt().toString()
 
         val antiCodeRes = mutableMapOf<String, Any>(
@@ -586,8 +621,8 @@ class HuyaSite @Inject constructor(
             "seqid" to seqId.toString(),
             "ctype" to ctype,
             "ver" to "1",
-            "fs" to mapAnti["fs"]!!.first(),
-            "fm" to encodeComponent(mapAnti["fm"]!!.first()),
+            "fs" to fs,
+            "fm" to encodeComponent(rawFm),
             "t" to platformId
         )
         if (isWap) {
@@ -615,7 +650,7 @@ class HuyaSite @Inject constructor(
                 this.tId = tid
                 sStreamName = stream
             }
-            val resp = tupClient.tupRequest("getCdnTokenInfoEx", tReq, GetCdnTokenExResp())
+            val resp = tupClient.tupRequestSuspend("getCdnTokenInfoEx", tReq, GetCdnTokenExResp())
             resp.sFlvToken
         }
 
@@ -672,6 +707,8 @@ class HuyaSite @Inject constructor(
                 val subSid = asPositiveLong(roomInfo.opt("subSid"))
                 if (topSid > 0L) pidCandidates.add(topSid)
                 if (subSid > 0L) pidCandidates.add(subSid)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 CoreLog.e("Huya headline room info fetch failed: $e")
             }
@@ -689,6 +726,8 @@ class HuyaSite @Inject constructor(
                 if (messages.isNotEmpty()) {
                     return@withContext messages
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 CoreLog.e("Huya headline fetch failed for pid=$pid: $e")
             }
@@ -700,7 +739,7 @@ class HuyaSite @Inject constructor(
     /**
      * Fetch headline (super-chat) messages via TARS RPC.
      */
-    private fun fetchHeadlineMessages(pid: Long): List<LiveSuperChatMessage> {
+    private suspend fun fetchHeadlineMessages(pid: Long): List<LiveSuperChatMessage> {
         val userId = HuyaUserId().apply { sHuYaUA = HYSDK_UA }
         val req = GetGameEventMessageBoardReq().apply {
             lPid = pid
@@ -708,7 +747,7 @@ class HuyaSite @Inject constructor(
             iMessageBoardScope = 0
             iPageSize = 10
         }
-        val rsp = messageBoardClient.tupRequest(
+        val rsp = messageBoardClient.tupRequestSuspend(
             "getHeadLineMessageBoard",
             req,
             GetGameEventMessageBoardRsp()

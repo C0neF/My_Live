@@ -35,9 +35,9 @@ class DouyinDanmaku(
 
     override var heartbeatTime: Int = 10_000
 
-    override var onMessage: ((LiveMessage) -> Unit)? = null
-    override var onClose: ((String) -> Unit)? = null
-    override var onReady: (() -> Unit)? = null
+    @Volatile override var onMessage: ((LiveMessage) -> Unit)? = null
+    @Volatile override var onClose: ((String) -> Unit)? = null
+    @Volatile override var onReady: (() -> Unit)? = null
 
     private lateinit var danmakuArgs: DanmakuArgs.Douyin
     private val douyinSign = DouyinSign(jsEngine)
@@ -186,9 +186,24 @@ class DouyinDanmaku(
 
             val pushFrame = DouyinProto.decodePushFrame(bytes)
             val logId = pushFrame.logId
+            val payload = pushFrame.payload
+            if (
+                payload.isEmpty() ||
+                pushFrame.payloadType.equals("hb", ignoreCase = true) ||
+                pushFrame.payloadType.equals("close", ignoreCase = true)
+            ) {
+                return
+            }
 
-            // Decompress the payload (gzip)
-            val decompressed = DouyinProto.gzipDecompress(pushFrame.payload)
+            // Decompress the payload when gzip-compressed; otherwise decode raw protobuf bytes
+            val hasGzipMagic = payload.size >= 2 &&
+                payload[0] == 0x1f.toByte() &&
+                payload[1] == 0x8b.toByte()
+            val decompressed = if (hasGzipMagic) {
+                DouyinProto.gzipDecompress(payload)
+            } else {
+                payload
+            }
             val response = DouyinProto.decodeResponse(decompressed)
 
             // Send ACK if needed

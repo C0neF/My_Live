@@ -29,6 +29,8 @@ import androidx.compose.ui.unit.dp
 import com.mylive.app.R
 import com.mylive.app.core.model.AppLayoutMode
 import com.mylive.app.core.model.TabletOrientationMode
+import androidx.compose.foundation.shape.RoundedCornerShape
+import com.mylive.app.ui.component.settings.SettingsHairlineDivider
 import com.mylive.app.ui.component.settings.SettingsMenu
 
 @Composable
@@ -38,7 +40,8 @@ internal fun LayoutModeSettings(
     tabletActive: Boolean,
     onModeChange: (AppLayoutMode) -> Unit,
     onOrientationChange: (TabletOrientationMode) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    showBottomDivider: Boolean = true
 ) {
     var showLayoutDialog by remember { mutableStateOf(false) }
     var showOrientationDialog by remember(tabletActive) { mutableStateOf(false) }
@@ -51,15 +54,17 @@ internal fun LayoutModeSettings(
             onClick = { showLayoutDialog = true },
             modifier = Modifier.testTag("layout_mode_picker")
         )
-        HorizontalDivider()
         if (tabletActive) {
+            SettingsHairlineDivider()
             SettingsMenu(
                 title = stringResource(R.string.tablet_rotation_title),
                 value = orientationLabel(orientation),
                 onClick = { showOrientationDialog = true },
                 modifier = Modifier.testTag("tablet_rotation_picker")
             )
-            HorizontalDivider()
+        }
+        if (showBottomDivider) {
+            SettingsHairlineDivider()
         }
     }
 

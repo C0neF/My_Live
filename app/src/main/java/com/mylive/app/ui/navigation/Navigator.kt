@@ -73,7 +73,11 @@ class Navigator @Inject constructor() {
         inclusive: Boolean = false
     ) {
         if (route is Route.Index) {
-            val removed = mutableListOf<NavKey>()
+            if (!singleTop && popUpToRoute == null && mutableBackStack.lastOrNull() == route) {
+            return
+        }
+
+        val removed = mutableListOf<NavKey>()
             while (mutableBackStack.size > 1) {
                 removed.add(removeTop())
             }
@@ -83,6 +87,10 @@ class Navigator @Inject constructor() {
                 mutableBackStack.add(Route.Index)
             }
             dispatchExitedRoutes(removed)
+            return
+        }
+
+        if (!singleTop && popUpToRoute == null && mutableBackStack.lastOrNull() == route) {
             return
         }
 
@@ -165,9 +173,9 @@ class Navigator @Inject constructor() {
      * page underneath it.
      */
     @Composable
-    fun rememberRouteActions(): RouteNavigationActions {
-        val source = remember(this) {
-            checkNotNull(backStack.lastOrNull()) { "A route action requires a non-empty back stack" }
+    fun rememberRouteActions(route: NavKey? = null): RouteNavigationActions {
+        val source = remember(this, route) {
+            route ?: checkNotNull(backStack.lastOrNull()) { "A route action requires a non-empty back stack" }
         }
         return remember(this, source) {
             RouteNavigationActions(navigator = this, source = source)

@@ -6,6 +6,7 @@ import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -268,6 +269,42 @@ class WebSocketUtilsTest {
             assertTrue(secondReady.await(EVENT_TIMEOUT_SECONDS, TimeUnit.SECONDS))
             assertFalse(closeLatch.await(ABSENCE_WINDOW_MILLIS, TimeUnit.MILLISECONDS))
         } finally {
+            server.shutdown()
+        }
+    }
+
+    @Test
+    fun terminalGiveUpFailureNotifiesOnCloseOnce() {
+        val server = MockWebServer()
+        repeat(6) {
+            server.enqueue(MockResponse().setResponseCode(500))
+        }
+        server.start()
+
+        val socket = WebSocketUtils(OkHttpClient())
+        try {
+            val closeCount = AtomicInteger(0)
+            val fieldReconnectTime = WebSocketUtils::class.java.getDeclaredField("reconnectTime")
+                .apply { isAccessible = true }
+            val fieldIntentionalClose = WebSocketUtils::class.java.getDeclaredField("intentionalClose")
+                .apply { isAccessible = true }
+            val fieldConnectUrl = WebSocketUtils::class.java.getDeclaredField("connectUrl")
+                .apply { isAccessible = true }
+            val fieldCallbackClose = WebSocketUtils::class.java.getDeclaredField("callbackClose")
+                .apply { isAccessible = true }
+            val onErrorMethod = WebSocketUtils::class.java.getDeclaredMethod("onError", Throwable::class.java)
+                .apply { isAccessible = true }
+
+            fieldConnectUrl.set(socket, server.url("/socket").toString().replace("http://", "ws://"))
+            fieldIntentionalClose.set(socket, false)
+            fieldReconnectTime.set(socket, 5)
+            fieldCallbackClose.set(socket, { _: String -> closeCount.incrementAndGet() })
+
+            onErrorMethod.invoke(socket, RuntimeException("boom"))
+
+            assertEquals(1, closeCount.get())
+        } finally {
+            socket.close()
             server.shutdown()
         }
     }

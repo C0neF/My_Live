@@ -1,11 +1,13 @@
 package com.mylive.app
 
 import android.app.Application
+import android.content.ComponentCallbacks2
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
 import com.mylive.app.core.common.CoreLog
 import com.mylive.app.core.common.RuntimeLogTree
 import com.mylive.app.data.repository.SettingsRepository
+import com.mylive.app.ui.emoji.EmojiAtlasRepository
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -55,5 +57,18 @@ class MyLiveApp : Application(), Configuration.Provider {
                 )
             }
         }
+    }
+
+    @Suppress("DEPRECATION")
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) {
+            EmojiAtlasRepository.trimMemory()
+        }
+    }
+
+    override fun onLowMemory() {
+        super.onLowMemory()
+        EmojiAtlasRepository.trimMemory()
     }
 }

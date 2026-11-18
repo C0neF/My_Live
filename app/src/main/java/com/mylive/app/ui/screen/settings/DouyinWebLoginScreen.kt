@@ -149,8 +149,16 @@ fun DouyinWebLoginScreen(
             AndroidView(
                 factory = { ctx ->
                     val cookieManager = CookieManager.getInstance()
-                    cookieManager.removeAllCookies(null)
-                    cookieManager.flush()
+                    clearWebViewDomainCookies(
+                        cookieManager = cookieManager,
+                        origins = listOf(
+                            "https://www.douyin.com",
+                            "https://live.douyin.com",
+                            "https://sso.douyin.com",
+                            "https://douyin.com"
+                        ),
+                        rootDomain = "douyin.com"
+                    )
 
                     WebView(ctx).apply {
                         webViewInstance = this

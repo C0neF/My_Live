@@ -106,7 +106,7 @@ class BinaryReader(
     }
 
     private fun checkBounds(len: Int) {
-        if (position + len > buffer.size) {
+        if (len < 0 || len > buffer.size - position) {
             throw CoreError(
                 "BinaryReader: buffer underflow at position $position, " +
                     "need $len bytes, have ${buffer.size - position}"

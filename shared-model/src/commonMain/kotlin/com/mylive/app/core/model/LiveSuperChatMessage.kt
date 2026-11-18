@@ -1,5 +1,10 @@
 package com.mylive.app.core.model
 
+/**
+ * Paid SuperChat message displayed in live rooms.
+ *
+ * [startTime] and [endTime] are epoch timestamps in **milliseconds**.
+ */
 data class LiveSuperChatMessage(
     val id: String? = null,
     val userName: String,

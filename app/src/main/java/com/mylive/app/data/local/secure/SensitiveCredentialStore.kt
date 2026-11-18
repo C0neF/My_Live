@@ -6,10 +6,12 @@ import android.util.Base64
 import androidx.datastore.preferences.core.Preferences
 import com.mylive.app.data.local.datastore.SettingsDataStore
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onStart
 import java.security.KeyStore
+import java.util.concurrent.ConcurrentHashMap
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -50,28 +52,38 @@ class AndroidKeystoreCredentialCipher @Inject constructor() : CredentialCipher {
     }
 
     private fun getOrCreateKey(): SecretKey {
-        val keyStore = KeyStore.getInstance(KEYSTORE_PROVIDER).apply { load(null) }
-        (keyStore.getEntry(KEY_ALIAS, null) as? KeyStore.SecretKeyEntry)?.let {
-            return it.secretKey
-        }
+        cachedSecretKey?.let { return it }
+        return synchronized(keystoreLock) {
+            cachedSecretKey?.let { return it }
+            val keyStore = KeyStore.getInstance(KEYSTORE_PROVIDER).apply { load(null) }
+            (keyStore.getEntry(KEY_ALIAS, null) as? KeyStore.SecretKeyEntry)?.secretKey?.let { existing ->
+                cachedSecretKey = existing
+                return existing
+            }
 
-        val keyGenerator = KeyGenerator.getInstance(
-            KeyProperties.KEY_ALGORITHM_AES,
-            KEYSTORE_PROVIDER
-        )
-        val spec = KeyGenParameterSpec.Builder(
-            KEY_ALIAS,
-            KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
-        )
-            .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-            .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-            .setRandomizedEncryptionRequired(true)
-            .build()
-        keyGenerator.init(spec)
-        return keyGenerator.generateKey()
+            val keyGenerator = KeyGenerator.getInstance(
+                KeyProperties.KEY_ALGORITHM_AES,
+                KEYSTORE_PROVIDER
+            )
+            val spec = KeyGenParameterSpec.Builder(
+                KEY_ALIAS,
+                KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
+            )
+                .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                .setRandomizedEncryptionRequired(true)
+                .build()
+            keyGenerator.init(spec)
+            keyGenerator.generateKey().also { generated ->
+                cachedSecretKey = generated
+            }
+        }
     }
 
     private companion object {
+        private val keystoreLock = Any()
+        @Volatile
+        private var cachedSecretKey: SecretKey? = null
         const val VERSION = "v1"
         const val KEYSTORE_PROVIDER = "AndroidKeyStore"
         const val KEY_ALIAS = "mylive_sensitive_credentials"
@@ -122,11 +134,17 @@ class SensitiveCredentialStore @Inject constructor(
         settingsDataStore.edit { prefs ->
             val encrypted = prefs[SettingsDataStore.EncryptedDouyuCookie].orEmpty()
             val current = if (encrypted.isNotEmpty()) {
-                runCatching { cipher.decrypt(encrypted) }.getOrDefault("")
+                decryptMemoized(SettingsDataStore.EncryptedDouyuCookie, encrypted)
             } else prefs[SettingsDataStore.DouyuCookie].orEmpty()
             if (current == expected) {
-                if (replacement.isEmpty()) prefs.remove(SettingsDataStore.EncryptedDouyuCookie)
-                else prefs[SettingsDataStore.EncryptedDouyuCookie] = cipher.encrypt(replacement)
+                if (replacement.isEmpty()) {
+                    prefs.remove(SettingsDataStore.EncryptedDouyuCookie)
+                    decryptedCache.remove(SettingsDataStore.EncryptedDouyuCookie)
+                } else {
+                    val sealed = cipher.encrypt(replacement)
+                    prefs[SettingsDataStore.EncryptedDouyuCookie] = sealed
+                    decryptedCache[SettingsDataStore.EncryptedDouyuCookie] = sealed to replacement
+                }
                 prefs.remove(SettingsDataStore.DouyuCookie)
                 replaced = true
             }
@@ -138,6 +156,20 @@ class SensitiveCredentialStore @Inject constructor(
         setCredential(SettingsDataStore.EncryptedWebDAVPassword, SettingsDataStore.kWebDAVPassword, value)
     }
 
+    private val migratedKeys = ConcurrentHashMap.newKeySet<String>()
+    private val decryptedCache = ConcurrentHashMap<Preferences.Key<String>, Pair<String, String>>()
+
+    private fun decryptMemoized(key: Preferences.Key<String>, cipherText: String): String {
+        if (cipherText.isEmpty()) return ""
+        val cached = decryptedCache[key]
+        if (cached != null && cached.first == cipherText) {
+            return cached.second
+        }
+        val plain = runCatching { cipher.decrypt(cipherText) }.getOrDefault("")
+        decryptedCache[key] = cipherText to plain
+        return plain
+    }
+
     private fun credentialFlow(
         encryptedKey: Preferences.Key<String>,
         legacyKey: Preferences.Key<String>
@@ -146,9 +178,10 @@ class SensitiveCredentialStore @Inject constructor(
             .onStart { migrateLegacyCredential(encryptedKey, legacyKey) }
             .map { prefs ->
                 prefs[encryptedKey]?.takeIf { it.isNotEmpty() }?.let { encrypted ->
-                    runCatching { cipher.decrypt(encrypted) }.getOrDefault("")
+                    decryptMemoized(encryptedKey, encrypted)
                 } ?: prefs[legacyKey].orEmpty()
             }
+            .distinctUntilChanged()
     }
 
     private suspend fun setCredential(
@@ -159,8 +192,11 @@ class SensitiveCredentialStore @Inject constructor(
         settingsDataStore.edit { prefs ->
             if (value.isEmpty()) {
                 prefs.remove(encryptedKey)
+                decryptedCache.remove(encryptedKey)
             } else {
-                prefs[encryptedKey] = cipher.encrypt(value)
+                val sealed = cipher.encrypt(value)
+                prefs[encryptedKey] = sealed
+                decryptedCache[encryptedKey] = sealed to value
             }
             prefs.remove(legacyKey)
         }
@@ -170,14 +206,17 @@ class SensitiveCredentialStore @Inject constructor(
         encryptedKey: Preferences.Key<String>,
         legacyKey: Preferences.Key<String>
     ) {
-        val encrypted = settingsDataStore.getFlow(encryptedKey, "").first()
         val legacy = settingsDataStore.getFlow(legacyKey, "").first()
-        if (legacy.isEmpty()) return
-
+        if (legacy.isEmpty()) {
+            migratedKeys.add(encryptedKey.name)
+            return
+        }
+        val encrypted = settingsDataStore.getFlow(encryptedKey, "").first()
         if (encrypted.isEmpty()) {
             setCredential(encryptedKey, legacyKey, legacy)
         } else {
             settingsDataStore.removeValue(legacyKey)
         }
+        migratedKeys.add(encryptedKey.name)
     }
 }

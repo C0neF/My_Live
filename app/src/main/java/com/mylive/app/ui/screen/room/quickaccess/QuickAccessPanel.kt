@@ -107,6 +107,7 @@ fun QuickAccessPanel(
     onNavigateToRoom: (siteId: String, roomId: String, initialIsFollowing: Boolean?) -> Unit,
     onDismiss: () -> Unit,
     currentResolvedRoomId: String? = null,
+    currentCategoryParentId: String? = null,
     viewModel: QuickAccessViewModel = hiltViewModel()
 ) {
     val sortStr by viewModel.quickAccessSort.collectAsStateWithLifecycle()
@@ -154,9 +155,9 @@ fun QuickAccessPanel(
             focusManager.clearFocus()
         }
     }
-    LaunchedEffect(pagerState.settledPage, orderedKeys, currentSiteId, currentCategoryId) {
+    LaunchedEffect(pagerState.settledPage, orderedKeys, currentSiteId, currentCategoryId, currentCategoryParentId) {
         if (orderedKeys.getOrNull(pagerState.settledPage) == "recommendation") {
-            viewModel.ensureRecommendations(currentSiteId, currentCategoryId)
+            viewModel.ensureRecommendations(currentSiteId, currentCategoryId, currentCategoryParentId)
         }
     }
 
@@ -226,7 +227,13 @@ fun QuickAccessPanel(
         CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
             Column(Modifier.fillMaxWidth().height(panelHeight).navigationBarsPadding().imePadding()
                 .roomPanelContentScrollIsolation().testTag("quick_access_panel")) {
-                if (searchingTabKey == null) {
+                AnimatedVisibility(
+                    visible = searchingTabKey == null,
+                    enter = if (motionPolicy.reducedMotion) fadeIn(motionPolicy.effectsSpec()) else
+                        expandVertically(motionPolicy.contentSpec(), expandFrom = Alignment.Top) + fadeIn(motionPolicy.effectsSpec()),
+                    exit = if (motionPolicy.reducedMotion) fadeOut(motionPolicy.effectsSpec()) else
+                        shrinkVertically(motionPolicy.contentSpec(), shrinkTowards = Alignment.Top) + fadeOut(motionPolicy.effectsSpec())
+                ) {
                     QuickAccessIslandTabBar(
                         orderedKeys = orderedKeys,
                         selectedTab = pagerState.currentPage,
@@ -243,9 +250,17 @@ fun QuickAccessPanel(
                         }
                     )
                 }
-                actionError?.let { message ->
+                var cachedActionError by remember { mutableStateOf(actionError.orEmpty()) }
+                if (actionError != null) cachedActionError = actionError.orEmpty()
+                AnimatedVisibility(
+                    visible = actionError != null,
+                    enter = if (motionPolicy.reducedMotion) fadeIn(motionPolicy.effectsSpec()) else
+                        expandVertically(motionPolicy.contentSpec(), expandFrom = Alignment.Top) + fadeIn(motionPolicy.effectsSpec()),
+                    exit = if (motionPolicy.reducedMotion) fadeOut(motionPolicy.effectsSpec()) else
+                        shrinkVertically(motionPolicy.contentSpec(), shrinkTowards = Alignment.Top) + fadeOut(motionPolicy.effectsSpec())
+                ) {
                     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(message, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall,
+                        Text(cachedActionError, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error)
                         IconButton(onClick = viewModel::clearActionError) { Icon(Icons.Default.Close, "关闭提示") }
                     }
@@ -343,8 +358,8 @@ private fun QuickAccessIslandTabBar(
 ) {
     val motion = LocalAppMotionPolicy.current
     Surface(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = if (compact) 1.dp else 4.dp),
-        shape = RoundedCornerShape(28.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f)) {
-        Row(Modifier.fillMaxWidth().padding(if (compact) 2.dp else 3.dp).selectableGroup(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        shape = RoundedCornerShape(28.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
+        Row(Modifier.fillMaxWidth().padding(if (compact) 2.dp else 3.dp).selectableGroup(), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
             orderedKeys.forEachIndexed { index, key ->
                 val extra = extraTabsByKey[key]
                 val name = extra?.label ?: when (key) { "follow" -> "关注"; "history" -> "历史"; else -> "推荐" }
@@ -352,21 +367,24 @@ private fun QuickAccessIslandTabBar(
                 val label = if (count != null && count > 0) "$name ${if (count > 99) "99+" else count}" else name
                 val icon = extra?.icon ?: when (key) { "follow" -> Icons.Default.Favorite; "history" -> Icons.Default.History; else -> Icons.Default.Category }
                 val selected = selectedTab == index
-                val accent = quickAccessAccentColor()
-                val container by animateColorAsState(if (selected) accent.copy(alpha = 0.16f) else Color.Transparent,
-                    animationSpec = motion.effectsSpec(), label = "quickTabBackground")
-                val foreground by animateColorAsState(if (selected) accent else MaterialTheme.colorScheme.onSurfaceVariant,
-                    animationSpec = motion.effectsSpec(), label = "quickTabForeground")
-                Row(Modifier.weight(1f).height(if (compact) 30.dp else 44.dp).clip(RoundedCornerShape(24.dp))
+                val container by animateColorAsState(
+                    if (selected) MaterialTheme.colorScheme.surfaceContainerLow else Color.Transparent,
+                    animationSpec = motion.effectsSpec(), label = "quickTabBackground"
+                )
+                val foreground by animateColorAsState(
+                    if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                    animationSpec = motion.effectsSpec(), label = "quickTabForeground"
+                )
+                Row(Modifier.weight(1f).height(if (compact) 30.dp else 40.dp).clip(RoundedCornerShape(24.dp))
                     .background(container).selectable(selected, role = Role.Tab, onClick = { onSelectedTabChange(index) })
                     .testTag("quick_access_tab_$key").padding(horizontal = 6.dp),
                     horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
                     if (!compact) {
-                        Icon(icon, null, Modifier.size(16.dp), tint = foreground)
+                        Icon(icon, null, Modifier.size(15.dp), tint = foreground)
                         Spacer(Modifier.width(5.dp))
                     }
                     Text(label, style = MaterialTheme.typography.labelLarge, color = foreground,
-                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }

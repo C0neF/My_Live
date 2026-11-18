@@ -52,4 +52,34 @@ class AdaptiveLiveRoomLayoutTest {
         assertEquals(player.height, surface.height, 1f)
         assertTrue(surface.bottom <= chat.top)
     }
+
+    @Test fun splitTabletCollapsesSidePanelToExpandPlayerToFullStageWidth() {
+        val collapsed = androidx.compose.runtime.mutableStateOf(false)
+        compose.setContent {
+            MyLiveTheme {
+                AdaptiveLiveRoomLayout(
+                    splitPane = true,
+                    chatWidthDp = 320,
+                    limitStackedPlayerHeight = true,
+                    sidePanelCollapsed = collapsed.value,
+                    modifier = Modifier.fillMaxSize(),
+                    player = { maximumHeight ->
+                        LiveRoomPlayerArea(maximumHeight, fillAvailableHeight = true) {
+                            Box(Modifier.fillMaxSize().testTag("video_surface"))
+                        }
+                    },
+                    chat = { Box(it.fillMaxWidth().testTag("chat_area")) }
+                )
+            }
+        }
+        val splitPlayerWidth = compose.onNodeWithTag("tablet_live_player").fetchSemanticsNode().boundsInRoot.width
+        compose.onNodeWithTag("tablet_live_chat").assertIsDisplayed()
+
+        compose.runOnIdle { collapsed.value = true }
+        compose.waitForIdle()
+
+        compose.onNodeWithTag("tablet_live_chat").assertDoesNotExist()
+        val expandedPlayerWidth = compose.onNodeWithTag("tablet_live_player").fetchSemanticsNode().boundsInRoot.width
+        assertTrue("Collapsing tablet side panel must widen video stage", expandedPlayerWidth > splitPlayerWidth + 200f)
+    }
 }

@@ -28,8 +28,8 @@ class SettingsRepository @Inject constructor(
     val isDynamic: Flow<Boolean> = settingsDataStore.getFlow(SettingsDataStore.kIsDynamic, false)
     suspend fun setIsDynamic(value: Boolean) = settingsDataStore.setValue(SettingsDataStore.kIsDynamic, value)
 
-    // Style color
-    val styleColor: Flow<Int> = settingsDataStore.getFlow(SettingsDataStore.kStyleColor, 0xff3498db.toInt())
+    // Style color (Apple Blue default)
+    val styleColor: Flow<Int> = settingsDataStore.getFlow(SettingsDataStore.kStyleColor, 0xFF007AFF.toInt())
     suspend fun setStyleColor(value: Int) = settingsDataStore.setValue(SettingsDataStore.kStyleColor, value)
 
     // Layout and orientation are device-local and excluded from profile backup/sync.
@@ -227,6 +227,12 @@ class SettingsRepository @Inject constructor(
     // User Remarks - stored as JSON Map: {"siteId::userName": "remark"}
     val userRemarksJson: Flow<String> = settingsDataStore.getFlow(SettingsDataStore.UserRemarks, "{}")
     suspend fun setUserRemarksJson(value: String) = settingsDataStore.setValue(SettingsDataStore.UserRemarks, value)
+    suspend fun updateUserRemarksJson(transform: (String) -> String) {
+        settingsDataStore.edit { prefs ->
+            val current = prefs[SettingsDataStore.UserRemarks] ?: "{}"
+            prefs[SettingsDataStore.UserRemarks] = transform(current)
+        }
+    }
 
     // Sync server settings
     val syncServerUrl: Flow<String> = settingsDataStore.getFlow(SettingsDataStore.SyncServerUrl, "")

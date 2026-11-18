@@ -11,7 +11,7 @@ $paths = ((& git -C $ProjectRoot ls-files -z --cached --others --exclude-standar
     Where-Object { $_ -and (Test-Path -LiteralPath (Join-Path $ProjectRoot $_) -PathType Leaf) } |
     Sort-Object -Unique
 if ($LASTEXITCODE -ne 0) { throw 'Cannot enumerate project sources.' }
-$allowedRoots = @('.github','app','desktop','docs','gradle','live-core','macrobenchmark','screenshots','shared-model','shared-ui')
+$allowedRoots = @('.github','app','desktop','docs','gradle','live-core','macrobenchmark','screenshots','shared-model','shared-ui','tools')
 $allowedFiles = @('.gitattributes','.gitignore','build.gradle.kts','gradle.properties','gradlew','gradlew.bat','settings.gradle.kts','LICENSE','NOTICE')
 $entries = @()
 foreach ($path in $paths) {

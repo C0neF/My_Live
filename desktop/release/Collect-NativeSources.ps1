@@ -19,6 +19,24 @@ foreach ($dll in $dlls) {
     $expected = $lock.runtimeDlls.PSObject.Properties[$dll.Name]
     if (-not $expected -or (Get-FileHash -LiteralPath $dll.FullName -Algorithm SHA256).Hash -ne $expected.Value) { throw "Native DLL changed: $($dll.Name)" }
 }
+$videoRuntime = Join-Path $ProjectRoot 'desktop/build/generated/videoResources/windows/mpv'
+if (Test-Path -LiteralPath $videoRuntime -PathType Container) {
+    $videoDlls = @(Get-ChildItem -LiteralPath $videoRuntime -Filter '*.dll' -File | Where-Object { $_.Name -ne 'mediampv.dll' })
+    $expectedUpstreamCount = @($lock.runtimeDlls.PSObject.Properties | Where-Object { $_.Name -ne 'mediampv.dll' }).Count
+    if ($videoDlls.Count -ne $expectedUpstreamCount) { throw 'Video runtime DLL inventory changed; review and update the source lock.' }
+    foreach ($dll in $videoDlls) {
+        $expected = $lock.runtimeDlls.PSObject.Properties[$dll.Name]
+        if (-not $expected -or (Get-FileHash -LiteralPath $dll.FullName -Algorithm SHA256).Hash -ne $expected.Value) { throw "Video runtime DLL changed: $($dll.Name)" }
+    }
+    $videoBridgeDll = Join-Path $videoRuntime 'mediampv.dll'
+    $builtBridgeDll = Join-Path $ProjectRoot 'desktop/build/native/video-bridge/mediampv.dll'
+    if (-not (Test-Path -LiteralPath $videoBridgeDll -PathType Leaf) -or -not (Test-Path -LiteralPath $builtBridgeDll -PathType Leaf)) {
+        throw 'Custom video bridge mediampv.dll is missing from video runtime.'
+    }
+    if ((Get-FileHash -LiteralPath $videoBridgeDll -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath $builtBridgeDll -Algorithm SHA256).Hash) {
+        throw 'Video runtime mediampv.dll does not match built native bridge.'
+    }
+}
 New-Item -ItemType Directory -Path $CacheDirectory,(Split-Path $OutputFile) -Force | Out-Null
 foreach ($archive in $lock.archives) {
     if ($archive.name -notmatch '^[A-Za-z0-9][A-Za-z0-9._~+-]+$' -or $archive.sha256 -notmatch '^[a-f0-9]{64}$') { throw 'Invalid native source lock entry.' }

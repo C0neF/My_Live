@@ -32,9 +32,13 @@ internal data class DesktopVideoUploadStats(val cpuBuffers: Long = 0, val gpuTex
 @Composable
 internal fun DesktopVideoSurface(playback: MpvDesktopPlayback, modifier: Modifier = Modifier, scaleMode: DesktopVideoScale = DesktopVideoScale.Fit) {
     val player = playback.player
-    val directGpu = remember(player) {
+    val window = LocalWindow.current
+    val directGpu = remember(player, window) {
+        val layer = window?.findSkiaLayer()
         hostOs == OS.Windows && SkikoProperties.renderApi == GraphicsApi.OPENGL &&
-            System.getProperty("mylive.video.upload") != "legacy" && DesktopVideoBridge.enable((player.impl as MPVHandle).ptr)
+            System.getProperty("mylive.video.upload") != "legacy" &&
+            layer != null && isDesktopGlWindowContextSupported(layer) &&
+            DesktopVideoBridge.enable((player.impl as MPVHandle).ptr)
     }
     if (directGpu) DesktopOpenGlVideoSurface(playback, modifier, scaleMode) else MpvMediampPlayerSurface(player, modifier)
 }

@@ -118,7 +118,7 @@ Compose 流程直接使用测试接口，不需要操作系统键鼠自动化；
 | --- | --- |
 | shared-model | KMP commonMain 直播模型，Android/JVM 目标 |
 | live-core | 共用平台 API、签名、弹幕、同步协议和远程同步网络实现 |
-| shared-ui | Android/桌面共同使用的主题颜色和平台选项卡 |
+| shared-ui | Android 端主题颜色与平台选项卡组件 |
 | app | Android、Media3、QuickJS、Room、Hilt、系统服务 |
 | desktop | Windows、mpv、GraalJS、DPAPI、资料存储、同步和生命周期 |
 

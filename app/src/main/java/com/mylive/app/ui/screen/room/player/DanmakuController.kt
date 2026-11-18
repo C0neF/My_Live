@@ -9,10 +9,12 @@ import android.graphics.PorterDuff
 import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Typeface
-import android.graphics.drawable.BitmapDrawable
 import android.util.LruCache
-import coil.Coil
-import coil.request.ImageRequest
+import coil3.BitmapImage
+import coil3.SingletonImageLoader
+import coil3.request.ImageRequest
+import coil3.request.bitmapConfig
+import coil3.toBitmap
 import com.mylive.app.core.common.buildPlayerDanmakuDisplaySpans
 import com.mylive.app.core.model.LiveMessage
 import com.mylive.app.core.model.DanmakuSettingsPolicy
@@ -102,7 +104,7 @@ class DanmakuController(
     private val clock: DanmakuClock = SystemDanmakuClock,
     private val measureText: (Paint, String) -> Float = { paint, text -> paint.measureText(text) }
 ) {
-    private val imageLoader = Coil.imageLoader(context)
+    private val imageLoader = SingletonImageLoader.get(context)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val bitmapCache = object : LruCache<String, Bitmap>(MAX_BITMAP_BYTES) {
         override fun sizeOf(key: String, value: Bitmap): Int = value.allocationByteCount.coerceAtLeast(1)
@@ -261,9 +263,16 @@ class DanmakuController(
     }
 
     private suspend fun loadBitmap(url: String, targetPixels: Int): Bitmap? = try {
-        val request = ImageRequest.Builder(context).data(url).size(targetPixels)
-            .allowHardware(false).build()
-        (imageLoader.execute(request).drawable as? BitmapDrawable)?.bitmap
+        val request = ImageRequest.Builder(context)
+            .data(url)
+            .size(targetPixels)
+            .bitmapConfig(Bitmap.Config.ARGB_8888)
+            .build()
+        val image = imageLoader.execute(request).image ?: return null
+        val bitmap = if (image is BitmapImage) image.bitmap else {
+            image.toBitmap(image.width.coerceAtLeast(1), image.height.coerceAtLeast(1))
+        }
+        if (bitmap.config == Bitmap.Config.HARDWARE) bitmap.copy(Bitmap.Config.ARGB_8888, false) else bitmap
     } catch (cancel: CancellationException) {
         throw cancel
     } catch (_: Exception) {

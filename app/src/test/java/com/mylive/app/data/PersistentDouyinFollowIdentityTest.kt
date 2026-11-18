@@ -9,6 +9,7 @@ import com.mylive.app.core.script.JsEngine
 import com.mylive.app.core.site.FollowPresence
 import com.mylive.app.core.site.LiveSite
 import com.mylive.app.core.site.douyin.DouyinSite
+import com.mylive.app.core.site.douyin.DouyinTtwidSource
 import com.mylive.app.data.local.AppDatabase
 import com.mylive.app.data.local.datastore.SettingsDataStore
 import com.mylive.app.data.local.entity.FollowUserEntity
@@ -69,7 +70,9 @@ class PersistentDouyinFollowIdentityTest {
             JSONObject("""{"data":{"data":[{"status":2}]}}""")
         val script = mockk<JsEngine>()
         coEvery { script.execute(any(), any(), *anyVararg()) } returns "signature"
-        val site = DouyinSite(http, Provider { script }, OkHttpClient()) { "" }
+        val site = DouyinSite(http, Provider { script }, OkHttpClient(), { "" }, object : DouyinTtwidSource {
+            override suspend fun current(forceRefresh: Boolean) = "ttwid=test-fixed"
+        })
 
         assertTrue(coordinator(site).refreshAll().isEmpty())
         database.close()

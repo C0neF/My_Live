@@ -24,12 +24,12 @@ import androidx.lifecycle.viewModelScope
 import com.mylive.app.ui.navigation.Navigator
 import com.mylive.app.ui.navigation.Route
 import com.mylive.app.R
+import com.mylive.app.core.sync.LanSyncClient
 import com.mylive.app.core.sync.LanSyncImportType
 import com.mylive.app.data.repository.FollowRepository
 import com.mylive.app.data.repository.HistoryRepository
 import com.mylive.app.data.repository.ProfileBackupManager
 import com.mylive.app.data.repository.ShieldRepository
-import com.mylive.app.data.sync.LanSyncClient
 import com.mylive.app.ui.component.settings.SettingsHairlineDivider
 import com.mylive.app.ui.component.settings.SettingsInsetCard
 import com.mylive.app.ui.component.settings.SettingsMenu

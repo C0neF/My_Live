@@ -2,7 +2,7 @@ package com.mylive.desktop
 
 import com.mylive.app.core.common.*
 import com.mylive.app.core.sync.*
-import com.mylive.app.data.sync.LanSyncClient
+import com.mylive.app.core.sync.LanSyncClient
 import kotlinx.coroutines.test.runTest
 import okhttp3.*
 import okhttp3.mockwebserver.MockResponse

@@ -1,5 +1,7 @@
 package com.mylive.app.ui.screen.room
 
+import com.mylive.app.testing.liveRoomUiSource
+
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -22,7 +24,7 @@ class DanmuDelayPolicyTest {
 
     @Test
     fun roomSettingsExposePlatformDelayAndPlayerUsesResolvedDelay() {
-        val source = File("src/main/java/com/mylive/app/ui/screen/room/LiveRoomScreen.kt").readText()
+        val source = liveRoomUiSource()
 
         assertTrue(source.contains("平台补偿延迟"))
         assertTrue(source.contains("resolveDanmuDelayMs("))

@@ -41,8 +41,6 @@ kotlin.sourceSets.main { kotlin.srcDir(generateDesktopBuildInfo) }
 
 kotlin {
     jvmToolchain(21)
-    // Compile the real Android LAN sender as a JVM fixture to prove cross-client interoperability.
-    sourceSets.getByName("test").kotlin.srcDir("../app/src/main/java/com/mylive/app/data/sync")
 }
 
 val windowsMpvRuntime by configurations.creating { isTransitive = false }
@@ -52,17 +50,17 @@ dependencies {
     implementation(compose.desktop.currentOs)
     implementation(compose.material3)
     implementation(compose.materialIconsExtended)
-    implementation("io.coil-kt.coil3:coil-compose:3.3.0")
-    implementation("io.coil-kt.coil3:coil-network-okhttp:3.3.0")
+    implementation(libs.coil3.compose)
+    implementation(libs.coil3.network.okhttp)
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:${libs.versions.coroutines.get()}")
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.jvm.json)
     implementation("com.squareup.okhttp3:okhttp-brotli:${libs.versions.okhttp.get()}")
-    implementation("org.conscrypt:conscrypt-openjdk-uber:2.8.0")
-    implementation("net.java.dev.jna:jna-platform:5.19.1")
-    implementation("com.google.zxing:core:3.5.3")
+    implementation(libs.conscrypt.openjdk)
+    implementation(libs.jna.platform)
+    implementation(libs.zxing.core)
     listOf("base", "graphics", "controls", "media", "web", "swing").forEach { module ->
-        implementation("org.openjfx:javafx-$module:21.0.13:win") { isTransitive = false }
+        implementation("org.openjfx:javafx-$module:${libs.versions.javafx.get()}:win") { isTransitive = false }
     }
     implementation("org.openani.mediamp:mediamp-mpv:${libs.versions.mediamp.get()}") {
         // Upstream publishes its Compose test dependencies in the runtime graph.
@@ -250,10 +248,39 @@ val prepareWindowsVideoRuntime by tasks.registering(Sync::class) {
     into(windowsVideoResources)
 }
 
+abstract class InstallMesaOpenGl : DefaultTask() {
+    @get:Optional @get:Input abstract val mesaBin: Property<String>
+    @get:Internal abstract val runtimeDirectory: DirectoryProperty
+
+    @TaskAction fun install() {
+        val source = mesaBin.orNull?.takeIf { it.isNotBlank() }?.let(::File)?.takeIf { it.isDirectory } ?: return
+        val runtime = runtimeDirectory.get().asFile
+        listOf("opengl32.dll", "libgallium_wgl.dll", "dxil.dll").forEach { name ->
+            val dll = File(source, name)
+            if (dll.isFile) dll.copyTo(File(runtime, name), overwrite = true)
+        }
+    }
+}
+
+val mesaDriverDlls = listOf("**/opengl32.dll", "**/libgallium_wgl.dll", "**/dxil.dll")
+// mpv loads opengl32.dll from its own directory before System32. Hosted runners only have
+// Microsoft GL 1.1 there, so CI points MYLIVE_MESA_BIN at a llvmpipe build. That copy is a
+// test runtime only: the packaged videoResources tree must stay free of the software driver.
+val nativeTestRuntime = layout.buildDirectory.dir("generated/nativeTestRuntime")
+val prepareNativeTestRuntime by tasks.registering(Sync::class) {
+    dependsOn(prepareWindowsVideoRuntime)
+    from(windowsVideoResources) { exclude(mesaDriverDlls) }
+    into(nativeTestRuntime)
+}
+val installMesaOpenGl by tasks.registering(InstallMesaOpenGl::class) {
+    dependsOn(prepareNativeTestRuntime)
+    mesaBin.set(providers.environmentVariable("MYLIVE_MESA_BIN"))
+    runtimeDirectory.set(nativeTestRuntime.map { it.dir("windows/mpv") })
+}
 tasks.register<Test>("nativeSmokeTest") {
     description = "Exercise actual Windows media and embedded web native runtimes"
     group = "verification"
-    dependsOn(prepareWindowsVideoRuntime, tasks.testClasses)
+    dependsOn(installMesaOpenGl, tasks.testClasses)
     testClassesDirs = sourceSets.test.get().output.classesDirs
     classpath = sourceSets.test.get().runtimeClasspath
     include("**/NativePlaybackSmokeTest*")
@@ -264,7 +291,23 @@ tasks.register<Test>("nativeSmokeTest") {
     systemProperty("mylive.nativeRenderingReport", layout.buildDirectory.dir("reports/native-rendering").get().asFile.absolutePath)
     systemProperty("prism.order", "sw")
     systemProperty("java.awt.headless", "false")
-    systemProperty("mylive.nativeRuntime", windowsVideoResources.get().dir("windows/mpv").asFile.absolutePath)
+    systemProperty("mylive.nativeRuntime", nativeTestRuntime.get().dir("windows/mpv").asFile.absolutePath)
+    if (providers.environmentVariable("MYLIVE_MESA_BIN").orNull != null) {
+        environment("GALLIUM_DRIVER", "llvmpipe")
+    }
+}
+
+abstract class RejectMesaFromPackagedResources : DefaultTask() {
+    @get:InputDirectory abstract val resources: DirectoryProperty
+
+    @TaskAction fun check() {
+        val forbidden = setOf("opengl32.dll", "libgallium_wgl.dll", "dxil.dll")
+        val leaked = resources.get().asFile.walkTopDown()
+            .filter { it.isFile && it.name in forbidden }
+            .map { it.invariantSeparatorsPath }
+            .toList()
+        check(leaked.isEmpty()) { "Mesa test DLLs must not ship in desktop resources: $leaked" }
+    }
 }
 
 abstract class PrepareThirdPartyNotices : DefaultTask() {
@@ -319,14 +362,20 @@ val prepareThirdPartyNotices by tasks.registering(PrepareThirdPartyNotices::clas
 val desktopResources = layout.buildDirectory.dir("generated/desktopResources")
 val prepareDesktopResources by tasks.registering(Sync::class) {
     dependsOn(prepareWindowsVideoRuntime)
-    from(windowsVideoResources)
+    from(windowsVideoResources) { exclude(mesaDriverDlls) }
     from(prepareThirdPartyNotices.flatMap { it.outputDirectory }) { into("windows/notices") }
     into(desktopResources)
 }
-tasks.matching { it.name == "prepareAppResources" }.configureEach { dependsOn(prepareDesktopResources, generateWindowsIcon) }
+val rejectMesaFromPackagedResources by tasks.registering(RejectMesaFromPackagedResources::class) {
+    dependsOn(prepareDesktopResources)
+    resources.set(desktopResources)
+}
+tasks.matching { it.name == "prepareAppResources" }.configureEach {
+    dependsOn(prepareDesktopResources, rejectMesaFromPackagedResources, generateWindowsIcon)
+}
 // jpackage must be invalidated by resource-only changes, including removed license files.
 tasks.matching { it.name in setOf("createDistributable", "packageMsi", "packageExe") }.configureEach {
-    dependsOn(prepareDesktopResources)
+    dependsOn(prepareDesktopResources, rejectMesaFromPackagedResources)
     inputs.dir(desktopResources).withPathSensitivity(PathSensitivity.RELATIVE)
 }
 
@@ -356,10 +405,21 @@ compose.desktop {
     }
 }
 
+val launcherJunctionTest by tasks.registering(Exec::class) {
+    group = "verification"
+    description = "Create a directory junction for a path that contains &"
+    onlyIf { System.getProperty("os.name").startsWith("Windows", ignoreCase = true) }
+    workingDir(layout.projectDirectory.dir("launcher"))
+    commandLine(
+        providers.gradleProperty("desktopDotnet").getOrElse("dotnet"),
+        "run", "--project", file("launcher/tests/JunctionProbe.csproj").absolutePath,
+        "-c", "Release", "--nologo"
+    )
+}
 tasks.register("verifyWindows") {
     group = "verification"
     description = "Run shared, desktop UI and native runtime acceptance checks"
-    dependsOn(":shared-model:jvmTest", ":live-core:test", tasks.test, "uiTest", "nativeSmokeTest")
+    dependsOn(":shared-model:jvmTest", ":live-core:test", tasks.test, "uiTest", "nativeSmokeTest", launcherJunctionTest)
 }
 
 // Use a reviewed WiX override: the JDK 21 custom upgrade helper loses its UUID string.

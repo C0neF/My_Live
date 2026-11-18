@@ -40,18 +40,37 @@ concurrency:
 
 jobs:
   desktop:
-    runs-on: windows-latest
+    # Hosted runners only expose Microsoft OpenGL 1.1. The native smoke test needs a real WGL
+    # driver, so the Mesa llvmpipe DLLs below are available to that test's private runtime copy.
+    # They are not written into the packaged video resources.
+    runs-on: windows-2022
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '21.0.12.1+1'
+          java-version: '21'
       - uses: gradle/actions/setup-gradle@v4
       - uses: actions/setup-dotnet@v6
         with:
           global-json-file: desktop/launcher/global.json
+      - name: Install Mesa llvmpipe OpenGL
+        shell: pwsh
+        run: |
+          $dest = Join-Path $env:RUNNER_TEMP 'mesa'
+          New-Item -ItemType Directory -Force -Path $dest | Out-Null
+          $archive = Join-Path $dest 'mesa.7z'
+          $url = 'https://github.com/pal1000/mesa-dist-win/releases/download/25.2.5/mesa3d-25.2.5-release-msvc.7z'
+          $expected = '24b082cd3b66115a7ddb355e69fa0332dd22c751a392ab61ea3f5c9f6c912b88'
+          Invoke-WebRequest -Uri $url -OutFile $archive
+          $hash = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne $expected) { throw "Mesa SHA-256 mismatch: $hash" }
+          & "$env:ProgramFiles\7-Zip\7z.exe" x $archive "-o$dest" x64/opengl32.dll x64/libgallium_wgl.dll x64/dxil.dll -y
+          $bin = Join-Path $dest 'x64'
+          if (-not (Test-Path (Join-Path $bin 'opengl32.dll'))) { throw 'Mesa opengl32.dll was not extracted' }
+          Copy-Item "$bin\*.dll" -Destination "$env:JAVA_HOME\bin" -Force
+          "MYLIVE_MESA_BIN=$bin" >> $env:GITHUB_ENV
       - name: Read Windows version
         shell: pwsh
         run: |
@@ -59,7 +78,16 @@ jobs:
           if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid Windows version' }
           "WINDOWS_VERSION=$version" >> $env:GITHUB_ENV
       - name: Test shared core and desktop
+        env:
+          GALLIUM_DRIVER: llvmpipe
         run: .\gradlew.bat --no-daemon :desktop:verifyWindows
+      - name: Remove Mesa DLLs before packaging
+        shell: pwsh
+        run: |
+          foreach ($name in 'opengl32.dll','libgallium_wgl.dll','dxil.dll') {
+            $path = Join-Path $env:JAVA_HOME "bin\$name"
+            if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Force }
+          }
       - name: Package Windows app, single EXE and installers
         run: .\gradlew.bat --no-daemon :desktop:packageWindows :desktop:singleFileTest
       - name: Check installer path budget

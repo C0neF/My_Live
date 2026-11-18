@@ -1,5 +1,7 @@
 package com.mylive.app.ui.screen.room
 
+import com.mylive.app.testing.liveRoomUiSource
+
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -9,9 +11,7 @@ class LiveRoomRoutePolicyTest {
 
     @Test
     fun liveRoomScreenPassesNavigation3RouteKeyToViewModel() {
-        val source = File(
-            "src/main/java/com/mylive/app/ui/screen/room/LiveRoomScreen.kt"
-        ).readText()
+        val source = liveRoomUiSource()
 
         assertTrue(
             "Navigation3 route key must be explicitly applied to LiveRoomViewModel",
@@ -37,9 +37,7 @@ class LiveRoomRoutePolicyTest {
 
     @Test
     fun liveRoomRecoversPlaybackByRequestingFreshSourceFromViewModel() {
-        val screenSource = File(
-            "src/main/java/com/mylive/app/ui/screen/room/LiveRoomScreen.kt"
-        ).readText()
+        val screenSource = liveRoomUiSource()
         val sessionSource = File(
             "src/main/java/com/mylive/app/ui/screen/room/player/LivePlaybackSession.kt"
         ).readText()
@@ -296,9 +294,7 @@ class LiveRoomRoutePolicyTest {
         val quickAccessSource = File(
             "src/main/java/com/mylive/app/ui/screen/room/quickaccess/QuickAccessPages.kt"
         ).readText()
-        val roomScreenSource = File(
-            "src/main/java/com/mylive/app/ui/screen/room/LiveRoomScreen.kt"
-        ).readText()
+        val roomScreenSource = liveRoomUiSource()
 
         assertTrue(routeSource.contains("val initialIsFollowing: Boolean? = null"))
         assertTrue(navigatorSource.contains("initialIsFollowing: Boolean? = null"))

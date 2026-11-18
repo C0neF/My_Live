@@ -1,5 +1,7 @@
 package com.mylive.app.ui.screen.room
 
+import com.mylive.app.testing.liveRoomUiSource
+
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertNotNull
@@ -30,12 +32,12 @@ class LiveRoomQuickAccessPolicyTest {
 
     @Test
     fun portraitAndLandscapeGateAllQuickAccessButtons() {
-        val source = File("src/main/java/com/mylive/app/ui/screen/room/LiveRoomScreen.kt").readText()
-        val portrait = source.substringAfter("private fun PortraitLayout(")
+        val source = liveRoomUiSource()
+        val portrait = source.substringAfter("internal fun PortraitLayout(")
             .substringBefore("private fun LiveRoomTabPage(")
-        val landscape = source.substringAfter("private fun LandscapeLayout(")
+        val landscape = source.substringAfter("internal fun LandscapeLayout(")
             .substringBefore("// ── Room Info Bar")
-        val header = source.substringAfter("private fun CompactPortraitRoomHeader(")
+        val header = source.substringAfter("internal fun CompactPortraitRoomHeader(")
             .substringBefore("@Composable\nprivate fun")
 
         assertTrue(portrait.contains("liveRoomQuickAccessEnabled"))

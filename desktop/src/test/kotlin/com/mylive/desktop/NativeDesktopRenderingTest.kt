@@ -18,6 +18,7 @@ import org.jetbrains.skiko.SkiaLayer
 import org.jetbrains.skiko.GraphicsApi
 import org.json.JSONObject
 import org.junit.Assert.*
+import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.openani.mediamp.InternalMediampApi
 import org.openani.mediamp.mpv.MPVHandle
@@ -45,11 +46,19 @@ class NativeDesktopRenderingTest {
         try {
             val media = File(javaClass.getResource("/sample.flv")!!.toURI())
             withContext(Dispatchers.Main) { playback.open(media.absolutePath, emptyMap()) }
-            repeat(10) { delay(50); withContext(Dispatchers.Main) { window.renderImmediately() } }
-            withContext(Dispatchers.Main) {
-                captureGpuSurface(window.findSkiaLayer()!!).use { bitmap ->
-                    val colors = (1..8).flatMap { y -> (1..8).map { x -> bitmap.getColor(bitmap.width * x / 9, bitmap.height * y / 9) } }.toSet()
-                    assertTrue("The compatibility renderer displays video", colors.size > 12)
+            withTimeout(15_000) {
+                while (true) {
+                    delay(50)
+                    val displayed = withContext(Dispatchers.Main) {
+                        window.renderImmediately()
+                        captureGpuSurface(window.findSkiaLayer()!!).use { bitmap ->
+                            val colors = (1..8).flatMap { y ->
+                                (1..8).map { x -> bitmap.getColor(bitmap.width * x / 9, bitmap.height * y / 9) }
+                            }.toSet()
+                            colors.size > 12
+                        }
+                    }
+                    if (displayed) break
                 }
             }
         } finally {
@@ -60,6 +69,11 @@ class NativeDesktopRenderingTest {
     }
 
     @Test fun hiddenOpenGlWindowDisplaysHardwareDecodedVideo() = runBlocking {
+        assumeTrue(
+            "Hardware decode needs a GPU. GitHub-hosted runners set CI=true and have no D3D device, " +
+                "so this check is skipped there and still runs on a local Windows machine with a GPU.",
+            !System.getenv("CI").equals("true", ignoreCase = true)
+        )
         prepareDesktopMediaRuntime(File(System.getProperty("mylive.nativeRuntime")))
         val reportDirectory = Path.of(System.getProperty("mylive.nativeRenderingReport"))
         Files.createDirectories(reportDirectory)

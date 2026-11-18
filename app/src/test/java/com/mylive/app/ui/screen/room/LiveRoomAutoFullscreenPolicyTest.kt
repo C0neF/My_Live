@@ -1,5 +1,8 @@
 package com.mylive.app.ui.screen.room
 
+import com.mylive.app.testing.liveRoomUiSource
+import com.mylive.app.testing.playerViewSource
+
 import android.content.pm.ActivityInfo
 import com.mylive.app.core.model.TabletOrientationMode
 import com.mylive.app.ui.screen.room.player.livePlaybackHostRequestedOrientation
@@ -161,7 +164,7 @@ class LiveRoomAutoFullscreenPolicyTest {
 
     @Test
     fun systemBackLeavesFullscreenAndTheRoomRestoresPortrait() {
-        val player = File("src/main/java/com/mylive/app/ui/screen/room/player/PlayerView.kt").readText()
+        val player = playerViewSource()
         val host = livePlaybackHostSource()
 
         // The system back key exits fullscreen first instead of leaving the room.
@@ -213,7 +216,7 @@ class LiveRoomAutoFullscreenPolicyTest {
 
     @Test
     fun playerViewReportsControlsLockToParentAndDoesNotOwnOrientation() {
-        val source = File("src/main/java/com/mylive/app/ui/screen/room/player/PlayerView.kt").readText()
+        val source = playerViewSource()
         val contract = File(
             "src/main/java/com/mylive/app/ui/screen/room/player/PlayerViewContract.kt"
         ).readText()
@@ -228,7 +231,7 @@ class LiveRoomAutoFullscreenPolicyTest {
 
     @Test
     fun playerViewFullscreenButtonCanBeOwnedByParentLayout() {
-        val source = File("src/main/java/com/mylive/app/ui/screen/room/player/PlayerView.kt").readText()
+        val source = playerViewSource()
         val contract = File(
             "src/main/java/com/mylive/app/ui/screen/room/player/PlayerViewContract.kt"
         ).readText()
@@ -252,7 +255,7 @@ class LiveRoomAutoFullscreenPolicyTest {
 
     @Test
     fun pictureInPictureDanmakuHonorsHideSetting() {
-        val source = File("src/main/java/com/mylive/app/ui/screen/room/LiveRoomScreen.kt").readText()
+        val source = liveRoomUiSource()
         val pipBranch = source.substringAfter("if (isInPip) {")
             .substringBefore("} else if (roomLayout == LiveRoomLayout.Immersive)")
 
@@ -265,7 +268,7 @@ class LiveRoomAutoFullscreenPolicyTest {
 
     @Test
     fun tabletLiveRoomRoutingMatchesMainBranchPolicy() {
-        val source = File("src/main/java/com/mylive/app/ui/screen/room/LiveRoomScreen.kt").readText()
+        val source = liveRoomUiSource()
 
         assertTrue(source.contains("} else if (roomLayout == LiveRoomLayout.Immersive) {"))
         assertFalse(source.contains("liveRoomUseTabletLayout("))
@@ -279,7 +282,7 @@ class LiveRoomAutoFullscreenPolicyTest {
 
     @Test
     fun landscapeLiveRoomSidePanelMatchesMainSingleChatPolicy() {
-        val source = File("src/main/java/com/mylive/app/ui/screen/room/LiveRoomScreen.kt").readText()
+        val source = liveRoomUiSource()
 
         assertEquals(listOf(LiveRoomTabType.CHAT), resolveLandscapeLiveRoomTabs())
         assertEquals(320f, liveRoomInitialSidePanelOffsetPx(320f), 0.001f)

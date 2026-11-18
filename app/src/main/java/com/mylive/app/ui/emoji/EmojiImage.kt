@@ -9,7 +9,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import coil.compose.AsyncImage
+import coil3.compose.AsyncImage
 import com.mylive.app.core.common.EmojiAtlasRef
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext

@@ -1,5 +1,7 @@
 package com.mylive.app.ui.screen.room.player
 
+import com.mylive.app.testing.playerViewSource
+
 import androidx.compose.ui.graphics.Color
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -11,7 +13,7 @@ class PlayerDanmakuSettingsPolicyTest {
 
     @Test
     fun playerViewPropagatesAdvancedDanmakuSettingsToController() {
-        val source = File("src/main/java/com/mylive/app/ui/screen/room/player/PlayerView.kt").readText()
+        val source = playerViewSource()
         val contract = File(
             "src/main/java/com/mylive/app/ui/screen/room/player/PlayerViewContract.kt"
         ).readText()
@@ -28,9 +30,9 @@ class PlayerDanmakuSettingsPolicyTest {
 
     @Test
     fun danmakuSettingsBottomSheetKeepsTitleAndDividerOutsideScrollableContent() {
-        val source = File("src/main/java/com/mylive/app/ui/screen/room/player/PlayerView.kt").readText()
-        val bottomSheetSource = source.substringAfter("private fun DanmakuSettingsBottomSheet(")
-            .substringBefore("private fun IndicatorOverlay(")
+        val source = playerViewSource()
+        val bottomSheetSource = source.substringAfter("internal fun DanmakuSettingsBottomSheet(")
+            .substringBefore("internal fun IndicatorOverlay(")
 
         val titleIndex = bottomSheetSource.indexOf("text = \"弹幕快捷设置\"")
         val dividerIndex = bottomSheetSource.indexOf("HorizontalDivider()")
@@ -53,7 +55,7 @@ class PlayerDanmakuSettingsPolicyTest {
 
     @Test
     fun playerViewPropagatesAccentColorToDanmuButton() {
-        val source = File("src/main/java/com/mylive/app/ui/screen/room/player/PlayerView.kt").readText()
+        val source = playerViewSource()
         val contract = File(
             "src/main/java/com/mylive/app/ui/screen/room/player/PlayerViewContract.kt"
         ).readText()
@@ -80,8 +82,8 @@ class PlayerDanmakuSettingsPolicyTest {
 
     @Test
     fun playerBottomBarAcceptsRoomActionsForOverlay() {
-        val source = File("src/main/java/com/mylive/app/ui/screen/room/player/PlayerView.kt").readText()
-        val bottomBarSource = source.substringAfter("private fun PlayerBottomBar(")
+        val source = playerViewSource()
+        val bottomBarSource = source.substringAfter("internal fun PlayerBottomBar(")
             .substringBefore("internal fun resolvePlayerDanmuButtonTint(")
 
         assertTrue(source.contains("onRoomSettingsClick: (() -> Unit)? = null"))
@@ -94,8 +96,8 @@ class PlayerDanmakuSettingsPolicyTest {
 
     @Test
     fun playerBottomBarHidesSettingsAndFullscreenActionsOutsidePortrait() {
-        val source = File("src/main/java/com/mylive/app/ui/screen/room/player/PlayerView.kt").readText()
-        val bottomBarSource = source.substringAfter("private fun PlayerBottomBar(")
+        val source = playerViewSource()
+        val bottomBarSource = source.substringAfter("internal fun PlayerBottomBar(")
             .substringBefore("internal fun shouldUseCompactPlayerBottomBar(")
 
         assertTrue(source.contains("internal fun shouldShowPlayerRoomSettingsAction(isPortrait: Boolean): Boolean"))
@@ -114,8 +116,8 @@ class PlayerDanmakuSettingsPolicyTest {
 
     @Test
     fun playerBottomBarMovesFollowActionToRightOutsidePortrait() {
-        val source = File("src/main/java/com/mylive/app/ui/screen/room/player/PlayerView.kt").readText()
-        val bottomBarSource = source.substringAfter("private fun PlayerBottomBar(")
+        val source = playerViewSource()
+        val bottomBarSource = source.substringAfter("internal fun PlayerBottomBar(")
             .substringBefore("internal fun shouldUseCompactPlayerBottomBar(")
 
         assertTrue(source.contains("internal fun shouldPlacePlayerFollowActionOnRight(isPortrait: Boolean): Boolean"))
@@ -133,8 +135,8 @@ class PlayerDanmakuSettingsPolicyTest {
 
     @Test
     fun playerBottomBarUsesCompactOverflowMenuOnNarrowLandscapeWidths() {
-        val source = File("src/main/java/com/mylive/app/ui/screen/room/player/PlayerView.kt").readText()
-        val bottomBarSource = source.substringAfter("private fun PlayerBottomBar(")
+        val source = playerViewSource()
+        val bottomBarSource = source.substringAfter("internal fun PlayerBottomBar(")
             .substringBefore("internal fun shouldUseCompactPlayerBottomBar(")
 
         assertTrue(source.contains("internal fun shouldUseCompactPlayerBottomBar("))

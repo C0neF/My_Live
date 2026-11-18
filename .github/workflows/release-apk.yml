@@ -15,7 +15,8 @@ permissions:
 
 jobs:
   build-release-apk:
-    if: ${{ !startsWith(github.event.release.tag_name || inputs.tag_name, 'windows-') }}
+    # The v2.1.1 compatibility release carries the signed APK built for v3.0.0.
+    if: ${{ !startsWith(github.event.release.tag_name || inputs.tag_name, 'windows-') && (github.event.release.tag_name || inputs.tag_name) != 'v2.1.1' }}
     name: Build and upload signed APK
     runs-on: ubuntu-latest
     env:
